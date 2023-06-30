@@ -1,0 +1,7 @@
+build
+workdayAlarmClock
+workdayAlarmClock.exe
+go.sum
+.DS_Store
+config.yaml
+__debug_bin
