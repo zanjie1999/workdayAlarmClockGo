@@ -1,7 +1,9 @@
 package player
 
 import (
+	"log"
 	"math/rand"
+	"os/exec"
 	"time"
 	"workdayAlarmClock/nemusic"
 )
@@ -14,6 +16,32 @@ func PlayUrl(url string) {
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
 
+}
+
+func AndroidPlayUrl(url string) {
+	cmd := exec.Command("curl -k " + url + " > /sdcard/1.mp3")
+	err := cmd.Start()
+	if err != nil {
+		log.Println("run curl error:" + err.Error())
+		// return
+	}
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("wait curl error:" + err.Error())
+		// return
+	}
+
+	cmd = exec.Command("am start -a android.intent.action.VIEW -t audio/mp3 -d \"file:///sdcard/1.mp3\"")
+	err = cmd.Start()
+	if err != nil {
+		log.Println("run am error:" + err.Error())
+		return
+	}
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("wait am error:" + err.Error())
+		return
+	}
 }
 
 // 播放歌单
