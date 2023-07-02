@@ -1,8 +1,10 @@
 package player
 
 import (
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
 	"os/exec"
 	"time"
 	"workdayAlarmClock/nemusic"
@@ -10,12 +12,40 @@ import (
 
 // 播放url音乐
 func PlayUrl(url string) {
-
+	// resp, err := requests.Get(url)
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Println(err)
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		log.Println(err)
+	}
+	defer response.Body.Close()
+	// 读取文件流播放
+	PlayMp3(response.Body)
 }
 
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
 
+}
+
+func PlayMp3(fileStream io.ReadCloser) {
+	// streamer, format, err := mp3.Decode(fileStream)
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	// defer streamer.Close()
+
+	// speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	// fmt.Println("music length :", streamer.Len())
+	// speaker.Play(streamer)
+	// select {}
 }
 
 func AndroidPlayUrl(url string) {

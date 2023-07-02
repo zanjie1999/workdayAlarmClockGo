@@ -9,7 +9,6 @@ package main
 import (
 	"log"
 	"time"
-	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 
 	"github.com/asmcos/requests"
@@ -56,7 +55,8 @@ func timer() {
 }
 
 func main() {
-	log.Println(nemusic.MusicUrl("1861402641"))
+	player.PlayUrl("https://music.163.com/song/media/outer/url?id=1861402641")
+	// log.Println(nemusic.MusicUrl("1861402641"))
 	// log.Println(nemusic.PlayList("2236121100"))
 	// workDayApi()
 	// go timer()
