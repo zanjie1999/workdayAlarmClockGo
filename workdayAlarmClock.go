@@ -26,7 +26,8 @@ var (
 // 获取今天是不是工作日
 func workDayApi() {
 	req := requests.Requests()
-	resp, err := req.Get("https://timor.tech/api/holiday/info/" + time.Now().Format("2006-01-02"))
+	req.
+		resp, err := req.Get("https://timor.tech/api/holiday/info/" + time.Now().Format("2006-01-02"))
 	if err == nil {
 		var j map[string]interface{}
 		resp.Json(&j)
@@ -55,7 +56,9 @@ func timer() {
 }
 
 func main() {
-	player.PlayUrl("https://music.163.com/song/media/outer/url?id=1861402641")
+	player.PlayPlaylist("2236121100", false)
+	// player.LinuxPlayUrl(nemusic.MusicUrl("1861402641"))
+	// player.PlayUrl("https://music.163.com/song/media/outer/url?id=1861402641")
 	// log.Println(nemusic.MusicUrl("1861402641"))
 	// log.Println(nemusic.PlayList("2236121100"))
 	// workDayApi()
