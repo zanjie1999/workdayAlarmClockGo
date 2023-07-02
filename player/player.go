@@ -48,6 +48,32 @@ func PlayMp3(fileStream io.ReadCloser) {
 	// select {}
 }
 
+func LinuxPlayUrl(url string) {
+	cmd := exec.Command("curl -k " + url + " > 1.mp3")
+	err := cmd.Start()
+	if err != nil {
+		log.Println("run curl error:" + err.Error())
+		// return
+	}
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("wait curl error:" + err.Error())
+		// return
+	}
+
+	cmd = exec.Command("play 1.mp3")
+	err = cmd.Start()
+	if err != nil {
+		log.Println("run am error:" + err.Error())
+		return
+	}
+	err = cmd.Wait()
+	if err != nil {
+		log.Println("wait am error:" + err.Error())
+		return
+	}
+}
+
 func AndroidPlayUrl(url string) {
 	cmd := exec.Command("curl -k " + url + " > /sdcard/1.mp3")
 	err := cmd.Start()
@@ -87,7 +113,7 @@ func PlayPlaylist(id string, random bool) {
 	for _, v := range ids {
 		url := nemusic.MusicUrl(v)
 		if url != "" {
-			PlayUrl(url)
+			LinuxPlayUrl(url)
 		}
 	}
 
