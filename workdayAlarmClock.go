@@ -26,8 +26,7 @@ var (
 // 获取今天是不是工作日
 func workDayApi() {
 	req := requests.Requests()
-	req.
-		resp, err := req.Get("https://timor.tech/api/holiday/info/" + time.Now().Format("2006-01-02"))
+	req.resp, err := req.Get("https://timor.tech/api/holiday/info/" + time.Now().Format("2006-01-02"))
 	if err == nil {
 		var j map[string]interface{}
 		resp.Json(&j)
