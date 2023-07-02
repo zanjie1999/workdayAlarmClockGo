@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/asmcos/requests"
+	"github.com/zanjie1999/httpme"
 )
 
 // 歌单列表
 func PlayList(id string) []string {
-	req := requests.Requests()
+	req := httpme.Httpme()
 	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id=" + id)
 	if err == nil {
 		var j map[string]interface{}
@@ -31,7 +31,7 @@ func PlayList(id string) []string {
 
 // 获取音乐播放地址
 func MusicUrl(id string) string {
-	req := requests.Requests()
+	req := httpme.Httpme()
 	resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
 	if err == nil {
 		if resp.R.Request.URL.Path != "/404" {

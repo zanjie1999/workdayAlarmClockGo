@@ -12,7 +12,7 @@ import (
 
 // 播放url音乐
 func PlayUrl(url string) {
-	// resp, err := requests.Get(url)
+	// resp, err := httpme.Get(url)
 	// if err != nil {
 	// 	log.Println(err)
 	// }

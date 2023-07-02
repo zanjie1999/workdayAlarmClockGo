@@ -2,10 +2,12 @@ module workdayAlarmClock
 
 go 1.20
 
-require github.com/gin-gonic/gin v1.9.1
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/zanjie1999/httpme v0.0.0-20230702090743-b9459d1f8047
+)
 
 require (
-	github.com/asmcos/requests v0.0.0-20210319030608-c839e8ae4946 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
