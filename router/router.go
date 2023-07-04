@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"workdayAlarmClock/player"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +20,8 @@ import (
 //
 //go:embed static/*
 var f embed.FS
+
+var js2home = "\n<script>setInterval(function(){window.location.href=document.referrer},3000);</script>"
 
 func Init(urlPrefix string) *gin.Engine {
 	r := gin.Default()
@@ -46,10 +49,19 @@ func Init(urlPrefix string) *gin.Engine {
 		})
 	})
 
+	root.GET("/next", func(c *gin.Context) {
+		// c.JSON(200, gin.H{
+		// 	"message": player.Next(),
+		// })
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+player.Next()+"</h1>"+js2home))
+	})
+
 	root.GET("/stop", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "Alarm Clock Stop!",
-		})
+		player.Stop()
+		// c.JSON(200, gin.H{
+		// 	"message": "stop",
+		// })
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>stop</h1>"+js2home))
 	})
 
 	return r

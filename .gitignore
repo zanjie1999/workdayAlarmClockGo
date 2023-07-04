@@ -5,3 +5,4 @@ go.sum
 .DS_Store
 config.yaml
 __debug_bin
+workdayAlarmClock.json

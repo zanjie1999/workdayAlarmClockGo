@@ -8,20 +8,13 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
-	"workdayAlarmClock/nemusic"
+	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
+	"workdayAlarmClock/router"
 
 	"github.com/zanjie1999/httpme"
-)
-
-var (
-	isWorkDay = false
-	// 闹钟时间 24小时制hhmm 工作日0 休息日1
-	AlarmCfg = map[string]int{
-		"0710": 0,
-		"2328": 1,
-	}
 )
 
 // 获取今天是不是工作日
@@ -32,37 +25,38 @@ func workDayApi() {
 		var j map[string]interface{}
 		resp.Json(&j)
 		if j["code"].(float64) != 200 {
-			isWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0
-			log.Println(j["type"].(map[string]interface{})["name"], "工作日吗？", isWorkDay)
+			conf.IsWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0
+			log.Println(j["type"].(map[string]interface{})["name"], "工作日吗？", conf.IsWorkDay)
 			return
 		}
 	}
 	log.Println("获取工作日信息出错", err)
-	isWorkDay = time.Now().Weekday() != time.Saturday && time.Now().Weekday() != time.Sunday
+	conf.IsWorkDay = time.Now().Weekday() != time.Saturday && time.Now().Weekday() != time.Sunday
 }
 
 // 定时器 go timer()
 func timer() {
 	for {
 		hhmm := time.Now().Format("1504")
-		if dayType, ok := AlarmCfg[hhmm]; ok {
-			if (dayType == 0 && isWorkDay) || (dayType == 1 && !isWorkDay) {
+		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
+			if (dayType == 0 && conf.IsWorkDay) || (dayType == 1 && !conf.IsWorkDay) {
 				log.Println("闹钟时间到", hhmm)
 				player.PlayAlarm()
 			}
 		}
+		// 秒对齐
 		time.Sleep(time.Duration(60-time.Now().Unix()%60) * time.Second)
 	}
 }
 
 func main() {
-	httpme.SetDns("223.6.6.6:53")
-	// player.PlayPlaylist("2236121100", false)
-	// player.LinuxPlayUrl(nemusic.MusicUrl("1861402641"))
-	// player.PlayUrl("https://music.163.com/song/media/outer/url?id=1861402641")
-	log.Println(nemusic.MusicUrl("1861402641"))
-	// log.Println(nemusic.PlayList("2236121100"))
-	// workDayApi()
-	// go timer()
-	// router.Init("/").Run(":8080")
+	// libWorkdayAlarmClock.so app
+	if len(os.Args) > 1 && os.Args[1] == "app" {
+		conf.IsApp = true
+		httpme.SetDns("223.6.6.6:53")
+	}
+	conf.Init()
+	workDayApi()
+	go timer()
+	router.Init("/").Run(":8080")
 }
