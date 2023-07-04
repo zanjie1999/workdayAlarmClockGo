@@ -11,6 +11,7 @@ go build
 mv workdayAlarmClock build/workdayAlarmClock-linux
 export GOARCH=arm
 go build
+cp workdayAlarmClock build/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm
 export GOARCH=mips
 go build

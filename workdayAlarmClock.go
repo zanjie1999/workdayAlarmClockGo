@@ -9,6 +9,7 @@ package main
 import (
 	"log"
 	"time"
+	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 
 	"github.com/zanjie1999/httpme"
@@ -55,10 +56,11 @@ func timer() {
 }
 
 func main() {
-	player.PlayPlaylist("2236121100", false)
+	httpme.SetDns("223.6.6.6:53")
+	// player.PlayPlaylist("2236121100", false)
 	// player.LinuxPlayUrl(nemusic.MusicUrl("1861402641"))
 	// player.PlayUrl("https://music.163.com/song/media/outer/url?id=1861402641")
-	// log.Println(nemusic.MusicUrl("1861402641"))
+	log.Println(nemusic.MusicUrl("1861402641"))
 	// log.Println(nemusic.PlayList("2236121100"))
 	// workDayApi()
 	// go timer()

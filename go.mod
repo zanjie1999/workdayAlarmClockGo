@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/zanjie1999/httpme v0.0.0-20230702090743-b9459d1f8047
+	github.com/zanjie1999/httpme v1.0.0
 )
 
 require (
