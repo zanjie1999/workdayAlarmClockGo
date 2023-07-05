@@ -8,9 +8,11 @@ package router
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
+	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +23,10 @@ import (
 //go:embed static/*
 var f embed.FS
 
-var js2home = "\n<script>setInterval(function(){window.location.href=document.referrer},3000);</script>"
+var (
+	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
+	js2back = "<script>window.location.href=document.referrer</script>"
+)
 
 func Init(urlPrefix string) *gin.Engine {
 	r := gin.Default()
@@ -43,6 +48,9 @@ func Init(urlPrefix string) *gin.Engine {
 	// url prefix
 	root := r.Group(urlPrefix)
 
+	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
+	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
+
 	root.GET("/hello", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"message": "Hello World!",
@@ -53,7 +61,7 @@ func Init(urlPrefix string) *gin.Engine {
 		// c.JSON(200, gin.H{
 		// 	"message": player.Next(),
 		// })
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+player.Next()+"</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>"+player.Next()+"</h2>"+js2home))
 	})
 
 	root.GET("/stop", func(c *gin.Context) {
@@ -65,12 +73,13 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/play", func(c *gin.Context) {
-		if c.Query("url") == "" {
+		url := c.Query("url")
+		if url == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>url is empty</h1>"+js2home))
 			return
 		}
-		player.PlayUrl(c.Query("url"))
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>play</h1>"+js2home))
+		player.PlayUrl(url)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>播放"+url+"</h2>"+js2home))
 	})
 
 	root.GET("/playlist", func(c *gin.Context) {
@@ -80,7 +89,64 @@ func Init(urlPrefix string) *gin.Engine {
 			return
 		}
 		player.PlayPlaylist(id, c.Query("random") == "1")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>stop</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单"+id+"</h1>"+js2home))
+	})
+
+	root.GET("/echo", func(c *gin.Context) {
+		msg := c.Query("msg")
+		if msg == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>msg is empty</h1>"+js2home))
+			return
+		}
+		fmt.Println(msg)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+msg+"</h1>"+js2home))
+	})
+
+	// app暂停播放
+	root.GET("/pause", func(c *gin.Context) {
+		fmt.Println("PAUSE")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// app恢复播放
+	root.GET("/resume", func(c *gin.Context) {
+		fmt.Println("RESUME")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// 测试闹钟
+	root.GET("/testAlarm", func(c *gin.Context) {
+		player.PlayAlarm()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>闹钟时间到</h1>"+js2home))
+	})
+
+	// 加闹钟
+	root.GET("/addAlarm", func(c *gin.Context) {
+		hhmm := c.Query("hhmm")
+		typeS := c.Query("type")
+		if hhmm == "" || typeS == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm or type is empty</h1>"+js2home))
+			return
+		}
+		conf.Cfg.Alarm[hhmm] = int(typeS[0] - '0')
+		conf.Save()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// 删闹钟
+	root.GET("/delAlarm", func(c *gin.Context) {
+		hhmm := c.Query("hhmm")
+		if hhmm == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm is empty</h1>"+js2home))
+			return
+		}
+		delete(conf.Cfg.Alarm, hhmm)
+		conf.Save()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	root.GET("/restart", func(c *gin.Context) {
+		fmt.Println("RESTART")
 	})
 
 	return r

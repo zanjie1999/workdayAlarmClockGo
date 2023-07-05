@@ -13,9 +13,9 @@ import (
 )
 
 type Config struct {
-	Alarm        map[string]int
-	NePlayListId string
-	NePlayed     []string
+	Alarm        map[string]int `json:"alarm"`
+	NePlayListId string         `json:"nePlayListId"`
+	NePlayed     []string       `json:"nePlayed"`
 }
 
 var (
@@ -26,10 +26,9 @@ var (
 
 	// 配置
 	Cfg = Config{
-		// 闹钟时间 24小时制hhmm 工作日0 休息日1 一次性3
+		// 闹钟时间 24小时制hhmm 工作日1 休息日2 一次性3 每天4
 		Alarm: map[string]int{
-			"0710": 0,
-			"2328": 1,
+			"0710": 1,
 		},
 		// 闹钟歌单
 		NePlayListId: "2236121100",

@@ -1,0 +1,45 @@
+<html>
+<head>
+    <title>闹钟设置</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h1>闹钟设置</h1>
+    <img src="/favicon.ico" width="100px"><br><br>
+    <table border="1" id="alarms"></table><br>
+    <form action="/addAlarm">
+        <button type="submit">添加闹钟</button>
+        <input type="text" name="hhmm" placeholder="HHmm">
+        <select name="type">
+            <option value="1">法定工作日</option>
+            <option value="2">法定休息日</option>
+            <option value="3">一次</option>
+            <option value="4">每天</option>
+        </select>
+    </form>
+    <form action="/testAlarm">
+        <button type="submit">模拟闹钟</button>
+    </form>
+    <script>
+        // 打开页面后请求cfg.json，获取闹钟列表
+        function getAlarms() {
+            let xhr = new XMLHttpRequest();
+            xhr.open('GET', '/cfg.json', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    let alarms = JSON.parse(xhr.responseText).alarm;
+                    let html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
+                    for (let hhmm of Object.keys(alarms)) {
+                        let t = alarms[hhmm];
+                        t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 3 ? '每天' : '未知';
+                        html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
+                    }
+                    document.getElementById('alarms').innerHTML = html;
+                }
+            }
+            xhr.send();
+        }
+        window.onload = getAlarms;
+    </script>
+</body>
+</html>

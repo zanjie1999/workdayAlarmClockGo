@@ -39,9 +39,14 @@ func timer() {
 	for {
 		hhmm := time.Now().Format("1504")
 		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
-			if (dayType == 0 && conf.IsWorkDay) || (dayType == 1 && !conf.IsWorkDay) {
+			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 {
 				log.Println("闹钟时间到", hhmm)
 				player.PlayAlarm()
+			} else if dayType == 3 {
+				log.Println("闹钟时间到", hhmm)
+				player.PlayAlarm()
+				delete(conf.Cfg.Alarm, hhmm)
+				conf.Save()
 			}
 		}
 		// 秒对齐

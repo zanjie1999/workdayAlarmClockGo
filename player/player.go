@@ -31,12 +31,12 @@ func Next() string {
 			PlayList = PlayList[1:]
 			if len(now) > 3 && now[:4] == "http" {
 				PlayUrl(now)
-				return "playurl"
+				return now
 			} else {
 				u := nemusic.MusicUrl(now)
 				if u != "" {
 					PlayUrl(u)
-					return "playne"
+					return u
 				}
 			}
 		} else {

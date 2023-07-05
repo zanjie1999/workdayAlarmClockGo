@@ -5,11 +5,18 @@
 </head>
 <body>
     <h1>工作日闹钟</h1>
+    <img src="/favicon.ico" width="100px"><br><br>
     <form action="/stop">
         <button type="submit">停止</button>
     </form>
     <form action="/next">
         <button type="submit">下一首</button>
+    </form>
+    <form action="/pause">
+        <button type="submit">暂停</button>
+    </form>
+    <form action="/resume">
+        <button type="submit">恢复播放</button>
     </form>
     <form action="/play">
         <button type="submit">播放url</button>
@@ -22,6 +29,10 @@
             <option value="0">顺序播放</option>
             <option value="1">随机播放</option>
         </select>
+    </form>
+    <a href="/alarm.html">闹钟设置</a><br><br>
+    <form action="/restart">
+        <button type="submit">重启</button>
     </form>
 </body>
 </html>
