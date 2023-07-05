@@ -145,6 +145,18 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
+	// 改闹钟歌单
+	root.GET("/setAlarmPlayList", func(c *gin.Context) {
+		id := c.Query("id")
+		if id == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
+			return
+		}
+		conf.Cfg.NePlayListId = id
+		conf.Save()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>闹钟歌单已设置成"+id+"</h2>"+js2home))
+	})
+
 	root.GET("/restart", func(c *gin.Context) {
 		fmt.Println("RESTART")
 	})

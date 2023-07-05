@@ -1,0 +1,29 @@
+.linemode {
+    display: inline-flex;
+    justify-content: space-evenly;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 1em;
+}
+
+.linemode button, .linemode input, .linemode select, .linemode textarea .linemode h1  {
+    margin: 0.5em;
+}
+
+button, input, select, textarea {
+    min-height: 2em;
+    min-width: 4em;
+}
+
+@media screen and (max-width:768px){
+    .linemode {
+        display: flex;
+    }
+    table {
+        width: 100%;
+    }
+    button, input, select, textarea {
+        min-height: 4em;
+        min-width: 5em;
+    }
+}

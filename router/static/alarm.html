@@ -2,10 +2,15 @@
 <head>
     <title>闹钟设置</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>闹钟设置</h1>
-    <img src="/favicon.ico" width="100px"><br><br>
+    <div class="linemode">
+        <img src="/favicon.ico" width="100px"><br><br>
+        <h1>闹钟设置</h1>
+    </div>
+    <br>
     <table border="1" id="alarms"></table><br>
     <form action="/addAlarm">
         <button type="submit">添加闹钟</button>
@@ -19,6 +24,10 @@
     </form>
     <form action="/testAlarm">
         <button type="submit">模拟闹钟</button>
+    </form>
+    <form action="/setAlarmPlayList">
+        <button type="submit">设置闹钟歌单</button>
+        <input type="text" name="id" placeholder="歌单id" value="2236121100">
     </form>
     <script>
         // 打开页面后请求cfg.json，获取闹钟列表

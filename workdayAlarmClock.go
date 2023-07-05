@@ -38,6 +38,9 @@ func workDayApi() {
 func timer() {
 	for {
 		hhmm := time.Now().Format("1504")
+		if hhmm == "0000" {
+			workDayApi()
+		}
 		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
 			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 {
 				log.Println("闹钟时间到", hhmm)

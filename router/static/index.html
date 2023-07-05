@@ -1,23 +1,30 @@
 <html>
 <head>
-    <title>工作日闹钟</title>
+    <title>工作咩闹钟</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>工作日闹钟</h1>
-    <img src="/favicon.ico" width="100px"><br><br>
-    <form action="/stop">
-        <button type="submit">停止</button>
-    </form>
-    <form action="/next">
-        <button type="submit">下一首</button>
-    </form>
-    <form action="/pause">
-        <button type="submit">暂停</button>
-    </form>
-    <form action="/resume">
-        <button type="submit">恢复播放</button>
-    </form>
+    <div class="linemode">
+        <img src="/favicon.ico" width="100px"><br><br>
+        <h1>工作咩闹钟</h1>
+    </div>
+    <br>
+    <div class="linemode">
+        <form action="/stop">
+            <button type="submit">停止</button>
+        </form>
+        <form action="/next">
+            <button type="submit">下一首</button>
+        </form>
+        <form action="/pause">
+            <button type="submit">暂停</button>
+        </form>
+        <form action="/resume">
+            <button type="submit">恢复播放</button>
+        </form>
+    </div>
     <form action="/play">
         <button type="submit">播放url</button>
         <input type="text" name="url" value="http://music.163.com/song/media/outer/url?id=29019010.mp3">
