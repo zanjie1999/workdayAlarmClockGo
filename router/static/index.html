@@ -6,7 +6,22 @@
 <body>
     <h1>工作日闹钟</h1>
     <form action="/stop">
-        <button type="submit">停止闹钟</button>
+        <button type="submit">停止</button>
+    </form>
+    <form action="/next">
+        <button type="submit">下一首</button>
+    </form>
+    <form action="/play">
+        <button type="submit">播放url</button>
+        <input type="text" name="url" value="http://music.163.com/song/media/outer/url?id=29019010.mp3">
+    </form>
+    <form action="/playlist">
+        <button type="submit">播放歌单</button>
+        <input type="text" name="id" value="7728034423">
+        <select name="random">
+            <option value="0">顺序播放</option>
+            <option value="1">随机播放</option>
+        </select>
     </form>
 </body>
 </html>
