@@ -54,7 +54,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "app" {
 		conf.IsApp = true
 		httpme.SetDns("223.6.6.6:53")
+		// 时区不对，设置成中国+8
+		time.Local = time.FixedZone("CST", 8*3600)
 	}
+	log.Println("当前时区", time.Local)
 	conf.Init()
 	workDayApi()
 	go timer()
