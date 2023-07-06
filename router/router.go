@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 
@@ -24,8 +25,8 @@ import (
 var f embed.FS
 
 var (
-	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
-	js2back = "<script>window.location.href=document.referrer</script>"
+	js2home = "\n<script>setInterval(function(){window.history.back()},3000);</script>"
+	js2back = "<script>window.history.go(-1)</script>"
 )
 
 func Init(urlPrefix string) *gin.Engine {
@@ -114,6 +115,18 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
+	// 音量加
+	root.GET("/volp", func(c *gin.Context) {
+		fmt.Println("VOLP")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// 音量减
+	root.GET("/volm", func(c *gin.Context) {
+		fmt.Println("VOLM")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
 	// 测试闹钟
 	root.GET("/testAlarm", func(c *gin.Context) {
 		player.PlayAlarm()
@@ -145,20 +158,27 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
-	// 改闹钟歌单
-	root.GET("/setAlarmPlayList", func(c *gin.Context) {
-		id := c.Query("id")
-		if id == "" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
-			return
+	// 更新设置
+	root.GET("/updateCfg", func(c *gin.Context) {
+		nePlayListId := c.Query("nePlayListId")
+		volAlarm := c.Query("volAlarm")
+		VolDefault := c.Query("volDefault")
+		if nePlayListId != "" {
+			conf.Cfg.NePlayListId = nePlayListId
 		}
-		conf.Cfg.NePlayListId = id
+		if volAlarm != "" {
+			conf.Cfg.VolAlarm = volAlarm
+		}
+		if VolDefault != "" {
+			conf.Cfg.VolDefault = VolDefault
+		}
 		conf.Save()
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>闹钟歌单已设置成"+id+"</h2>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	root.GET("/restart", func(c *gin.Context) {
 		fmt.Println("RESTART")
+		os.Exit(0)
 	})
 
 	return r

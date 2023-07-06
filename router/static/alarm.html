@@ -25,9 +25,12 @@
     <form action="/testAlarm">
         <button type="submit">模拟闹钟</button>
     </form>
-    <form action="/setAlarmPlayList">
-        <button type="submit">设置闹钟歌单</button>
-        <input type="text" name="id" placeholder="歌单id" value="2236121100">
+    <form action="/updateCfg">
+        设置：<br>
+        默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
+        闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
+        闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id=">
+        <br><button type="submit">保存设置</button>
     </form>
     <script>
         // 打开页面后请求cfg.json，获取闹钟列表
@@ -36,10 +39,13 @@
             xhr.open('GET', '/cfg.json', true);
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
-                    let alarms = JSON.parse(xhr.responseText).alarm;
+                    let d = JSON.parse(xhr.responseText);
+                    document.getElementById('volDefault').value = d.volDefault;
+                    document.getElementById('volAlarm').value = d.volAlarm;
+                    document.getElementById('nePlayListId').value = d.nePlayListId;
                     let html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
-                    for (let hhmm of Object.keys(alarms)) {
-                        let t = alarms[hhmm];
+                    for (let hhmm of Object.keys(d.alarm)) {
+                        let t = d.alarm[hhmm];
                         t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 3 ? '每天' : '未知';
                         html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }

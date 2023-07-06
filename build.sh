@@ -7,8 +7,8 @@ rm -rf build/*
 # go build
 # mv workdayAlarmClock.exe build/workdayAlarmClock.exe
 export GOOS=linux
-# go build
-# mv workdayAlarmClock build/workdayAlarmClock-linux
+go build
+mv workdayAlarmClock build/workdayAlarmClock-linux
 export GOARCH=arm
 go build
 cp workdayAlarmClock build/libWorkdayAlarmClock.so

@@ -21,6 +21,7 @@ var (
 	IsStop = true
 	// 当前的播放列表
 	PlayList = []string{}
+	IsAlarm  = false
 )
 
 // 下一首
@@ -74,14 +75,22 @@ func Stop() {
 	PlayList = []string{}
 	if conf.IsApp {
 		fmt.Println("STOP")
+		if IsAlarm {
+			IsAlarm = false
+			fmt.Println("VOL " + conf.Cfg.VolDefault)
+		}
 	} else {
 		IsStop = true
-		exec.Command("killall play").Run()
+		exec.Command("killall", "play").Run()
 	}
 }
 
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
+	IsAlarm = true
+	if conf.IsApp {
+		fmt.Println("VOL " + conf.Cfg.VolAlarm)
+	}
 	PlayList = []string{}
 	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
 	if len(ids) == 0 {

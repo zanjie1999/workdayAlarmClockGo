@@ -13,6 +13,8 @@ import (
 )
 
 type Config struct {
+	VolDefault   string         `json:"volDefault"`
+	VolAlarm     string         `json:"volAlarm"`
 	Alarm        map[string]int `json:"alarm"`
 	NePlayListId string         `json:"nePlayListId"`
 	NePlayed     []string       `json:"nePlayed"`
@@ -34,6 +36,10 @@ var (
 		NePlayListId: "2236121100",
 		// 已经播放过的歌曲
 		NePlayed: []string{},
+		// 闹钟音量
+		VolAlarm: "80",
+		// 默认音量
+		VolDefault: "50",
 	}
 )
 
