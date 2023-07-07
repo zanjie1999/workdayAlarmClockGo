@@ -96,7 +96,7 @@ func PlayAlarm() {
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")
-		PlayUrl("http://music.163.com/song/media/outer/url?id=1385848099.mp3")
+		PlayUrl("http://127.0.0.1:8080/static/music.mp3")
 		return
 	} else {
 		rand.Seed(time.Now().UnixNano())
