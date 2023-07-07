@@ -32,11 +32,12 @@
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id=">
         <br><button type="submit">保存设置</button>
     </form>
+    <div id="info" ></div>
     <script>
         // 打开页面后请求cfg.json，获取闹钟列表
         function getAlarms() {
             let xhr = new XMLHttpRequest();
-            xhr.open('GET', '/cfg.json', true);
+            xhr.open('GET', '/cfg.json?t=' + Date.now(), true);
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     let d = JSON.parse(xhr.responseText);
@@ -50,11 +51,17 @@
                         html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }
                     document.getElementById('alarms').innerHTML = html;
+                    html = '当前已播放 ' + d.nePlayed.length + ' 首<br>'; 
+                    for (let i = d.nePlayed.length - 1; i >=0; i--) {
+                        html += '<a href="https://music.163.com/#/song?id=' + d.nePlayed[i] + '">' + d.nePlayed[i] + '</a><br>';
+                    }
+                    document.getElementById('info').innerHTML = html;
                 }
             }
             xhr.send();
         }
         window.onload = getAlarms;
+        window.onfocus = getAlarms;
     </script>
 </body>
 </html>

@@ -33,21 +33,38 @@
             <button type="submit">下一首</button>
         </form>
     </div>
-    <form action="/play">
+    <form action="/play" id="playUrlForm">
         <button type="submit">播放url</button>
-        <input type="text" name="url" value="http://music.163.com/song/media/outer/url?id=29019010.mp3">
+        <input type="text" name="url" id="playUrl" value="http://music.163.com/song/media/outer/url?id=29019010.mp3">
     </form>
-    <form action="/playlist">
-        <button type="submit">播放歌单</button>
-        <input type="text" name="id" value="7728034423">
+    <form action="/playlist" onsubmit="return plalist()">
+        <button type="submit">播放歌单/歌曲</button>
+        <input type="text" name="id" id="playlistId" placeholder="歌单id或分享链接" value="21777546">
         <select name="random">
             <option value="0">顺序播放</option>
             <option value="1">随机播放</option>
         </select>
     </form>
-    <a href="/alarm.html">闹钟设置</a><br><br>
     <form action="/restart">
-        <button type="submit">重启</button>
+        <button type="submit">重启</button> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a>
     </form>
+    <script>
+        function plalist() {
+            let m = /playlist\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+            if (m) {
+                // 歌单分享链接
+                document.getElementById('playlistId').value = m[1];
+            } else {
+                let m = /song\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+                if (m) {
+                    // 歌曲分享链接
+                    document.getElementById('playUrl').value = "http://music.163.com/song/media/outer/url?id=" + m[1];
+                    document.getElementById('playUrlForm').submit();
+                    return false
+                }
+            }
+            return true;
+        }
+    </script>
 </body>
 </html>
