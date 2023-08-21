@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="linemode">
-        <img src="/favicon.ico" width="100px"><br><br>
+        <img src="/favicon.ico"><br><br>
         <h1>闹钟设置</h1>
     </div>
     <br>
@@ -22,15 +22,26 @@
             <option value="4">每天</option>
         </select>
     </form>
-    <form action="/testAlarm">
-        <button type="submit">模拟闹钟</button>
-    </form>
+    <a href="/testAlarm">模拟闹钟</a><br><br>
     <form action="/updateCfg">
-        设置：<br>
+        <h3>设置</h3>
         默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
         闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
-        闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id=">
+        闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
+        时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
         <br><button type="submit">保存设置</button>
+    </form>
+    <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
+        <h3>兜底音乐</h3>
+        在断网时将使用此音乐播放<br>
+        <input type="file" name="file"><button type="submit">上传</button>
+        <br><a href="/play?url=http://127.0.0.1:8080/music.mp3">用音响播放</a> <a href="/deleteMp3">删除</a> <a href="/music.mp3">下载(长按/右键另存为)</a>
+    </form>
+    <form action="/uploadCfg" method="post" action enctype="multipart/form-data">
+        <h3>备份与恢复</h3>
+        包含闹钟设置和已播放的音乐<br>
+        <input type="file" name="file"><button type="submit">上传配置</button>
+        <br><a href="/cfg.json">下载配置(长按/右键另存为)</a>
     </form>
     <div id="info" ></div>
     <script>
@@ -44,6 +55,7 @@
                     document.getElementById('volDefault').value = d.volDefault;
                     document.getElementById('volAlarm').value = d.volAlarm;
                     document.getElementById('nePlayListId').value = d.nePlayListId;
+                    document.getElementById('tz').value = d.tz;
                     let html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (let hhmm of Object.keys(d.alarm)) {
                         let t = d.alarm[hhmm];

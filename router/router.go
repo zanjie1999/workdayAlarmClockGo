@@ -13,6 +13,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 
@@ -163,6 +165,7 @@ func Init(urlPrefix string) *gin.Engine {
 		nePlayListId := c.Query("nePlayListId")
 		volAlarm := c.Query("volAlarm")
 		VolDefault := c.Query("volDefault")
+		Tz := c.Query("tz")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -172,8 +175,51 @@ func Init(urlPrefix string) *gin.Engine {
 		if VolDefault != "" {
 			conf.Cfg.VolDefault = VolDefault
 		}
+		if Tz != "" {
+			tz, err := strconv.Atoi(Tz)
+			if err != nil {
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>时区不是整数</h1>"+js2home))
+				return
+			} else {
+				conf.Cfg.Tz = tz
+				time.Local = time.FixedZone("UTC+", tz*3600)
+			}
+		}
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// 上传配置
+	root.POST("/uploadCfg", func(c *gin.Context) {
+		// 接收上传的file并保存
+		file, _ := c.FormFile("file")
+		c.SaveUploadedFile(file, "workdayAlarmClock.json")
+		// 重新加载配置
+		conf.Init()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
+	})
+
+	// 上传兜底的mp3
+	root.POST("/uploadMp3", func(c *gin.Context) {
+		// 接收上传的file并保存
+		file, _ := c.FormFile("file")
+		c.SaveUploadedFile(file, "music.mp3")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
+	})
+
+	// 删除上传的音乐使用默认兜底
+	root.GET("/deleteMp3", func(c *gin.Context) {
+		os.Remove("music.mp3")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>已删除</h1>"+js2home))
+	})
+
+	// 播放兜底音乐
+	root.GET("/music.mp3", func(c *gin.Context) {
+		if _, err := os.Stat("music.mp3"); os.IsNotExist(err) {
+			c.FileFromFS("music.mp3", http.FS(staticFs))
+		} else {
+			c.File("music.mp3")
+		}
 	})
 
 	root.GET("/restart", func(c *gin.Context) {

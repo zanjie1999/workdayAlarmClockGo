@@ -1,7 +1,6 @@
 /*
- * 工作日闹钟 Go
+ * 工作咩闹钟 Go
  * zyyme 20230630
- * v1.0
  */
 
 package main
@@ -16,6 +15,8 @@ import (
 
 	"github.com/zanjie1999/httpme"
 )
+
+var VERSION = "2.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -62,10 +63,12 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "app" {
 		conf.IsApp = true
 		httpme.SetDns("223.6.6.6:53")
-		// 时区不对，设置成中国+8
-		time.Local = time.FixedZone("CST", 8*3600)
 	}
-	log.Println("当前时区", time.Local)
+	conf.Init()
+	// 设置时区
+	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
+	log.Println("工作咩闹钟 v" + VERSION)
+	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	conf.Init()
 	workDayApi()
 	go timer()

@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="linemode">
-        <img src="/favicon.ico" width="100px"><br><br>
+        <img src="/favicon.ico"><br><br>
         <h1>工作咩闹钟</h1>
     </div>
     <br>
@@ -45,9 +45,9 @@
             <option value="1">随机播放</option>
         </select>
     </form>
-    <form action="/restart">
-        <button type="submit">重启</button> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a>
-    </form>
+    <div>
+        <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a>
+    </div>
     <script>
         function plalist() {
             let m = /playlist\?id=(\d+)/.exec(document.getElementById('playlistId').value);

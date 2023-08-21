@@ -18,6 +18,7 @@ type Config struct {
 	Alarm        map[string]int `json:"alarm"`
 	NePlayListId string         `json:"nePlayListId"`
 	NePlayed     []string       `json:"nePlayed"`
+	Tz           int            `json:"tz"`
 }
 
 var (
@@ -40,6 +41,8 @@ var (
 		VolAlarm: "80",
 		// 默认音量
 		VolDefault: "50",
+		// 时区
+		Tz: 8,
 	}
 )
 

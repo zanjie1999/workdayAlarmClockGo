@@ -96,7 +96,7 @@ func PlayAlarm() {
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")
-		PlayUrl("http://127.0.0.1:8080/static/music.mp3")
+		PlayUrl("http://127.0.0.1:8080/music.mp3")
 		return
 	} else {
 		rand.Seed(time.Now().UnixNano())
@@ -104,12 +104,14 @@ func PlayAlarm() {
 			ids[i], ids[j] = ids[j], ids[i]
 		})
 		for _, id := range ids {
+			// 放完一次了 重置
 			if len(conf.Cfg.NePlayed)+2 >= len(ids) {
 				conf.Cfg.NePlayed = []string{}
 			}
 			if len(PlayList) == 2 {
 				break
 			}
+			// 检查是否播放过
 			flag := true
 			for i := 0; i < len(conf.Cfg.NePlayed); i++ {
 				if conf.Cfg.NePlayed[i] == id {
@@ -119,9 +121,16 @@ func PlayAlarm() {
 			}
 			if flag {
 				conf.Cfg.NePlayed = append(conf.Cfg.NePlayed, id)
-				PlayList = append(PlayList, id)
+				// 检查是否能放 没问题就放进去
+				if nemusic.MusicUrl(id) != "" {
+					PlayList = append(PlayList, id)
+				}
 			}
-
+		}
+		if len(PlayList) == 0 {
+			// 你该不是在拿咩咩寻开心吧
+			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")
+			PlayList = append(PlayList, "http://127.0.0.1:8080/music.mp3")
 		}
 		conf.Save()
 		Next()
