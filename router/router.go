@@ -193,6 +193,10 @@ func Init(urlPrefix string) *gin.Engine {
 	root.POST("/uploadCfg", func(c *gin.Context) {
 		// 接收上传的file并保存
 		file, _ := c.FormFile("file")
+		if file == nil {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>file is empty</h1>"+js2home))
+			return
+		}
 		c.SaveUploadedFile(file, "workdayAlarmClock.json")
 		// 重新加载配置
 		conf.Init()
@@ -203,6 +207,10 @@ func Init(urlPrefix string) *gin.Engine {
 	root.POST("/uploadMp3", func(c *gin.Context) {
 		// 接收上传的file并保存
 		file, _ := c.FormFile("file")
+		if file == nil {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>file is empty</h1>"+js2home))
+			return
+		}
 		c.SaveUploadedFile(file, "music.mp3")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
 	})
