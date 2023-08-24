@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -58,6 +59,28 @@ func timer() {
 	}
 }
 
+// 处理shell输入 go shellInput()
+func shellInput() {
+	for {
+		var cmd string
+		_, err := fmt.Scanln(&cmd)
+		if err != nil {
+			fmt.Println("输入错误", err)
+		} else {
+			switch cmd {
+			case "stop":
+				player.Stop()
+			case "next":
+				player.Next()
+			case "exit":
+				os.Exit(0)
+			default:
+				fmt.Println("未知命令", cmd)
+			}
+		}
+	}
+}
+
 func main() {
 	// libWorkdayAlarmClock.so app
 	if len(os.Args) > 1 && os.Args[1] == "app" {
@@ -69,8 +92,8 @@ func main() {
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
-	conf.Init()
 	workDayApi()
 	go timer()
+	go shellInput()
 	router.Init("/").Run(":8080")
 }

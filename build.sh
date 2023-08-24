@@ -4,24 +4,24 @@ rm -rf build/*
 # export CGO_ENABLED=1
 # export GOARCH=amd64
 # export GOOS=windows
-# go build
+# go build -ldflags="-w -s"
 # mv workdayAlarmClock.exe build/workdayAlarmClock.exe
 export GOOS=linux
-go build
+go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-linux
 export GOARCH=arm
-go build
+go build -ldflags="-w -s"
 cp workdayAlarmClock build/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm
 # export GOARCH=mips
-# go build
+# go build -ldflags="-w -s"
 # mv workdayAlarmClock build/workdayAlarmClock-linux-mips
 export GOARCH=arm64
-go build
+go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm64
 export GOOS=darwin
-go build
+go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-darwin-arm64
 # export GOARCH=amd64
-# go build
+# go build -ldflags="-w -s"
 # mv workdayAlarmClock build/workdayAlarmClock-darwin

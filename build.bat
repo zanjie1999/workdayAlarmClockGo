@@ -3,34 +3,34 @@ mkdir build
 #SET CGO_ENABLED=1
 #SET GOARCH=amd64
 #SET GOOS=windows
-#go build
+#go build -ldflags="-w -s"
 #move workdayAlarmClock.exe build\workdayAlarmClock.exe
 #SET GOARCH=386
-#go build
+#go build -ldflags="-w -s"
 #move workdayAlarmClock.exe build\workdayAlarmClock-i386.exe
 SET CGO_ENABLED=0
 SET GOOS=linux
-go build
+go build -ldflags="-w -s"
 move workdayAlarmClock build\workdayAlarmClock-linux-i386
 SET GOARCH=amd64
-go build
+go build -ldflags="-w -s"
 move workdayAlarmClock build\workdayAlarmClock-linux
 SET GOARCH=arm
-go build
+go build -ldflags="-w -s"
 copy workdayAlarmClock build\libWorkdayAlarmClock.so
 move workdayAlarmClock build\workdayAlarmClock-linux-arm
 #SET GOARCH=mips
-#go build
+#go build -ldflags="-w -s"
 #move workdayAlarmClock build\workdayAlarmClock-linux-mips
 SET GOARCH=arm64
-go build
+go build -ldflags="-w -s"
 move workdayAlarmClock build\workdayAlarmClock-linux-arm64
 SET GOOS=darwin
-go build
+go build -ldflags="-w -s"
 move workdayAlarmClock build\workdayAlarmClock-darwin-arm64
 #SET GOARCH=amd64
-#go build
+#go build -ldflags="-w -s"
 #move workdayAlarmClock build\workdayAlarmClock-darwin
 SET GOOS=freebsd
-go build
+go build -ldflags="-w -s"
 move workdayAlarmClock build/workdayAlarmClock-freebsd
