@@ -17,7 +17,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "2.1"
+var VERSION = "2.2"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -27,7 +27,7 @@ func workDayApi() {
 		var j map[string]interface{}
 		resp.Json(&j)
 		if j["code"].(float64) != 200 {
-			conf.IsWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0
+			conf.IsWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0 || j["type"].(map[string]interface{})["type"].(float64) == 3
 			log.Println(j["type"].(map[string]interface{})["name"], "工作日吗？", conf.IsWorkDay)
 			return
 		}
