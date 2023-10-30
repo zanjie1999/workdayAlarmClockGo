@@ -1,3 +1,5 @@
+AndroidProject='../../Android/StudioProjects/workdayAlarmClockAndroid'
+
 cd `dirname $0`
 mkdir -p build
 rm -rf build/*
@@ -11,13 +13,16 @@ go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-linux
 export GOARCH=arm
 go build -ldflags="-w -s"
-cp workdayAlarmClock build/libWorkdayAlarmClock.so
+mkdir -p $AndroidProject/app/libs/app/libs/armeabi
+cp workdayAlarmClock $AndroidProject/app/libs/app/libs/armeabi/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm
 # export GOARCH=mips
 # go build -ldflags="-w -s"
 # mv workdayAlarmClock build/workdayAlarmClock-linux-mips
 export GOARCH=arm64
 go build -ldflags="-w -s"
+mkdir -p $AndroidProject/app/libs/app/libs/arm64-v8a
+cp workdayAlarmClock $AndroidProject/app/libs/app/libs/arm64-v8a/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm64
 export GOOS=darwin
 go build -ldflags="-w -s"
