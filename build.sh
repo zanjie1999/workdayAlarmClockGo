@@ -13,7 +13,7 @@ go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-linux
 export GOARCH=arm
 go build -ldflags="-w -s"
-mkdir -p $AndroidProject/app/libs/app/libs/armeabi
+mkdir -p $AndroidProject/app/libs/armeabi
 cp workdayAlarmClock $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm
 # export GOARCH=mips
@@ -21,7 +21,7 @@ mv workdayAlarmClock build/workdayAlarmClock-linux-arm
 # mv workdayAlarmClock build/workdayAlarmClock-linux-mips
 export GOARCH=arm64
 go build -ldflags="-w -s"
-mkdir -p $AndroidProject/app/libs/app/libs/arm64-v8a
+mkdir -p $AndroidProject/app/libs/arm64-v8a
 cp workdayAlarmClock $AndroidProject/app/libs/arm64-v8a/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-arm64
 export GOOS=darwin
