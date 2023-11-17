@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"os/exec"
+	"syscall"
 	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
@@ -20,8 +22,11 @@ var (
 	// 是否停止播放
 	IsStop = true
 	// 当前的播放列表
-	PlayList = []string{}
-	IsAlarm  = false
+	PlayList    = []string{}
+	IsAlarm     = false
+	UnixCmd     *exec.Cmd
+	LastUrl     = ""
+	ShellPlayer = "play"
 )
 
 // 下一首
@@ -64,14 +69,20 @@ func PlayPlaylist(id string, random bool) {
 // 播放url音乐
 func PlayUrl(url string) {
 	IsStop = false
+	LastUrl = url
 	if conf.IsApp {
 		fmt.Println("PLAY " + url)
 	} else {
-		LinuxPlayUrl(url)
+		go UnixPlayUrl(url)
 	}
 }
 
 func Stop() {
+	// 如果还有没放完的闹钟就被掐掉了 那么把那首还回去下次继续抽
+	if IsAlarm && len(PlayList) > 0 {
+		conf.Cfg.NePlayed = conf.Cfg.NePlayed[len(PlayList):]
+		conf.Save()
+	}
 	PlayList = []string{}
 	if conf.IsApp {
 		fmt.Println("STOP")
@@ -80,9 +91,12 @@ func Stop() {
 			fmt.Println("VOL " + conf.Cfg.VolDefault)
 		}
 	} else {
-		IsStop = true
-		exec.Command("killall", "play").Run()
+		// exec.Command("killall", "play").Run()
+		if UnixCmd != nil {
+			log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
+		}
 	}
+	IsStop = true
 }
 
 // 播放闹钟音乐 时间到时调用
@@ -105,7 +119,7 @@ func PlayAlarm() {
 		})
 		for _, id := range ids {
 			// 放完一次了 重置
-			if len(conf.Cfg.NePlayed)+2 >= len(ids) {
+			if len(conf.Cfg.NePlayed)+1 >= len(ids) {
 				conf.Cfg.NePlayed = []string{}
 			}
 			if len(PlayList) == 2 {
@@ -161,42 +175,52 @@ func PlayAlarm() {
 // 	select {}
 // }
 
-// apt install sox
-func LinuxPlayUrl(url string) {
-	cmd := exec.Command("curl -L -k " + url + " > 1.mp3")
-	err := cmd.Start()
+// Linux: apt install sox
+// macOS: brew install sox
+func UnixPlayUrl(url string) {
+	log.Println("start play:" + url)
+	if UnixCmd != nil {
+		// 需要先kill掉之前的
+		UnixCmd.Process.Signal(syscall.SIGINT)
+	}
+	pwd, _ := os.Getwd()
+	log.Println("shell: ", "curl", "-L", "-k", url, "-o", pwd+"/play.mp3")
+	UnixCmd = exec.Command("curl", "-L", "-k", url, "-o", pwd+"/play.mp3")
+	err := UnixCmd.Start()
 	if err != nil {
 		log.Println("run curl error:" + err.Error())
-		// return
+		return
 	}
-	err = cmd.Wait()
+	err = UnixCmd.Wait()
 	if err != nil {
 		log.Println("wait curl error:" + err.Error())
-		// return
-	}
-
-	cmd = exec.Command("play 1.mp3")
-	err = cmd.Start()
-	if err != nil {
-		log.Println("run sox play error:" + err.Error())
-		return
-	}
-	err = cmd.Wait()
-	if err != nil {
-		log.Println("wait sox play error:" + err.Error())
 		return
 	}
 
-	cmd = exec.Command("play 1.mp3")
-	err = cmd.Start()
+	log.Println("shell: ", ShellPlayer, pwd+"/play.mp3")
+	UnixCmd = exec.Command(ShellPlayer, pwd+"/play.mp3")
+	err = UnixCmd.Start()
 	if err != nil {
-		log.Println("run rm error:" + err.Error())
+		log.Println("run " + ShellPlayer + " error:" + err.Error())
 		return
 	}
-	err = cmd.Wait()
+	err = UnixCmd.Wait()
 	if err != nil {
-		log.Println("wait rm error:" + err.Error())
+		log.Println("wait", ShellPlayer, " error:"+err.Error())
 		return
+	}
+	if !IsStop && LastUrl == url {
+		// 相等说明不是被外部中断是放完了或者类似mac的open那样不阻塞的
+		time.Sleep(time.Second)
+		os.Remove("play.mp3")
+		// err = os.Remove("play.mp3")
+		// for err != nil {
+		// 	// 文件被占用即为正在播放
+		// 	time.Sleep(time.Second)
+		// 	err = os.Remove("play.mp3")
+		// }
+		log.Println("end play:" + url)
+		Next()
 	}
 }
 

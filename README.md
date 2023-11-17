@@ -13,3 +13,11 @@
 4. 小爱音响断网后闹钟不会响
 5. 闹钟随机音乐不能放我喜欢的歌
 6. 随机播放重复概率过高
+
+## 如何使用
+Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
+其他系统需要安装sox和curl，并且暂停，音量控制不可用  
+Linux: `包管理器比如apt或者yum等 install sox curl`  
+macOS: `brew install sox curl`  
+Windows：这样启动 `workdayAlarmClock 你的播放器路径`
+

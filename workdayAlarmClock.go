@@ -17,7 +17,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "2.2"
+var VERSION = "3.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -83,9 +83,16 @@ func shellInput() {
 
 func main() {
 	// libWorkdayAlarmClock.so app
-	if len(os.Args) > 1 && os.Args[1] == "app" {
-		conf.IsApp = true
-		httpme.SetDns("223.6.6.6:53")
+	if len(os.Args) > 1 {
+		if os.Args[1] == "app" {
+			conf.IsApp = true
+			httpme.SetDns("223.6.6.6:53")
+		} else {
+			player.ShellPlayer = os.Args[1]
+		}
+	}
+	if !conf.IsApp {
+		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}
 	conf.Init()
 	// 设置时区

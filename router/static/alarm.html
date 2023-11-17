@@ -35,7 +35,7 @@
         <h3>兜底音乐</h3>
         在断网时将使用此音乐播放<br>
         <input type="file" name="file"><button type="submit">上传</button>
-        <br><a href="/play?url=http://127.0.0.1:8080/music.mp3">用音响播放</a> <a href="/deleteMp3">删除</a> <a href="/music.mp3">下载(长按/右键另存为)</a>
+        <br><a href="/play?url=http://127.0.0.1:8080/music.mp3">用音响播放</a> <a href="/devareMp3">删除</a> <a href="/music.mp3">下载(长按/右键另存为)</a>
     </form>
     <form action="/uploadCfg" method="post" action enctype="multipart/form-data">
         <h3>备份与恢复</h3>
@@ -47,24 +47,24 @@
     <script>
         // 打开页面后请求cfg.json，获取闹钟列表
         function getAlarms() {
-            let xhr = new XMLHttpRequest();
+            var xhr = new XMLHttpRequest();
             xhr.open('GET', '/cfg.json?t=' + Date.now(), true);
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
-                    let d = JSON.parse(xhr.responseText);
+                    var d = JSON.parse(xhr.responseText);
                     document.getElementById('volDefault').value = d.volDefault;
                     document.getElementById('volAlarm').value = d.volAlarm;
                     document.getElementById('nePlayListId').value = d.nePlayListId;
                     document.getElementById('tz').value = d.tz;
-                    let html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
-                    for (let hhmm of Object.keys(d.alarm)) {
-                        let t = d.alarm[hhmm];
+                    var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
+                    for (var hhmm of Object.keys(d.alarm)) {
+                        var t = d.alarm[hhmm];
                         t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 3 ? '每天' : '未知';
                         html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }
                     document.getElementById('alarms').innerHTML = html;
                     html = '当前已播放 ' + d.nePlayed.length + ' 首<br>'; 
-                    for (let i = d.nePlayed.length - 1; i >=0; i--) {
+                    for (var i = d.nePlayed.length - 1; i >=0; i--) {
                         html += '<a href="https://music.163.com/#/song?id=' + d.nePlayed[i] + '">' + d.nePlayed[i] + '</a><br>';
                     }
                     document.getElementById('info').innerHTML = html;

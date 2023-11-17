@@ -230,6 +230,16 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 	})
 
+	// 当前状态
+	root.GET("/status", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"isStop":   player.IsStop,
+			"playList": player.PlayList,
+			"isAlarm":  player.IsAlarm,
+			"lastUrl":  player.LastUrl,
+		})
+	})
+
 	root.GET("/restart", func(c *gin.Context) {
 		fmt.Println("RESTART")
 		os.Exit(0)

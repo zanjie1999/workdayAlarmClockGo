@@ -11,6 +11,8 @@
         <h1>工作咩闹钟</h1>
     </div>
     <br>
+    <div class="linemode" id="statusMsg"></div>
+    <br>
     <div class="linemode">
         <form action="/stop">
             <button type="submit">停止</button>
@@ -50,12 +52,12 @@
     </div>
     <script>
         function plalist() {
-            let m = /playlist\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+            var m = /playlist\?id=(\d+)/.exec(document.getElementById('playlistId').value);
             if (m) {
                 // 歌单分享链接
                 document.getElementById('playlistId').value = m[1];
             } else {
-                let m = /song\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+                var m = /song\?id=(\d+)/.exec(document.getElementById('playlistId').value);
                 if (m) {
                     // 歌曲分享链接
                     document.getElementById('playUrl').value = "http://music.163.com/song/media/outer/url?id=" + m[1];
@@ -65,6 +67,23 @@
             }
             return true;
         }
+        // 状态信息
+        function getStatus() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/status?t=' + Date.now(), true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    var d = JSON.parse(xhr.responseText);
+                    var msg = d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
+                    + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
+                    + (d.lastUrl ? '<a href="' + d.lastUrl + '">正在播放</a>' : '');
+                    document.getElementById('statusMsg').innerHTML = msg;
+                }
+            }
+            xhr.send();
+        }
+        window.onload = getStatus;
+        window.onfocus = getStatus;
     </script>
 </body>
 </html>
