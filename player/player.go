@@ -10,23 +10,26 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
 	"os/exec"
 	"syscall"
 	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
+	"workdayAlarmClock/weather"
 )
 
 var (
 	// 是否停止播放
 	IsStop = true
 	// 当前的播放列表
-	PlayList    = []string{}
-	IsAlarm     = false
-	UnixCmd     *exec.Cmd
-	LastUrl     = ""
-	ShellPlayer = "play"
+	PlayList      = []string{}
+	IsAlarm       = false
+	IsPlayWeather = false
+	UnixCmd       *exec.Cmd
+	LastUrl       = ""
+	ShellPlayer   = "play"
 )
 
 // 下一首
@@ -66,6 +69,14 @@ func PlayPlaylist(id string, random bool) {
 	Next()
 }
 
+// 播放天气 请不要拿api滥用谢谢
+func PlayWeather() {
+	msg := weather.GetWeather("")
+	if msg != "" {
+		PlayUrl("https://tts.zyym.eu.org/m=" + url.QueryEscape(msg))
+	}
+}
+
 // 播放url音乐
 func PlayUrl(url string) {
 	IsStop = false
@@ -86,14 +97,21 @@ func Stop() {
 	PlayList = []string{}
 	if conf.IsApp {
 		fmt.Println("STOP")
-		if IsAlarm {
-			IsAlarm = false
-			fmt.Println("VOL " + conf.Cfg.VolDefault)
-		}
 	} else {
 		// exec.Command("killall", "play").Run()
 		if UnixCmd != nil {
 			log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
+		}
+	}
+	if IsAlarm {
+		IsAlarm = false
+		IsPlayWeather = true
+		// 结束闹钟时播放天气
+		PlayWeather()
+	} else if IsPlayWeather {
+		IsPlayWeather = false
+		if conf.IsApp {
+			fmt.Println("VOL " + conf.Cfg.VolDefault)
 		}
 	}
 	IsStop = true
