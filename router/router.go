@@ -17,6 +17,7 @@ import (
 	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
+	"workdayAlarmClock/weather"
 
 	"github.com/gin-gonic/gin"
 )
@@ -166,6 +167,7 @@ func Init(urlPrefix string) *gin.Engine {
 		volAlarm := c.Query("volAlarm")
 		VolDefault := c.Query("volDefault")
 		Tz := c.Query("tz")
+		WeatherCityCode := c.Query("weatherCityCode")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -185,6 +187,7 @@ func Init(urlPrefix string) *gin.Engine {
 				time.Local = time.FixedZone("UTC+", tz*3600)
 			}
 		}
+		conf.Cfg.WeatherCityCode = WeatherCityCode
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
@@ -238,6 +241,22 @@ func Init(urlPrefix string) *gin.Engine {
 			"isAlarm":  player.IsAlarm,
 			"lastUrl":  player.LastUrl,
 		})
+	})
+
+	// 天气api
+	root.GET("/getWeatherCityCode", func(c *gin.Context) {
+		q := c.Query("q")
+		code, _, err := weather.GetCityCode(q)
+		if err != nil {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(err.Error()))
+		} else {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(code))
+		}
+	})
+
+	root.GET("/getWeather", func(c *gin.Context) {
+		code := c.Query("code")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(weather.GetWeather(code)))
 	})
 
 	root.GET("/restart", func(c *gin.Context) {

@@ -13,12 +13,19 @@ import (
 )
 
 type Config struct {
-	VolDefault   string         `json:"volDefault"`
-	VolAlarm     string         `json:"volAlarm"`
-	Alarm        map[string]int `json:"alarm"`
-	NePlayListId string         `json:"nePlayListId"`
-	NePlayed     []string       `json:"nePlayed"`
-	Tz           int            `json:"tz"`
+	VolDefault      string         `json:"volDefault"`
+	VolAlarm        string         `json:"volAlarm"`
+	Alarm           map[string]int `json:"alarm"`
+	NePlayListId    string         `json:"nePlayListId"`
+	NePlayed        []string       `json:"nePlayed"`
+	Tz              int            `json:"tz"`
+	WeatherCityCode string         `json:"weatherCityCode"`
+	Today           string         `json:"today"`
+	TodayFc         int            `json:"todayFc"`
+	TodayFd         int            `json:"todayFd"`
+	Lastday         string         `json:"lastday"`
+	LastdayFc       int            `json:"lastdayFc"`
+	LastdayFd       int            `json:"lastdayFd"`
 }
 
 var (

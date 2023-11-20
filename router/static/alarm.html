@@ -29,7 +29,9 @@
         闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
         时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
+        天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
         <br><button type="submit">保存设置</button>
+        <br><br><a href="/getWeather">测试获取天气</a><br>
     </form>
     <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
         <h3>兜底音乐</h3>
@@ -45,6 +47,17 @@
     </form>
     <div id="info" ></div>
     <script>
+        function getCityCode() {
+            var xhr = new XMLHttpRequest();
+            var inp = document.getElementById('weatherCityCode')
+            xhr.open('GET', '/getWeatherCityCode?q=' + inp.value, true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    inp.value = xhr.responseText
+                }
+            }
+            xhr.send();
+        }
         // 打开页面后请求cfg.json，获取闹钟列表
         function getAlarms() {
             var xhr = new XMLHttpRequest();
