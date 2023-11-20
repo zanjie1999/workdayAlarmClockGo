@@ -261,7 +261,7 @@ func Init(urlPrefix string) *gin.Engine {
 
 	root.GET("/playWeather", func(c *gin.Context) {
 		player.PlayWeather()
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>今日天气</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播报今日天气</h1>"+js2home))
 	})
 
 	root.GET("/restart", func(c *gin.Context) {
