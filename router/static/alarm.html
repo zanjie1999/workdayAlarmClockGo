@@ -30,8 +30,9 @@
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
         时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
         天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
-        <br><button type="submit">保存设置</button>
-        <br><br><a href="/getWeather">测试获取天气</a> <a href="/playWeather">播报今日天气</a>
+        <button type="submit">保存设置</button>
+        <br><br><div id="weatherMsg" ></div>
+        <a href="/getWeather">测试获取天气</a> <a href="/playWeather">播报今日天气</a>
     </form>
     <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
         <h3>兜底音乐</h3>
@@ -81,6 +82,8 @@
                         html += '<a href="https://music.163.com/#/song?id=' + d.nePlayed[i] + '">' + d.nePlayed[i] + '</a><br>';
                     }
                     document.getElementById('info').innerHTML = html;
+                    html = '昨天 '+ d.lastday + ' ' + d.lastdayFc + '到' + d.lastdayFd + '度<br>今天 '+ d.today + ' ' + d.todayFc + '到' + d.todayFd + '度';
+                    document.getElementById('weatherMsg').innerHTML = html;
                 }
             }
             xhr.send();

@@ -13,11 +13,12 @@ import (
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/router"
+	"workdayAlarmClock/weather"
 
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "4.0"
+var VERSION = "4.1"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -42,6 +43,9 @@ func timer() {
 		hhmm := time.Now().Format("1504")
 		if hhmm == "0000" {
 			workDayApi()
+		}
+		if hhmm == "2300" {
+			weather.GetWeather("")
 		}
 		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
 			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 {
