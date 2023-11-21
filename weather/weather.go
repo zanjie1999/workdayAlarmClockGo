@@ -47,6 +47,10 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, error) {
 			log.Println("GetWeather 请求出错", err)
 			return nil, nil, err
 		}
+		if resp.R.Request.URL.Path == "/other/weather_error_404.html" {
+			return nil, nil, errors.New("code错误")
+		}
+
 		// 如果code不对会炸无法判断
 		str := resp.Text()
 
@@ -70,11 +74,11 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, error) {
 		log.Println("GetWeather fc", jsonFC)
 
 		var sk, fc map[string]string
-		err = json.Unmarshal([]byte(jsonDataSK), &sk)
+		err = json.Unmarshal([]byte(jsonFC), &fc)
 		if err != nil {
 			return sk, fc, err
 		}
-		err = json.Unmarshal([]byte(jsonFC), &fc)
+		err = json.Unmarshal([]byte(jsonDataSK), &sk)
 		if err != nil {
 			return sk, fc, err
 		}
@@ -119,6 +123,8 @@ func GetWeather(code string) string {
 			}
 			msg += "现在" + sk["temp"] + "度"
 			return msg
+		} else {
+			return err.Error()
 		}
 	}
 	return ""

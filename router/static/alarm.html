@@ -70,6 +70,7 @@
                     document.getElementById('volAlarm').value = d.volAlarm;
                     document.getElementById('nePlayListId').value = d.nePlayListId;
                     document.getElementById('tz').value = d.tz;
+                    document.getElementById('weatherCityCode').value = d.weatherCityCode;
                     var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var t = d.alarm[hhmm];
@@ -89,7 +90,7 @@
             xhr.send();
         }
         window.onload = getAlarms;
-        window.onfocus = getAlarms;
+        // window.onfocus = getAlarms;
     </script>
 </body>
 </html>
