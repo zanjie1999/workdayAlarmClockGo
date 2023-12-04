@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "4.2"
+var VERSION = "5.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -40,15 +40,16 @@ func workDayApi() {
 // 定时器 go timer()
 func timer() {
 	for {
-		hhmm := time.Now().Format("1504")
+		now := time.Now()
+		hhmm := now.Format("1504")
 		if hhmm == "0000" {
 			workDayApi()
 		}
-		if hhmm == "2300" {
+		if hhmm == conf.Cfg.WeatherUpdate {
 			weather.GetWeather("")
 		}
 		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
-			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 {
+			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 || dayType == int(now.Weekday())+5 {
 				log.Println("闹钟时间到", hhmm)
 				player.PlayAlarm()
 			} else if dayType == 3 {

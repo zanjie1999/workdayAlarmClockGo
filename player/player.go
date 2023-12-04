@@ -18,6 +18,8 @@ import (
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/weather"
+
+	"github.com/zanjie1999/httpme"
 )
 
 var (
@@ -69,11 +71,11 @@ func PlayPlaylist(id string, random bool) {
 	Next()
 }
 
-// 播放天气 请不要拿api滥用谢谢
-func PlayWeather() {
+// 预下载播报的天气 请不要拿api滥用谢谢
+func DownWeather() {
 	msg := weather.GetWeather("")
 	if msg != "" {
-		PlayUrl("https://tts.zyym.eu.org/m=" + url.QueryEscape(msg))
+		downloadFile("https://tts.zyym.eu.org/m="+url.QueryEscape(msg), "weather.mp3")
 	}
 }
 
@@ -107,7 +109,7 @@ func Stop() {
 		IsAlarm = false
 		IsPlayWeather = true
 		// 结束闹钟时播放天气
-		PlayWeather()
+		PlayUrl("http://127.0.0.1:8080/weather.mp3")
 	} else if IsPlayWeather {
 		IsPlayWeather = false
 		if conf.IsApp {
@@ -125,6 +127,8 @@ func PlayAlarm() {
 	}
 	PlayList = []string{}
 	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
+	// 预下载天气信息
+	go DownWeather()
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")
@@ -169,6 +173,16 @@ func PlayAlarm() {
 	}
 }
 
+// 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
+func downloadFile(url string, filename string) error {
+	resp, err := httpme.Get(url)
+	if err != nil {
+		return err
+	}
+	resp.SaveFile(filename)
+	return nil
+}
+
 // beep库 win 和linux alsa可以用 android不行
 // func BeepPlayUrl(url string) {
 // 	request, err := http.NewRequest("GET", url, nil)
@@ -202,16 +216,9 @@ func UnixPlayUrl(url string) {
 		UnixCmd.Process.Signal(syscall.SIGINT)
 	}
 	pwd, _ := os.Getwd()
-	log.Println("shell: ", "curl", "-L", "-k", url, "-o", pwd+"/play.mp3")
-	UnixCmd = exec.Command("curl", "-L", "-k", url, "-o", pwd+"/play.mp3")
-	err := UnixCmd.Start()
+	err := downloadFile(url, pwd+"/play.mp3")
 	if err != nil {
-		log.Println("run curl error:" + err.Error())
-		return
-	}
-	err = UnixCmd.Wait()
-	if err != nil {
-		log.Println("wait curl error:" + err.Error())
+		log.Println("download error:" + err.Error())
 		return
 	}
 
@@ -229,14 +236,15 @@ func UnixPlayUrl(url string) {
 	}
 	if !IsStop && LastUrl == url {
 		// 相等说明不是被外部中断是放完了或者类似mac的open那样不阻塞的
-		time.Sleep(time.Second)
-		os.Remove("play.mp3")
-		// err = os.Remove("play.mp3")
-		// for err != nil {
-		// 	// 文件被占用即为正在播放
-		// 	time.Sleep(time.Second)
-		// 	err = os.Remove("play.mp3")
-		// }
+		// time.Sleep(time.Second)
+		// os.Remove("play.mp3")
+		// // err = os.Remove("play.mp3")
+		// // for err != nil {
+		// // 	// 文件被占用即为正在播放
+		// // 	time.Sleep(time.Second)
+		// // 	err = os.Remove("play.mp3")
+		// // }
+		// 不删吧留着吧不差这点存储空间
 		log.Println("end play:" + url)
 		Next()
 	}

@@ -54,6 +54,7 @@ func Init(urlPrefix string) *gin.Engine {
 
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
+	root.StaticFile("/weather.mp3", "./weather.mp3")
 
 	root.GET("/hello", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -168,6 +169,7 @@ func Init(urlPrefix string) *gin.Engine {
 		VolDefault := c.Query("volDefault")
 		Tz := c.Query("tz")
 		WeatherCityCode := c.Query("weatherCityCode")
+		WeatherUpdate := c.Query("weatherUpdate")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -188,6 +190,7 @@ func Init(urlPrefix string) *gin.Engine {
 			}
 		}
 		conf.Cfg.WeatherCityCode = WeatherCityCode
+		conf.Cfg.WeatherUpdate = WeatherUpdate
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
@@ -259,9 +262,9 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(weather.GetWeather(code)))
 	})
 
-	root.GET("/playWeather", func(c *gin.Context) {
-		player.PlayWeather()
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播报今日天气</h1>"+js2home))
+	root.GET("/downWeather", func(c *gin.Context) {
+		player.DownWeather()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>下载完毕</h1>"+js2home))
 	})
 
 	root.GET("/restart", func(c *gin.Context) {

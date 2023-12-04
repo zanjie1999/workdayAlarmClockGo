@@ -20,6 +20,13 @@
             <option value="2">法定休息日</option>
             <option value="3">一次</option>
             <option value="4">每天</option>
+            <option value="5">周日</option>
+            <option value="6">周一</option>
+            <option value="7">周二</option>
+            <option value="8">周三</option>
+            <option value="9">周四</option>
+            <option value="10">周五</option>
+            <option value="11">周六</option>
         </select>
     </form>
     <a href="/testAlarm">模拟闹钟</a><br><br>
@@ -30,9 +37,10 @@
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
         时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
         天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
+        更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm">每天更新用于作为记录的昨天天气<br>
         <button type="submit">保存设置</button>
         <br><br><div id="weatherMsg" ></div>
-        <a href="/getWeather">测试获取天气</a> <a href="/playWeather">播报今日天气</a>
+        <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
     </form>
     <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
         <h3>兜底音乐</h3>
@@ -71,10 +79,11 @@
                     document.getElementById('nePlayListId').value = d.nePlayListId;
                     document.getElementById('tz').value = d.tz;
                     document.getElementById('weatherCityCode').value = d.weatherCityCode;
+                    document.getElementById('weatherUpdate').value = d.weatherUpdate;
                     var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var t = d.alarm[hhmm];
-                        t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 3 ? '每天' : '未知';
+                        t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 4 ? '每天' : t == 5 ? '周日' : t == 6 ? '周一' : t == 7 ? '周二' : t == 8 ? '周三' : t == 9 ? '周四' : t == 10 ? '周五' : t == 11 ? '周六' : '未知';
                         html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }
                     document.getElementById('alarms').innerHTML = html;

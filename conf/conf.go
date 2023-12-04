@@ -26,6 +26,7 @@ type Config struct {
 	Lastday         string         `json:"lastday"`
 	LastdayFc       int            `json:"lastdayFc"`
 	LastdayFd       int            `json:"lastdayFd"`
+	WeatherUpdate   string         `json:"weatherUpdate"`
 }
 
 var (
@@ -50,6 +51,8 @@ var (
 		VolDefault: "50",
 		// 时区
 		Tz: 8,
+		// 默认更新天气的时间
+		WeatherUpdate: "0700",
 	}
 )
 
