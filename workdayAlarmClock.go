@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "5.0"
+var VERSION = "6.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -77,6 +77,8 @@ func shellInput() {
 				player.Stop()
 			case "next":
 				player.Next()
+			case "prev":
+				player.Prev()
 			case "exit":
 				os.Exit(0)
 			default:

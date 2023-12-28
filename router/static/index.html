@@ -31,11 +31,14 @@
         <form action="/volp">
             <button type="submit">音量加</button>
         </form>
+        <form action="/prev">
+            <button type="submit">上一首</button>
+        </form>
         <form action="/next">
             <button type="submit">下一首</button>
         </form>
     </div>
-    <form action="/play" id="playUrlForm">
+    <form action="/play" id="playUrlForm" onsubmit="return playurl()">
         <button type="submit">播放url</button>
         <input type="text" name="url" id="playUrl" value="http://127.0.0.1:8080/static/music.mp3">
     </form>
@@ -52,20 +55,27 @@
     </div>
     <script>
         function plalist() {
-            var m = /playlist\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+            var pl = document.getElementById('playlistId').value
+            var m = /playlist\?id=(\d+)/.exec(pl);
             if (m) {
                 // 歌单分享链接
                 document.getElementById('playlistId').value = m[1];
+                localStorage.setItem('lastPlayList', m[1]);
             } else {
-                var m = /song\?id=(\d+)/.exec(document.getElementById('playlistId').value);
+                var m = /song\?id=(\d+)/.exec(pl);
                 if (m) {
                     // 歌曲分享链接
                     document.getElementById('playUrl').value = "http://music.163.com/song/media/outer/url?id=" + m[1];
                     document.getElementById('playUrlForm').submit();
                     return false
+                } else {
+                    localStorage.setItem('lastPlayList', pl);
                 }
             }
             return true;
+        }
+        function playurl() {
+            localStorage.setItem('lastPlayUrl', document.getElementById('playUrl').value);
         }
         // 状态信息
         function getStatus() {
@@ -81,9 +91,23 @@
                 }
             }
             xhr.send();
+
+            var lastPlayUrl = localStorage.getItem('lastPlayUrl')
+            if (lastPlayUrl) {
+                document.getElementById('playUrl').value = lastPlayUrl
+            }
+            var lastPlayList = localStorage.getItem('lastPlayList')
+            if (lastPlayList) {
+                document.getElementById('playlistId').value = lastPlayList
+            }
         }
         window.onload = getStatus;
         // window.onfocus = getStatus;
+        window.addEventListener('pageshow', function(event) {
+        if (event.persisted || (typeof window.performance != 'undefined' && window.performance.navigation.type === 2)) {
+            getStatus();
+        }
+});
     </script>
 </body>
 </html>

@@ -17,6 +17,7 @@ type Config struct {
 	VolAlarm        string         `json:"volAlarm"`
 	Alarm           map[string]int `json:"alarm"`
 	NePlayListId    string         `json:"nePlayListId"`
+	DefPlayListId   string         `json:"defPlayListId"`
 	NePlayed        []string       `json:"nePlayed"`
 	Tz              int            `json:"tz"`
 	WeatherCityCode string         `json:"weatherCityCode"`
@@ -43,6 +44,8 @@ var (
 		},
 		// 闹钟歌单
 		NePlayListId: "2236121100",
+		// 按上一曲时默认歌单
+		DefPlayListId: "2236121100",
 		// 已经播放过的歌曲
 		NePlayed: []string{},
 		// 闹钟音量

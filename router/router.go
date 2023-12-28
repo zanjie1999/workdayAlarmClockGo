@@ -28,7 +28,7 @@ import (
 var f embed.FS
 
 var (
-	js2home = "\n<script>setInterval(function(){window.history.back()},3000);</script>"
+	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
 	js2back = "<script>window.history.go(-1)</script>"
 )
 
@@ -60,6 +60,10 @@ func Init(urlPrefix string) *gin.Engine {
 		c.JSON(200, gin.H{
 			"message": "Hello World!",
 		})
+	})
+
+	root.GET("/prev", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>"+player.Prev()+"</h2>"+js2home))
 	})
 
 	root.GET("/next", func(c *gin.Context) {

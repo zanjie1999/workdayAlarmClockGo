@@ -35,9 +35,12 @@
         默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
         闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
+        默认歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
+        （在没有上一首时按上一首时播放该歌单）<br>
         时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
         天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
-        更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm">每天更新用于作为记录的昨天天气<br>
+        更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm"><br>
+        （每天定时更新保存作为昨天天气）<br>
         <button type="submit">保存设置</button>
         <br><br><div id="weatherMsg" ></div>
         <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
@@ -100,6 +103,9 @@
         }
         window.onload = getAlarms;
         // window.onfocus = getAlarms;
+        if (event.persisted || (typeof window.performance != 'undefined' && window.performance.navigation.type === 2)) {
+            getAlarms();
+        }
     </script>
 </body>
 </html>

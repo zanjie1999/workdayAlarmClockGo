@@ -31,8 +31,43 @@ var (
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
 	LastUrl       = ""
+	PrevUrl       = ""
 	ShellPlayer   = "play"
+	PrevRdmFlag   = false
 )
+
+// 上一首 或一键者播放指定歌单
+// 第一次按上一首键会放上一曲（如果有)，第二次会顺序播放歌单，第三次会随机播放歌单（如果没有放完一首）
+func Prev() string {
+	if PrevUrl != "" {
+		PrevRdmFlag = false
+	}
+	if PrevRdmFlag {
+		PrevRdmFlag = false
+		// LastUrl = ""
+		// PlayPlaylist(conf.Cfg.DefPlayListId, true)
+		// return "随机播放歌单" + conf.Cfg.DefPlayListId
+		// 不重新获取 直接随机当前播放列表
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(PlayList), func(i, j int) {
+			PlayList[i], PlayList[j] = PlayList[j], PlayList[i]
+		})
+		Next()
+		return "随机播放列表"
+	} else if PrevUrl != "" {
+		PlayList = append([]string{LastUrl}, PlayList...)
+		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
+		LastUrl = ""
+		PlayUrl(PrevUrl)
+		return "上一首"
+	} else {
+		PrevRdmFlag = true
+		// 不清空就会在播放歌单和上一首之间循环
+		LastUrl = ""
+		PlayPlaylist(conf.Cfg.DefPlayListId, false)
+		return "播放歌单" + conf.Cfg.DefPlayListId
+	}
+}
 
 // 下一首
 func Next() string {
@@ -52,7 +87,7 @@ func Next() string {
 			}
 		} else {
 			Stop()
-			return "stop"
+			return "停止播放"
 		}
 	}
 }
@@ -82,6 +117,7 @@ func DownWeather() {
 // 播放url音乐
 func PlayUrl(url string) {
 	IsStop = false
+	PrevUrl = LastUrl
 	LastUrl = url
 	if conf.IsApp {
 		fmt.Println("PLAY " + url)
@@ -91,6 +127,7 @@ func PlayUrl(url string) {
 }
 
 func Stop() {
+	PrevRdmFlag = false
 	// 如果还有没放完的闹钟就被掐掉了 那么把那首还回去下次继续抽
 	if IsAlarm && len(PlayList) > 0 {
 		conf.Cfg.NePlayed = conf.Cfg.NePlayed[len(PlayList):]
