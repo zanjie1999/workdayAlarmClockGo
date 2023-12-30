@@ -44,7 +44,8 @@ func Prev() string {
 	}
 	if PrevRdmFlag {
 		PrevRdmFlag = false
-		// LastUrl = ""
+		LastUrl = ""
+		PrevUrl = ""
 		// PlayPlaylist(conf.Cfg.DefPlayListId, true)
 		// return "随机播放歌单" + conf.Cfg.DefPlayListId
 		// 不重新获取 直接随机当前播放列表
@@ -64,6 +65,7 @@ func Prev() string {
 		PrevRdmFlag = true
 		// 不清空就会在播放歌单和上一首之间循环
 		LastUrl = ""
+		PrevUrl = ""
 		PlayPlaylist(conf.Cfg.DefPlayListId, false)
 		return "播放歌单" + conf.Cfg.DefPlayListId
 	}
