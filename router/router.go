@@ -246,7 +246,8 @@ func Init(urlPrefix string) *gin.Engine {
 			"isStop":   player.IsStop,
 			"playList": player.PlayList,
 			"isAlarm":  player.IsAlarm,
-			"lastUrl":  player.LastUrl,
+			"NowUrl":   player.NowUrl,
+			"PrevUrl":  player.PrevUrl,
 		})
 	})
 

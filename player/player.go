@@ -30,7 +30,7 @@ var (
 	IsAlarm       = false
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
-	LastUrl       = ""
+	NowUrl        = ""
 	PrevUrl       = ""
 	ShellPlayer   = "play"
 	PrevRdmFlag   = false
@@ -44,7 +44,7 @@ func Prev() string {
 	}
 	if PrevRdmFlag {
 		PrevRdmFlag = false
-		LastUrl = ""
+		NowUrl = ""
 		PrevUrl = ""
 		// PlayPlaylist(conf.Cfg.DefPlayListId, true)
 		// return "随机播放歌单" + conf.Cfg.DefPlayListId
@@ -56,15 +56,15 @@ func Prev() string {
 		Next()
 		return "随机播放列表"
 	} else if PrevUrl != "" {
-		PlayList = append([]string{LastUrl}, PlayList...)
+		PlayList = append([]string{NowUrl}, PlayList...)
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
-		LastUrl = ""
+		NowUrl = ""
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
 		PrevRdmFlag = true
 		// 不清空就会在播放歌单和上一首之间循环
-		LastUrl = ""
+		NowUrl = ""
 		PrevUrl = ""
 		PlayPlaylist(conf.Cfg.DefPlayListId, false)
 		return "播放歌单" + conf.Cfg.DefPlayListId
@@ -119,8 +119,8 @@ func DownWeather() {
 // 播放url音乐
 func PlayUrl(url string) {
 	IsStop = false
-	PrevUrl = LastUrl
-	LastUrl = url
+	PrevUrl = NowUrl
+	NowUrl = url
 	if conf.IsApp {
 		fmt.Println("PLAY " + url)
 	} else {
@@ -130,6 +130,8 @@ func PlayUrl(url string) {
 
 func Stop() {
 	PrevRdmFlag = false
+	PrevUrl = NowUrl
+	NowUrl = ""
 	// 如果还有没放完的闹钟就被掐掉了 那么把那首还回去下次继续抽
 	if IsAlarm && len(PlayList) > 0 {
 		conf.Cfg.NePlayed = conf.Cfg.NePlayed[len(PlayList):]
@@ -273,7 +275,7 @@ func UnixPlayUrl(url string) {
 		log.Println("wait", ShellPlayer, " error:"+err.Error())
 		return
 	}
-	if !IsStop && LastUrl == url {
+	if !IsStop && NowUrl == url {
 		// 相等说明不是被外部中断是放完了或者类似mac的open那样不阻塞的
 		// time.Sleep(time.Second)
 		// os.Remove("play.mp3")

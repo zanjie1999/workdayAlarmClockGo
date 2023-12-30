@@ -86,7 +86,7 @@
                     var d = JSON.parse(xhr.responseText);
                     var msg = d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
-                    + (d.lastUrl ? '<a href="' + d.lastUrl + '">正在播放</a>' : '');
+                    + (d.NowUrl ? '<a href="' + d.NowUrl + '">正在播放</a>' : '');
                     document.getElementById('statusMsg').innerHTML = msg;
                 }
             }
