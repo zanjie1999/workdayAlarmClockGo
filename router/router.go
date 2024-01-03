@@ -281,11 +281,5 @@ func Init(urlPrefix string) *gin.Engine {
 		os.Exit(0)
 	})
 
-	root.GET("/echo", func(c *gin.Context) {
-		m := c.Query("m")
-		fmt.Println(m)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(m))
-	})
-
 	return r
 }
