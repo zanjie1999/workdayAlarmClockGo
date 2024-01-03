@@ -35,7 +35,7 @@
         默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
         闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
-        默认歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
+        默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
         （在没有上一首时按上一首时播放该歌单）<br>
         时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
         天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
@@ -80,6 +80,7 @@
                     document.getElementById('volDefault').value = d.volDefault;
                     document.getElementById('volAlarm').value = d.volAlarm;
                     document.getElementById('nePlayListId').value = d.nePlayListId;
+                    document.getElementById('defPlayListId').value = d.defPlayListId;
                     document.getElementById('tz').value = d.tz;
                     document.getElementById('weatherCityCode').value = d.weatherCityCode;
                     document.getElementById('weatherUpdate').value = d.weatherUpdate;
