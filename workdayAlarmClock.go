@@ -80,6 +80,9 @@ func shellInput() {
 			case "prev":
 				fmt.Println(player.Prev())
 			case "exit":
+				if conf.IsApp {
+					fmt.Println("程序已退出，可以使用shell命令或使用 echo EXIT 退出App")
+				}
 				os.Exit(0)
 			default:
 				fmt.Println("未知命令", cmd)
