@@ -169,6 +169,7 @@ func Init(urlPrefix string) *gin.Engine {
 	// 更新设置
 	root.GET("/updateCfg", func(c *gin.Context) {
 		nePlayListId := c.Query("nePlayListId")
+		defPlayListId := c.Query("defPlayListId")
 		volAlarm := c.Query("volAlarm")
 		VolDefault := c.Query("volDefault")
 		Tz := c.Query("tz")
@@ -176,6 +177,9 @@ func Init(urlPrefix string) *gin.Engine {
 		WeatherUpdate := c.Query("weatherUpdate")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
+		}
+		if defPlayListId != "" {
+			conf.Cfg.DefPlayListId = defPlayListId
 		}
 		if volAlarm != "" {
 			conf.Cfg.VolAlarm = volAlarm
