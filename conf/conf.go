@@ -39,13 +39,11 @@ var (
 	// 配置
 	Cfg = Config{
 		// 闹钟时间 24小时制hhmm 工作日1 休息日2 一次性3 每天4
-		Alarm: map[string]int{
-			"0710": 1,
-		},
+		Alarm: map[string]int{},
 		// 闹钟歌单
 		NePlayListId: "2236121100",
 		// 按上一曲时默认歌单
-		DefPlayListId: "2236121100",
+		DefPlayListId: "21777546",
 		// 已经播放过的歌曲
 		NePlayed: []string{},
 		// 闹钟音量
