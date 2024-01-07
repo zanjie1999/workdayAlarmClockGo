@@ -108,7 +108,7 @@ func Init(urlPrefix string) *gin.Engine {
 			return
 		}
 		fmt.Println(msg)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+msg+"</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
 	})
 
 	// app暂停播放
