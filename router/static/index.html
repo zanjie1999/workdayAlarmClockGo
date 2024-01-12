@@ -84,7 +84,6 @@
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var d = JSON.parse(xhr.responseText);
-                    debugger
                     var msg = (d.batLevel ? '电量' + d.batLevel + '%<br>' : '')
                     + (d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
