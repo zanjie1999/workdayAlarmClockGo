@@ -246,7 +246,6 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// 当前状态
 	root.GET("/status", func(c *gin.Context) {
-
 		batLevel, _ := os.ReadFile("/sys/class/power_supply/battery/capacity")
 		c.JSON(200, gin.H{
 			"isStop":   player.IsStop,
