@@ -280,7 +280,8 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/restart", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+		// 做不到的，因为要运行完这个方法才会返回
+		// c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 		fmt.Println("RESTART")
 		os.Exit(0)
 	})
