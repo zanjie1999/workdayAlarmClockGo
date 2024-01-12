@@ -84,7 +84,7 @@
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var d = JSON.parse(xhr.responseText);
-                    var msg = (d.batLevel ? '电量' + d.batLevel + '%<br>' : '')
+                    var msg = (d.batLevel ? '电量 ' + d.batLevel.trim() + '%<br>' : '')
                     + (d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
                     + (d.nowUrl ? '<a href="' + d.nowUrl + '">正在播放</a>' : ''));
