@@ -246,12 +246,15 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// 当前状态
 	root.GET("/status", func(c *gin.Context) {
+
+		batLevel, _ := os.ReadFile("/sys/class/power_supply/battery/capacity")
 		c.JSON(200, gin.H{
 			"isStop":   player.IsStop,
 			"playList": player.PlayList,
 			"isAlarm":  player.IsAlarm,
-			"NowUrl":   player.NowUrl,
-			"PrevUrl":  player.PrevUrl,
+			"nowUrl":   player.NowUrl,
+			"prevUrl":  player.PrevUrl,
+			"batLevel": string(batLevel),
 		})
 	})
 
@@ -277,6 +280,7 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/restart", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 		fmt.Println("RESTART")
 		os.Exit(0)
 	})
