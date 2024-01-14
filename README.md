@@ -21,6 +21,18 @@ Linux: `包管理器比如apt或者yum等 install sox curl`
 macOS: `brew install sox curl`  
 Windows：这样启动 `workdayAlarmClock 你的播放器路径`
 
+## 指令
+```shell
+# 停止播放
+stop
+# 下一首
+next
+# 上一首
+prev
+# 退出
+exit
+```
+
 ### 天气播报
 会在每次闹钟停止后（手动停止或播放完自动停止），播报今天的天气和前一天的温度差，以便决定穿什么衣服  
 你需要手动在闹钟设置中输入天气代码的框中输入你的区/市，并点击右边的查询按钮，保存设置后尝试点击“测试获取天气”来检查是否能正常使用  
