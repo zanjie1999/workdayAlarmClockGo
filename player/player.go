@@ -144,6 +144,7 @@ func Stop() {
 		// exec.Command("killall", "play").Run()
 		if UnixCmd != nil {
 			log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
+			log.Println(UnixCmd.Process.Kill())
 		}
 	}
 	if IsAlarm {

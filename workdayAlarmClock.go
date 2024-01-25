@@ -71,6 +71,7 @@ func shellInput() {
 		_, err := fmt.Scanln(&cmd)
 		if err != nil {
 			fmt.Println("输入错误", err)
+			break
 		} else {
 			switch cmd {
 			case "stop":
