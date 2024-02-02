@@ -28,6 +28,7 @@ type Config struct {
 	LastdayFc       int            `json:"lastdayFc"`
 	LastdayFd       int            `json:"lastdayFd"`
 	WeatherUpdate   string         `json:"weatherUpdate"`
+	Wakelock        bool           `json:"wakelock"`
 }
 
 var (
@@ -54,6 +55,8 @@ var (
 		Tz: 8,
 		// 默认更新天气的时间
 		WeatherUpdate: "0700",
+		// Android唤醒锁开
+		Wakelock: true,
 	}
 )
 

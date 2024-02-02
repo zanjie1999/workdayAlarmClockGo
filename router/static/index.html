@@ -104,11 +104,11 @@
         }
         window.onload = getStatus;
         // window.onfocus = getStatus;
-        window.addEventListener('pageshow', function(event) {
-        if (event.persisted || (typeof window.performance != 'undefined' && window.performance.navigation.type === 2)) {
-            getStatus();
+        window.onpageshow = function(event) {
+            if (event.persisted || window.performance && window.performance.navigation.type == 2) {
+                getStatus();
+            }
         }
-});
     </script>
 </body>
 </html>

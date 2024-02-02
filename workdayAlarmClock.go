@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "7.6"
+var VERSION = "8.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -106,6 +106,9 @@ func main() {
 		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}
 	conf.Init()
+	if conf.Cfg.Wakelock {
+		fmt.Println("WAKELOCK")
+	}
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)

@@ -41,6 +41,8 @@
         天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
         更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm"><br>
         （每天定时更新保存作为昨天天气）<br>
+        CPU唤醒锁<input type="checkbox" name="wakelock" id="wakelock" value="1">重启生效<br>
+        （关闭可以最大程度的节省电量，但闹钟可能不响）<br>
         <button type="submit">保存设置</button>
         <br><br><div id="weatherMsg" ></div>
         <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
@@ -84,6 +86,7 @@
                     document.getElementById('tz').value = d.tz;
                     document.getElementById('weatherCityCode').value = d.weatherCityCode;
                     document.getElementById('weatherUpdate').value = d.weatherUpdate;
+                    document.getElementById('wakelock').checked = d.wakelock
                     var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var t = d.alarm[hhmm];
@@ -104,8 +107,10 @@
         }
         window.onload = getAlarms;
         // window.onfocus = getAlarms;
-        if (event.persisted || (typeof window.performance != 'undefined' && window.performance.navigation.type === 2)) {
-            getAlarms();
+        window.onpageshow = function(event) {
+            if (event.persisted || window.performance && window.performance.navigation.type == 2) {
+                getAlarms();
+            }
         }
     </script>
 </body>
