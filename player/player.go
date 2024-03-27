@@ -7,11 +7,10 @@
 package player
 
 import (
-	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
 	"os/exec"
 	"syscall"
@@ -111,53 +110,11 @@ func PlayPlaylist(id string, random bool) {
 
 // 预下载播报的天气
 func DownWeather() {
+	os.Remove("weather.mp3")
 	msg := weather.GetWeather("")
 	if msg != "" {
-		// downloadFile("https://tts.baidu.com/text2audio?lan=zh&ie=UTF-8&cuid=baike&ctp=1&pdt=301&vol=15&rate=32&per=0&tex="+url.QueryEscape(msg), "weather.mp3")
-		b64 := msTtsB64(msg)
-		if b64 != "" {
-			data, err := base64.StdEncoding.DecodeString(b64)
-			if err != nil {
-				fmt.Println("base64 decode error:", err)
-				return
-			}
-			// 将解码后的字符串写入文件
-			err = ioutil.WriteFile("test.txt", data, 0755)
-			if err != nil {
-				fmt.Println("write file error:", err)
-				return
-			}
-		}
+		downloadFile("https://dds.dui.ai/runtime/v1/synthesize?voiceId=cyangfp&speed=1&volume=100&audioType=mp3&text="+url.QueryEscape(msg), "weather.mp3")
 	}
-}
-
-// 微软tts
-func msTtsB64(msg string) string {
-	log.Println(msg)
-	req := httpme.Httpme()
-	req.Debug = 1
-	resp, err := req.PostJson("https://cloudtts.com/api/get_audio",
-		map[string]interface{}{
-			"rate":             1.2,
-			"volume":           1,
-			"text":             msg,
-			"voice":            "zh-CN-XiaoxiaoNeural",
-			"with_speechmarks": false,
-			"recording":        false,
-		})
-	if err != nil {
-		log.Println("msTtsB64 请求出错", err)
-		return ""
-	}
-	var j map[string]interface{}
-	resp.Json(&j)
-	log.Println(resp.Text())
-	if len(j) != 0 && j["success"].(bool) {
-		return j["data"].(map[string]interface{})["audio"].(string)
-	} else {
-		log.Println("msTtsB64 出错", resp.Text())
-	}
-	return ""
 }
 
 // 播放url音乐
