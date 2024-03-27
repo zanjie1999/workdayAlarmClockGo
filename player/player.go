@@ -108,11 +108,11 @@ func PlayPlaylist(id string, random bool) {
 	Next()
 }
 
-// 预下载播报的天气 请不要拿api滥用谢谢
+// 预下载播报的天气
 func DownWeather() {
 	msg := weather.GetWeather("")
 	if msg != "" {
-		downloadFile("https://tts.zyym.eu.org/m="+url.QueryEscape(msg), "weather.mp3")
+		downloadFile("https://tts.baidu.com/text2audio?lan=zh&ie=UTF-8&cuid=baike&ctp=1&pdt=301&vol=15&rate=32&per=0&tex="+url.QueryEscape(msg), "weather.mp3")
 	}
 }
 
