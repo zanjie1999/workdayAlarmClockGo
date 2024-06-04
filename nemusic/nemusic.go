@@ -39,8 +39,8 @@ func PlayList(id string) []string {
 func MusicUrl(id string) string {
 	req := httpme.Httpme()
 	resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
-	resp.R.Body.Close()
 	if err == nil {
+		resp.R.Body.Close()
 		if resp.R.Request.URL.Path != "/404" {
 			// 302后cdn的地址，时间长会过期
 			return resp.R.Request.URL.String()
