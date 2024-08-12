@@ -105,6 +105,7 @@ func Next() string {
 			}
 		} else {
 			Stop()
+			log.Println("停止播放")
 			return "停止播放"
 		}
 	}
@@ -182,6 +183,7 @@ func Stop() {
 		if conf.IsApp {
 			fmt.Println("VOL " + conf.Cfg.VolDefault)
 		}
+		PrevUrl = ""
 	}
 	IsStop = true
 }
@@ -219,6 +221,7 @@ func PlayAlarm() {
 	} else {
 		// 放完一次了 重置
 		if len(conf.Cfg.NePlayed)+1 >= len(ids) {
+			log.Println("闹钟歌单，共", len(ids), "，重置已播放")
 			conf.Cfg.NePlayed = []string{}
 		} else {
 			log.Println("闹钟歌单，共", len(ids), "，已播放", len(conf.Cfg.NePlayed))
@@ -300,7 +303,7 @@ func UnixPlayUrl(url string) {
 		log.Println("wait", ShellPlayer, " error:"+err.Error())
 		return
 	}
-	if !IsStop && NowUrl == url {
+	if !IsStop && NowUrl == url || IsPlayWeather {
 		// 相等说明不是被外部中断是放完了或者类似mac的open那样不阻塞的
 		// time.Sleep(time.Second)
 		// os.Remove("play.mp3")
