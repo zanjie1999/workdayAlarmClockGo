@@ -251,12 +251,14 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/status", func(c *gin.Context) {
 		batLevel, _ := os.ReadFile("/sys/class/power_supply/battery/capacity")
 		c.JSON(200, gin.H{
-			"isStop":   player.IsStop,
-			"playList": player.PlayList,
-			"isAlarm":  player.IsAlarm,
-			"nowUrl":   player.NowUrl,
-			"prevUrl":  player.PrevUrl,
-			"batLevel": string(batLevel),
+			"isStop":    player.IsStop,
+			"playList":  player.PlayList,
+			"isAlarm":   player.IsAlarm,
+			"nowUrl":    player.NowUrl,
+			"prevUrl":   player.PrevUrl,
+			"batLevel":  string(batLevel),
+			"nowId":     player.NowId,
+			"startUnix": player.StartUnix,
 		})
 	})
 

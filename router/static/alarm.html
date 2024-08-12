@@ -34,6 +34,8 @@
         <h3>设置</h3>
         默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
         闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
+        闹钟时长<input type="text" name="alarmTime" id="alarmTime" placeholder="4.5">分钟<br>
+        （闹钟一直播放直到达到设定时长）<br>
         闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
         默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
         （在没有上一首时按上一首时播放该歌单）<br>
@@ -87,6 +89,7 @@
                     document.getElementById('weatherCityCode').value = d.weatherCityCode;
                     document.getElementById('weatherUpdate').value = d.weatherUpdate;
                     document.getElementById('wakelock').checked = d.wakelock
+                    document.getElementById('alarmTime').value = d.alarmTime
                     var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var t = d.alarm[hhmm];

@@ -29,6 +29,7 @@ type Config struct {
 	LastdayFd       int            `json:"lastdayFd"`
 	WeatherUpdate   string         `json:"weatherUpdate"`
 	Wakelock        bool           `json:"wakelock"`
+	AlarmTime       float32        `json:"alarmTime"`
 }
 
 var (
@@ -57,6 +58,8 @@ var (
 		WeatherUpdate: "0700",
 		// Android唤醒锁开
 		Wakelock: true,
+		// 闹钟时长
+		AlarmTime: 4.5,
 	}
 )
 

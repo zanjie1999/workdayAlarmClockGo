@@ -30,10 +30,12 @@ var (
 	IsAlarm       = false
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
-	NowUrl        = ""
-	PrevUrl       = ""
-	ShellPlayer   = "play"
-	PrevRdmFlag   = false
+	NowUrl              = ""
+	PrevUrl             = ""
+	NowId               = ""
+	StartUnix     int64 = 0
+	ShellPlayer         = "play"
+	PrevRdmFlag         = false
 )
 
 // 上一首 或一键者播放指定歌单
@@ -46,6 +48,7 @@ func Prev() string {
 		PrevRdmFlag = false
 		NowUrl = ""
 		PrevUrl = ""
+		NowId = ""
 		// PlayPlaylist(conf.Cfg.DefPlayListId, true)
 		// return "随机播放歌单" + conf.Cfg.DefPlayListId
 		// 不重新获取 直接随机当前播放列表
@@ -59,6 +62,7 @@ func Prev() string {
 		PlayList = append([]string{NowUrl}, PlayList...)
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
+		NowId = ""
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
@@ -66,6 +70,7 @@ func Prev() string {
 		// 不清空就会在播放歌单和上一首之间循环
 		NowUrl = ""
 		PrevUrl = ""
+		NowId = ""
 		PlayPlaylist(conf.Cfg.DefPlayListId, false)
 		return "播放歌单" + conf.Cfg.DefPlayListId
 	}
@@ -74,6 +79,16 @@ func Prev() string {
 // 下一首
 func Next() string {
 	for {
+		if IsAlarm && NowId != "" {
+			// 保存闹钟放过的记录
+			log.Println("闹钟记录", NowId)
+			conf.Cfg.NePlayed = append(conf.Cfg.NePlayed, NowId)
+		}
+		if IsAlarm && StartUnix != 0 && StartUnix+int64(conf.Cfg.AlarmTime*60) < time.Now().Unix() {
+			log.Println("闹钟超时停止")
+			Stop()
+			return "闹钟超时停止"
+		}
 		if len(PlayList) > 0 {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
@@ -81,6 +96,7 @@ func Next() string {
 				PlayUrl(now)
 				return now
 			} else {
+				NowId = now
 				u := nemusic.MusicUrl(now)
 				if u != "" {
 					PlayUrl(u)
@@ -119,6 +135,9 @@ func DownWeather() {
 
 // 播放url音乐
 func PlayUrl(url string) {
+	if StartUnix == 0 {
+		StartUnix = time.Now().Unix()
+	}
 	IsStop = false
 	PrevUrl = NowUrl
 	NowUrl = url
@@ -133,11 +152,16 @@ func Stop() {
 	PrevRdmFlag = false
 	PrevUrl = NowUrl
 	NowUrl = ""
-	// 如果还有没放完的闹钟就被掐掉了 那么把那首还回去下次继续抽
-	if IsAlarm && len(PlayList) > 0 {
-		conf.Cfg.NePlayed = conf.Cfg.NePlayed[len(PlayList):]
+	StartUnix = 0
+	// 保存闹钟播放记录
+	if IsAlarm && NowId != "" {
+		if len(conf.Cfg.NePlayed) < 1 || conf.Cfg.NePlayed[len(conf.Cfg.NePlayed)-1] != NowId {
+			conf.Cfg.NePlayed = append(conf.Cfg.NePlayed, NowId)
+		}
+		log.Println("闹钟保存，已播放", len(conf.Cfg.NePlayed))
 		conf.Save()
 	}
+	NowId = ""
 	PlayList = []string{}
 	if conf.IsApp {
 		fmt.Println("STOP")
@@ -162,6 +186,21 @@ func Stop() {
 	IsStop = true
 }
 
+// 去重
+func filterList(in, filter []string) []string {
+	filterMap := make(map[string]struct{})
+	for _, id := range filter {
+		filterMap[id] = struct{}{}
+	}
+	var out []string
+	for _, id := range in {
+		if _, exists := filterMap[id]; !exists {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
 	IsAlarm = true
@@ -178,34 +217,18 @@ func PlayAlarm() {
 		PlayUrl("http://127.0.0.1:8080/music.mp3")
 		return
 	} else {
+		// 放完一次了 重置
+		if len(conf.Cfg.NePlayed)+1 >= len(ids) {
+			conf.Cfg.NePlayed = []string{}
+		} else {
+			log.Println("闹钟歌单，共", len(ids), "，已播放", len(conf.Cfg.NePlayed))
+			ids = filterList(ids, conf.Cfg.NePlayed)
+		}
 		rand.Seed(time.Now().UnixNano())
 		rand.Shuffle(len(ids), func(i, j int) {
 			ids[i], ids[j] = ids[j], ids[i]
 		})
-		for _, id := range ids {
-			// 放完一次了 重置
-			if len(conf.Cfg.NePlayed)+1 >= len(ids) {
-				conf.Cfg.NePlayed = []string{}
-			}
-			if len(PlayList) == 2 {
-				break
-			}
-			// 检查是否播放过
-			flag := true
-			for i := 0; i < len(conf.Cfg.NePlayed); i++ {
-				if conf.Cfg.NePlayed[i] == id {
-					flag = false
-					break
-				}
-			}
-			if flag {
-				conf.Cfg.NePlayed = append(conf.Cfg.NePlayed, id)
-				// 检查是否能放 没问题就放进去
-				if nemusic.MusicUrl(id) != "" {
-					PlayList = append(PlayList, id)
-				}
-			}
-		}
+		PlayList = ids
 		if len(PlayList) == 0 {
 			// 你该不是在拿咩咩寻开心吧
 			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")
