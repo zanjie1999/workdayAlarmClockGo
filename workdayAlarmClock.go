@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "9.3"
+var VERSION = "10.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
