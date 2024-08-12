@@ -29,7 +29,7 @@ type Config struct {
 	LastdayFd       int            `json:"lastdayFd"`
 	WeatherUpdate   string         `json:"weatherUpdate"`
 	Wakelock        bool           `json:"wakelock"`
-	AlarmTime       float32        `json:"alarmTime"`
+	AlarmTime       float64        `json:"alarmTime"`
 }
 
 var (

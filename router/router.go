@@ -176,6 +176,7 @@ func Init(urlPrefix string) *gin.Engine {
 		WeatherCityCode := c.Query("weatherCityCode")
 		WeatherUpdate := c.Query("weatherUpdate")
 		wakelock := c.Query("wakelock")
+		alarmTime := c.Query("alarmTime")
 		log.Println(wakelock)
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
@@ -202,6 +203,9 @@ func Init(urlPrefix string) *gin.Engine {
 		conf.Cfg.WeatherCityCode = WeatherCityCode
 		conf.Cfg.WeatherUpdate = WeatherUpdate
 		conf.Cfg.Wakelock = wakelock == "1"
+		if alarmTime != "" {
+			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
+		}
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
