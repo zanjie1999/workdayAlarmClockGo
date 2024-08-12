@@ -30,12 +30,14 @@ var (
 	IsAlarm       = false
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
-	NowUrl              = ""
-	PrevUrl             = ""
-	NowId               = ""
-	StartUnix     int64 = 0
-	ShellPlayer         = "play"
-	PrevRdmFlag         = false
+	NowUrl        = ""
+	PrevUrl       = ""
+	NowId         = ""
+	// 开始播放和定时结束时间
+	StartUnix   int64 = 0
+	StopUnix    int64 = 0
+	ShellPlayer       = "play"
+	PrevRdmFlag       = false
 )
 
 // 上一首 或一键者播放指定歌单
@@ -84,10 +86,11 @@ func Next() string {
 			log.Println("闹钟记录", NowId)
 			conf.Cfg.NePlayed = append(conf.Cfg.NePlayed, NowId)
 		}
-		if IsAlarm && StartUnix != 0 && StartUnix+int64(conf.Cfg.AlarmTime*60) < time.Now().Unix() {
-			log.Println("闹钟超时停止")
+		if StopUnix != 0 && StopUnix < time.Now().Unix() {
+			StopUnix = 0
+			log.Println("定时停止")
 			Stop()
-			return "闹钟超时停止"
+			return "定时停止"
 		}
 		if len(PlayList) > 0 {
 			now := PlayList[0]
@@ -138,6 +141,9 @@ func DownWeather() {
 func PlayUrl(url string) {
 	if StartUnix == 0 {
 		StartUnix = time.Now().Unix()
+		if conf.Cfg.MuteWhenStop && !IsPlayWeather && !IsAlarm {
+			SetVol(conf.Cfg.VolDefault)
+		}
 	}
 	IsStop = false
 	PrevUrl = NowUrl
@@ -154,6 +160,7 @@ func Stop() {
 	PrevUrl = NowUrl
 	NowUrl = ""
 	StartUnix = 0
+	StopUnix = 0
 	// 保存闹钟播放记录
 	if IsAlarm && NowId != "" {
 		if len(conf.Cfg.NePlayed) < 1 || conf.Cfg.NePlayed[len(conf.Cfg.NePlayed)-1] != NowId {
@@ -180,12 +187,24 @@ func Stop() {
 		PlayUrl("http://127.0.0.1:8080/weather.mp3")
 	} else if IsPlayWeather {
 		IsPlayWeather = false
-		if conf.IsApp {
-			fmt.Println("VOL " + conf.Cfg.VolDefault)
+		if conf.Cfg.MuteWhenStop {
+			SetVol("0")
+		} else {
+			SetVol(conf.Cfg.VolDefault)
 		}
 		PrevUrl = ""
+	} else if conf.Cfg.MuteWhenStop {
+		SetVol("0")
 	}
 	IsStop = true
+}
+
+// 设置音量
+func SetVol(per string) {
+	log.Println("设置音量", per, "%")
+	if conf.IsApp {
+		fmt.Println("VOL " + per)
+	}
 }
 
 // 去重
@@ -206,13 +225,13 @@ func filterList(in, filter []string) []string {
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
 	IsAlarm = true
-	if conf.IsApp {
-		fmt.Println("VOL " + conf.Cfg.VolAlarm)
-	}
+	SetVol(conf.Cfg.VolAlarm)
 	PlayList = []string{}
 	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 预下载天气信息
 	go DownWeather()
+	// 定时停止闹钟
+	StopUnix = time.Now().Unix() + int64(conf.Cfg.AlarmTime*60)
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")

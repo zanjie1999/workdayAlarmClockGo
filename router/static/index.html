@@ -50,6 +50,10 @@
             <option value="1">随机播放</option>
         </select>
     </form>
+    <form action="/timeStop" id="timeStopForm">
+        <button type="submit">定时停止</button>
+        <input type="text" name="min" id="timeStop" value="30.0"> 分钟后
+    </form>
     <div>
         <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a>
     </div>
@@ -85,6 +89,7 @@
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var d = JSON.parse(xhr.responseText);
                     var msg = (d.batLevel ? '电量 ' + d.batLevel.trim() + '%<br>' : '')
+                    + (d.stopUnix ? '将在 ' + new Date(d.stopUnix*1000).toLocaleString('af') + ' 后停止<br>' : '')
                     + (d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
                     + (d.nowId ? '<a href="https://music.163.com/#/song?id=' + d.nowId + '">正在播放</a>' : d.nowUrl ? '<a href="' + d.nowUrl + '">正在播放</a>' : ''));

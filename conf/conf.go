@@ -30,6 +30,7 @@ type Config struct {
 	WeatherUpdate   string         `json:"weatherUpdate"`
 	Wakelock        bool           `json:"wakelock"`
 	AlarmTime       float64        `json:"alarmTime"`
+	MuteWhenStop    bool           `json:"muteWhenStop"`
 }
 
 var (
@@ -60,6 +61,8 @@ var (
 		Wakelock: true,
 		// 闹钟时长
 		AlarmTime: 4.5,
+		// 停止时静音
+		MuteWhenStop: false,
 	}
 )
 

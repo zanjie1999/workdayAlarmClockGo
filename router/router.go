@@ -177,6 +177,7 @@ func Init(urlPrefix string) *gin.Engine {
 		WeatherUpdate := c.Query("weatherUpdate")
 		wakelock := c.Query("wakelock")
 		alarmTime := c.Query("alarmTime")
+		muteWhenStop := c.Query("muteWhenStop")
 		log.Println(wakelock)
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
@@ -203,6 +204,7 @@ func Init(urlPrefix string) *gin.Engine {
 		conf.Cfg.WeatherCityCode = WeatherCityCode
 		conf.Cfg.WeatherUpdate = WeatherUpdate
 		conf.Cfg.Wakelock = wakelock == "1"
+		conf.Cfg.MuteWhenStop = muteWhenStop == "1"
 		if alarmTime != "" {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}
@@ -263,6 +265,7 @@ func Init(urlPrefix string) *gin.Engine {
 			"batLevel":  string(batLevel),
 			"nowId":     player.NowId,
 			"startUnix": player.StartUnix,
+			"stopUnix":  player.StopUnix,
 		})
 	})
 
@@ -292,6 +295,33 @@ func Init(urlPrefix string) *gin.Engine {
 		// c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 		fmt.Println("RESTART")
 		os.Exit(0)
+	})
+
+	// 自动停止
+	root.GET("/timeStop", func(c *gin.Context) {
+		unix := c.Query("unix")
+		min := c.Query("min")
+		if unix != "" {
+			player.StopUnix, err = strconv.ParseInt(unix, 10, 64)
+			if err != nil {
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("unix不是整数"))
+				return
+			}
+		} else if min != "" {
+			minF, err := strconv.ParseFloat(min, 64)
+			if err != nil {
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("min不是浮点"))
+				return
+			}
+			player.StopUnix = time.Now().Unix() + int64(minF*60)
+		} else {
+			player.StopUnix = 0
+		}
+		if player.StopUnix == 0 {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>定时停止已取消</h2>"+js2home))
+		} else {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>将在 "+time.Unix(player.StopUnix, 0).Format("2006-01-02 15:04:05")+" 后停止</h2>"+js2home))
+		}
 	})
 
 	return r
