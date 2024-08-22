@@ -1,7 +1,7 @@
 # 使用 Golang 重构的 工作咩闹钟  
 原项目是 [工作日闹钟](https://github.com/zanjie1999/workdayAlarmClock)，从2017年用Python2写出来后，使用Python3重构，现在使用Golang重构，最大的原因是想适配Android  
 
-可以在每次在设定的网抑云歌单中随机抽取2首作为闹钟铃声，  
+本闹钟可以在设定的时间（支持中国法定节假日），从设定的网抑云歌单中随机抽取多首音乐作为闹钟铃声，可以自定义闹钟时长  
 另外可以作为网抑云音乐播放器使用，随机播放永不重复，实现除语音助手外的智能音响应有的功能  
 
 这是一个服务端程序，交互将通过8080端口的Web服务在浏览器完成，尽量减少ram占用，以便运行在骁龙210的随身WiFi上（包括Android端仅占用47M的Ram），使用蓝牙音响播放闹钟声音
@@ -19,9 +19,15 @@ Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)
 其他系统需要安装sox和curl，并且暂停，音量控制不可用  
 Linux: `包管理器比如apt或者yum等 install sox curl`  
 macOS: `brew install sox curl`  
-Windows：这样启动 `workdayAlarmClock 你的播放器路径`
+Windows：这样启动 `workdayAlarmClock 你的播放器路径`  
+
+打开同局域网任意设备的浏览器，访问 `http://你的设备ip地址:8080`  
+点击 闹钟设置 根据说明进行设置  
+对浏览器没有要求，ie5即使关闭js也能实现基础的功能  
+请注意，当前尚不支持设置多个相同时间的闹钟，因为我没有这种需求
 
 ## 指令
+除了直接在shell输入，还可以直接在访问地址后拼接，使用GET请求调用，如 `http://127.0.0.1:8080/1key`
 ```shell
 # 停止播放
 stop
@@ -31,6 +37,8 @@ next
 prev
 # 退出
 exit
+# 一键播放歌单、停止
+1key
 ```
 
 ### 天气播报
