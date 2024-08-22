@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "10.1"
+var VERSION = "11.0"
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -80,6 +80,8 @@ func shellInput() {
 				fmt.Println(player.Next())
 			case "prev":
 				fmt.Println(player.Prev())
+			case "1key":
+				fmt.Println(player.Me1Key())
 			case "exit":
 				if conf.IsApp {
 					fmt.Println("程序已退出，可以使用shell命令或使用 echo EXIT 退出App")

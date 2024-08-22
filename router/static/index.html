@@ -90,6 +90,7 @@
                     var d = JSON.parse(xhr.responseText);
                     var msg = (d.batLevel ? '电量 ' + d.batLevel.trim() + '%<br>' : '')
                     + (d.stopUnix ? '将在 ' + new Date(d.stopUnix*1000).toLocaleString('af').split(' ')[1] + ' 后停止<br>' : '')
+                    + (d.skipAlarm ? '将跳过 ' + d.skipAlarm + ' 次闹钟<br>' : '')
                     + (d.isStop ? '已停止播放' : (d.isAlarm ? '闹钟 ' : '')
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
                     + (d.nowId ? '<a href="https://music.163.com/#/song?id=' + d.nowId + '">正在播放</a>' : d.nowUrl ? '<a href="' + d.nowUrl + '">正在播放</a>' : ''));

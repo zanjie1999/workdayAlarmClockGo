@@ -38,6 +38,7 @@ var (
 	StopUnix    int64 = 0
 	ShellPlayer       = "play"
 	PrevRdmFlag       = false
+	SkipAlarm         = 0
 )
 
 // 上一首 或一键者播放指定歌单
@@ -111,6 +112,17 @@ func Next() string {
 			log.Println("停止播放")
 			return "停止播放"
 		}
+	}
+}
+
+// 一键急停按钮 自动控制播放停止
+func Me1Key() string {
+	if IsStop {
+		PlayPlaylist(conf.Cfg.DefPlayListId, false)
+		return "play"
+	} else {
+		Stop()
+		return "stop"
 	}
 }
 
@@ -224,6 +236,11 @@ func filterList(in, filter []string) []string {
 
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
+	if SkipAlarm > 0 {
+		SkipAlarm--
+		log.Println("跳过闹钟")
+		return
+	}
 	IsAlarm = true
 	SetVol(conf.Cfg.VolAlarm)
 	PlayList = []string{}

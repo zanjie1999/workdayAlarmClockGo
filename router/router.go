@@ -91,6 +91,11 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>播放"+url+"</h2>"+js2home))
 	})
 
+	// 一键急停按钮 自动控制播放停止
+	root.GET("/1key", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(player.Me1Key()))
+	})
+
 	root.GET("/playlist", func(c *gin.Context) {
 		id := c.Query("id")
 		if id == "" {
@@ -164,6 +169,17 @@ func Init(urlPrefix string) *gin.Engine {
 		delete(conf.Cfg.Alarm, hhmm)
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+
+	// 跳过闹钟
+	root.GET("/skipAlarm", func(c *gin.Context) {
+		n := c.Query("n")
+		if n == "0" {
+			player.SkipAlarm = 0
+		} else if n == "1" {
+			player.SkipAlarm++
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>将跳过 "+strconv.Itoa(player.SkipAlarm)+" 次闹钟</h1>"+js2home))
 	})
 
 	// 更新设置
@@ -266,6 +282,7 @@ func Init(urlPrefix string) *gin.Engine {
 			"nowId":     player.NowId,
 			"startUnix": player.StartUnix,
 			"stopUnix":  player.StopUnix,
+			"skipAlarm": player.SkipAlarm,
 		})
 	})
 
