@@ -18,21 +18,31 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "11.0"
+var VERSION = "11.1"
+
+var workDayApiErr = false
 
 // 获取今天是不是工作日
 func workDayApi() {
 	req := httpme.Httpme()
-	resp, err := req.Get("https://timor.tech/api/holiday/info/" + time.Now().Format("2006-01-02"))
+	yymmdd := time.Now().Format("2006-01-02")
+	if yymmdd == "1970-01-01" {
+		log.Println("等待时间同步再获取工作日信息")
+		workDayApiErr = true
+		return
+	}
+	resp, err := req.Get("https://timor.tech/api/holiday/info/" + yymmdd)
 	if err == nil {
 		var j map[string]interface{}
 		resp.Json(&j)
 		if j["code"].(float64) != 200 {
 			conf.IsWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0 || j["type"].(map[string]interface{})["type"].(float64) == 3
 			log.Println(j["type"].(map[string]interface{})["name"], "工作日吗？", conf.IsWorkDay)
+			workDayApiErr = false
 			return
 		}
 	}
+	workDayApiErr = true
 	log.Println("获取工作日信息出错", err)
 	conf.IsWorkDay = time.Now().Weekday() != time.Saturday && time.Now().Weekday() != time.Sunday
 }
@@ -42,7 +52,8 @@ func timer() {
 	for {
 		now := time.Now()
 		hhmm := now.Format("1504")
-		if hhmm == "0000" {
+		// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
+		if workDayApiErr || hhmm == "0000" {
 			workDayApi()
 		}
 		if hhmm == conf.Cfg.WeatherUpdate {
