@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 	"workdayAlarmClock/conf"
@@ -314,6 +315,7 @@ func downloadFile(url string, filename string) error {
 
 // Linux: apt install sox
 // macOS: brew install sox
+// Win和Linux推荐使用meMp3Player
 func UnixPlayUrl(url string) {
 	log.Println("start play:" + url)
 	if UnixCmd != nil {
@@ -321,14 +323,21 @@ func UnixPlayUrl(url string) {
 		UnixCmd.Process.Signal(syscall.SIGINT)
 	}
 	pwd, _ := os.Getwd()
-	err := downloadFile(url, pwd+"/play.mp3")
-	if err != nil {
-		log.Println("download error:" + err.Error())
-		return
-	}
+	var err error
+	if strings.Contains(ShellPlayer, "meMp3Player") {
+		// 使用 咩MP3播放器 的时候，无需下载，直接播放音频流
+		log.Println("shell: ", ShellPlayer, url)
+		UnixCmd = exec.Command(ShellPlayer, url)
+	} else {
+		err = downloadFile(url, pwd+"/play.mp3")
+		if err != nil {
+			log.Println("download error:" + err.Error())
+			return
+		}
 
-	log.Println("shell: ", ShellPlayer, pwd+"/play.mp3")
-	UnixCmd = exec.Command(ShellPlayer, pwd+"/play.mp3")
+		log.Println("shell: ", ShellPlayer, pwd+"/play.mp3")
+		UnixCmd = exec.Command(ShellPlayer, pwd+"/play.mp3")
+	}
 	err = UnixCmd.Start()
 	if err != nil {
 		log.Println("run " + ShellPlayer + " error:" + err.Error())

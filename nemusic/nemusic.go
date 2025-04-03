@@ -38,6 +38,8 @@ func PlayList(id string) []string {
 // 获取音乐播放地址 不一定能放先检查下
 func MusicUrl(id string) string {
 	req := httpme.Httpme()
+	// 带这个ua可以放10秒，但没有任何意义
+	// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
 	resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
 	if err == nil {
 		resp.R.Body.Close()
@@ -45,6 +47,7 @@ func MusicUrl(id string) string {
 			// 302后cdn的地址，时间长会过期
 			return resp.R.Request.URL.String()
 		} else {
+			log.Println("需要VIP", id)
 			return ""
 		}
 	}

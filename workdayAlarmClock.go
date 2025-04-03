@@ -18,7 +18,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "11.1"
+var VERSION = "12.0"
 
 var workDayApiErr = false
 
