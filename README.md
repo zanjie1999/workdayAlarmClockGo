@@ -16,10 +16,19 @@
 
 ## 如何使用
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
-其他系统需要安装sox和curl，并且暂停，音量控制不可用  
+
+其他平台（Windows，Linux）推荐使用 [workdayAlarmClockGo](https://github.com/zanjie1999/meMp3Player) 作为播放器使用  
+即这样启动 `workdayAlarmClock 你的播放器路径`  
+比如 `workdayAlarmClock ./meMp3Player`
+
+或者需要安装sox和curl，或者使用你喜欢的播放器  
 Linux: `包管理器比如apt或者yum等 install sox curl`  
-macOS: `brew install sox curl`  
+macOS: `brew install sox curl` 
+
+Windows随便找个播放器基本都能用，需要播放时阻塞，放完自动退出的那种
 Windows：这样启动 `workdayAlarmClock 你的播放器路径`  
+
+暂停，音量控制目前仅在Android可用
 
 打开同局域网任意设备的浏览器，访问 `http://你的设备ip地址:8080`  
 点击 闹钟设置 根据说明进行设置  
