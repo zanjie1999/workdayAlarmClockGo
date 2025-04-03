@@ -320,7 +320,8 @@ func UnixPlayUrl(url string) {
 	log.Println("start play:" + url)
 	if UnixCmd != nil {
 		// 需要先kill掉之前的
-		UnixCmd.Process.Signal(syscall.SIGINT)
+		log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
+		log.Println(UnixCmd.Process.Kill())
 	}
 	pwd, _ := os.Getwd()
 	var err error
