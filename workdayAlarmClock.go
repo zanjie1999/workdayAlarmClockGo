@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
@@ -51,6 +52,7 @@ func workDayApi() {
 func timer() {
 	for {
 		now := time.Now()
+		mmdd := now.Format("0102")
 		hhmm := now.Format("1504")
 		// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
 		if workDayApiErr || hhmm == "0000" {
@@ -59,15 +61,36 @@ func timer() {
 		if hhmm == conf.Cfg.WeatherUpdate {
 			weather.GetWeather("")
 		}
-		if dayType, ok := conf.Cfg.Alarm[hhmm]; ok {
-			if (dayType == 1 && conf.IsWorkDay) || (dayType == 2 && !conf.IsWorkDay) || dayType == 4 || dayType == int(now.Weekday())+5 {
-				log.Println("闹钟时间到", hhmm)
-				player.PlayAlarm()
-			} else if dayType == 3 {
-				log.Println("闹钟时间到", hhmm)
-				player.PlayAlarm()
-				delete(conf.Cfg.Alarm, hhmm)
-				conf.Save()
+		if dayTypeList, ok := conf.Cfg.Alarm[hhmm]; ok {
+			// 增加 同时间 多类型 的闹钟支持
+			for _, dayType := range dayTypeList {
+				//  法定工作日                           法定休息日                           每天            周 日一二三四五六
+				if (dayType == "1" && conf.IsWorkDay) || (dayType == "2" && !conf.IsWorkDay) || dayType == "4" || dayType == strconv.Itoa(int(now.Weekday())+5) {
+					log.Println("闹钟时间到", hhmm)
+					player.PlayAlarm()
+					break
+				} else if dayType == "3" {
+					// 一次性闹钟
+					log.Println("一次性闹钟时间到", hhmm)
+					player.PlayAlarm()
+					if len(dayTypeList) == 1 {
+						delete(conf.Cfg.Alarm, hhmm)
+					} else {
+						// 只删掉这条3的
+						for i, v := range dayTypeList {
+							if "3" == v {
+								conf.Cfg.Alarm[hhmm] = append(dayTypeList[:i], dayTypeList[i+1:]...)
+							}
+						}
+					}
+					conf.Save()
+					break
+				} else if dayType == mmdd {
+					// 月日
+					log.Println("闹钟时间到", mmdd, "的", hhmm)
+					player.PlayAlarm()
+					break
+				}
 			}
 		}
 		// 秒对齐

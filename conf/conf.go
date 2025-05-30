@@ -13,24 +13,24 @@ import (
 )
 
 type Config struct {
-	VolDefault      string         `json:"volDefault"`
-	VolAlarm        string         `json:"volAlarm"`
-	Alarm           map[string]int `json:"alarm"`
-	NePlayListId    string         `json:"nePlayListId"`
-	DefPlayListId   string         `json:"defPlayListId"`
-	NePlayed        []string       `json:"nePlayed"`
-	Tz              int            `json:"tz"`
-	WeatherCityCode string         `json:"weatherCityCode"`
-	Today           string         `json:"today"`
-	TodayFc         int            `json:"todayFc"`
-	TodayFd         int            `json:"todayFd"`
-	Lastday         string         `json:"lastday"`
-	LastdayFc       int            `json:"lastdayFc"`
-	LastdayFd       int            `json:"lastdayFd"`
-	WeatherUpdate   string         `json:"weatherUpdate"`
-	Wakelock        bool           `json:"wakelock"`
-	AlarmTime       float64        `json:"alarmTime"`
-	MuteWhenStop    bool           `json:"muteWhenStop"`
+	VolDefault      string              `json:"volDefault"`
+	VolAlarm        string              `json:"volAlarm"`
+	Alarm           map[string][]string `json:"alarm"`
+	NePlayListId    string              `json:"nePlayListId"`
+	DefPlayListId   string              `json:"defPlayListId"`
+	NePlayed        []string            `json:"nePlayed"`
+	Tz              int                 `json:"tz"`
+	WeatherCityCode string              `json:"weatherCityCode"`
+	Today           string              `json:"today"`
+	TodayFc         int                 `json:"todayFc"`
+	TodayFd         int                 `json:"todayFd"`
+	Lastday         string              `json:"lastday"`
+	LastdayFc       int                 `json:"lastdayFc"`
+	LastdayFd       int                 `json:"lastdayFd"`
+	WeatherUpdate   string              `json:"weatherUpdate"`
+	Wakelock        bool                `json:"wakelock"`
+	AlarmTime       float64             `json:"alarmTime"`
+	MuteWhenStop    bool                `json:"muteWhenStop"`
 }
 
 var (
@@ -42,7 +42,7 @@ var (
 	// 配置
 	Cfg = Config{
 		// 闹钟时间 24小时制hhmm 工作日1 休息日2 一次性3 每天4
-		Alarm: map[string]int{},
+		Alarm: map[string][]string{},
 		// 闹钟歌单
 		NePlayListId: "2236121100",
 		// 按上一曲时默认歌单

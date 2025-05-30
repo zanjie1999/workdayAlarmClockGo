@@ -12,22 +12,32 @@
     </div>
     <br>
     <table border="1" id="alarms"></table><br>
-    <form action="/addAlarm">
-        <button type="submit">添加闹钟</button>
+    <form action="/addAlarm" id="alarmForm">
+        <h3>添加闹钟</h3>
+        <label>时间（24小时制 时时分分）：</label>
         <input type="text" name="hhmm" placeholder="HHmm">
-        <select name="type">
-            <option value="1">法定工作日</option>
-            <option value="2">法定休息日</option>
-            <option value="3">一次</option>
-            <option value="4">每天</option>
-            <option value="5">周日</option>
-            <option value="6">周一</option>
-            <option value="7">周二</option>
-            <option value="8">周三</option>
-            <option value="9">周四</option>
-            <option value="10">周五</option>
-            <option value="11">周六</option>
-        </select>
+        <div>
+            <label>闹钟类型：</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" name="type2" value="1">法定工作日</label>
+                <label><input type="checkbox" name="type2" value="2">法定休息日</label><br>
+                <label><input type="checkbox" name="type2" value="3">一次</label>
+                <label><input type="checkbox" name="type2" value="4">每天</label><br>
+                <label><input type="checkbox" name="type2" value="5">周日</label>
+                <label><input type="checkbox" name="type2" value="6">周一</label><br>
+                <label><input type="checkbox" name="type2" value="7">周二</label>
+                <label><input type="checkbox" name="type2" value="8">周三</label><br>
+                <label><input type="checkbox" name="type2" value="9">周四</label>
+                <label><input type="checkbox" name="type2" value="10">周五</label><br>
+                <label><input type="checkbox" name="type2" value="11">周六</label>   
+            </div>
+            <div>
+                <label>或者指定日期（月月日日）：</label>
+                <input type="text" name="datemmdd" placeholder="mmdd">
+            </div>
+            <input type="hidden" name="type" id="alarmtype">
+            <button type="submit">添加闹钟</button>
+        </div>
     </form>
     <a href="/testAlarm">模拟闹钟</a><br><br>
     <a href="/skipAlarm?n=1">跳过1次闹钟</a>&nbsp;&nbsp;&nbsp;<a href="/skipAlarm?n=0">取消跳过</a><br><br>
@@ -65,6 +75,26 @@
     </form>
     <div id="info" ></div>
     <script>
+        document.getElementById('alarmForm').addEventListener('submit', function(e) {
+            // 获取所有选中的checkbox
+            var checkboxes = document.querySelectorAll('input[name="type2"]:checked');
+            var selectedValues = [];
+            
+            for (var i = 0; i < checkboxes.length; i++) {
+                selectedValues.push(checkboxes[i].value);
+                checkboxes[i].checked = false;
+            }
+            
+            // 如果有日期输入，添加到值中
+            var dateInput = document.querySelector('input[name="datemmdd"]');
+            if (dateInput.value) {
+                selectedValues.push(dateInput.value);
+                dateInput.value = '';
+            }
+            
+            // 将值用逗号连接并设置到隐藏字段
+            document.getElementById('alarmtype').value = selectedValues.join(',');
+        });
         function getCityCode() {
             var xhr = new XMLHttpRequest();
             var inp = document.getElementById('weatherCityCode')
@@ -95,9 +125,13 @@
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
                     var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
-                        var t = d.alarm[hhmm];
-                        t = t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 4 ? '每天' : t == 5 ? '周日' : t == 6 ? '周一' : t == 7 ? '周二' : t == 8 ? '周三' : t == 9 ? '周四' : t == 10 ? '周五' : t == 11 ? '周六' : '未知';
-                        html += '<tr><td>' + hhmm + '</td><td>' + t + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
+                        var typeList = d.alarm[hhmm];
+                        var typeStr = ""
+                        for(var i=0; i< typeList.length; i++) {
+                            var t = typeList[i]
+                            typeStr += (t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 4 ? '每天' : t == 5 ? '周日' : t == 6 ? '周一' : t == 7 ? '周二' : t == 8 ? '周三' : t == 9 ? '周四' : t == 10 ? '周五' : t == 11 ? '周六' : t.substr(0,2)+'月'+t.substr(2)) + '<br>';
+                        }
+                        html += '<tr><td>' + hhmm + '</td><td>' + typeStr + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }
                     document.getElementById('alarms').innerHTML = html;
                     html = '当前已播放 ' + d.nePlayed.length + ' 首<br>'; 
@@ -107,6 +141,7 @@
                     document.getElementById('info').innerHTML = html;
                     html = '昨天 '+ d.lastday + ' ' + d.lastdayFc + '到' + d.lastdayFd + '度<br>今天 '+ d.today + ' ' + d.todayFc + '到' + d.todayFd + '度';
                     document.getElementById('weatherMsg').innerHTML = html;
+
                 }
             }
             xhr.send();
