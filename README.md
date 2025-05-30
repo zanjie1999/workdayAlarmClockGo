@@ -13,8 +13,11 @@
 4. 小爱音响断网后闹钟不会响
 5. 闹钟随机音乐不能放我喜欢的歌
 6. 随机播放重复概率过高
+7. 无法设置指定日期的闹钟
 
 ## 如何使用
+因v13修改了闹钟存储方式来支持同时间多闹钟，以及指定日期闹钟，你可根据当月排班来设置闹钟，因此从低版本更新到v13之后的版本，需要手动删除所有闹钟再更新
+
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
 其他平台（Windows，Linux）推荐使用 [workdayAlarmClockGo](https://github.com/zanjie1999/meMp3Player) 作为播放器使用  
