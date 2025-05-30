@@ -78,7 +78,7 @@ func timer() {
 					} else {
 						// 只删掉这条3的
 						for i, v := range dayTypeList {
-							if "3" == v {
+							if v == "3" {
 								conf.Cfg.Alarm[hhmm] = append(dayTypeList[:i], dayTypeList[i+1:]...)
 							}
 						}
