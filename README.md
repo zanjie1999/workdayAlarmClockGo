@@ -62,3 +62,6 @@ exit
 你需要手动在闹钟设置中输入天气代码的框中输入你的区/市，并点击右边的查询按钮，保存设置后尝试点击“测试获取天气”来检查是否能正常使用  
 因配额资源有限，请勿将我的语音合成api用于其他用途，谢谢合作，否则将会取消这一功能
 
+### 协议 咩License
+使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
+Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   
