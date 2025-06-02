@@ -153,6 +153,9 @@ func Init(urlPrefix string) *gin.Engine {
 		typeS := c.Query("type")
 		// 万一呢 顺手就输进去了 手贱过一次导致闹钟没响
 		hhmm = strings.ReplaceAll(strings.ReplaceAll(hhmm, "：", ""), ":", "")
+		if len(typeS) > 0 && typeS[len(typeS)-1] == ',' {
+			typeS = typeS[:len(typeS)-1]
+		}
 		if hhmm == "" || typeS == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm or type is empty</h1>"+js2home))
 			return
