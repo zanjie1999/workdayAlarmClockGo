@@ -6,74 +6,79 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="linemode">
-        <img src="/favicon.ico"><br><br>
-        <h1>闹钟设置</h1>
-    </div>
-    <br>
-    <table border="1" id="alarms"></table><br>
-    <form action="/addAlarm" id="alarmForm">
-        <h3>添加闹钟</h3>
-        <label>时间（24小时制 时时分分）：</label>
-        <input type="text" name="hhmm" placeholder="HHmm">
-        <div>
-            <label>闹钟类型：</label>
-            <div class="checkbox-group">
-                <label><input type="checkbox" name="type2" value="1">法定工作日</label>
-                <label><input type="checkbox" name="type2" value="2">法定休息日</label><br>
-                <label><input type="checkbox" name="type2" value="3">一次</label>
-                <label><input type="checkbox" name="type2" value="4">每天</label><br>
-                <label><input type="checkbox" name="type2" value="5">周日</label>
-                <label><input type="checkbox" name="type2" value="6">周一</label><br>
-                <label><input type="checkbox" name="type2" value="7">周二</label>
-                <label><input type="checkbox" name="type2" value="8">周三</label><br>
-                <label><input type="checkbox" name="type2" value="9">周四</label>
-                <label><input type="checkbox" name="type2" value="10">周五</label><br>
-                <label><input type="checkbox" name="type2" value="11">周六</label>   
-            </div>
-            <div>
-                <label>或者指定日期（月月日日）：</label>
-                <input type="text" name="datemmdd" placeholder="mmdd">
-            </div>
-            <input type="hidden" name="type" id="alarmtype">
-            <button type="submit">添加闹钟</button>
+    <div class="main-container">
+        <div class="linemode">
+            <img src="/favicon.ico"><br><br>
+            <h1 class="me-title">闹钟设置</h1>
         </div>
-    </form>
-    <a href="/testAlarm">模拟闹钟</a><br><br>
-    <a href="/skipAlarm?n=1">跳过1次闹钟</a>&nbsp;&nbsp;&nbsp;<a href="/skipAlarm?n=0">取消跳过</a><br><br>
-    <form action="/updateCfg">
-        <h3>设置</h3>
-        默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
-        闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
-        闹钟时长<input type="text" name="alarmTime" id="alarmTime" placeholder="4.5">分钟<br>
-        （闹钟一直播放直到达到设定时长）<br>
-        闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
-        默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
-        （在没有上一首时按上一首时播放该歌单）<br>
-        时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
-        天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
-        更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm"><br>
-        （每天定时更新保存作为昨天天气）<br>
-        CPU唤醒锁<input type="checkbox" name="wakelock" id="wakelock" value="1">重启生效<br>
-        （关闭可以最大程度的节省电量，但闹钟可能不响）<br>
-        停止时静音<input type="checkbox" name="muteWhenStop" id="muteWhenStop" value="1"><br>
-        <button type="submit">保存设置</button>
-        <br><br><div id="weatherMsg" ></div>
-        <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
-    </form>
-    <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
-        <h3>兜底音乐</h3>
-        在断网时将使用此音乐播放<br>
-        <input type="file" name="file"><button type="submit">上传</button>
-        <br><a href="/play?url=http://127.0.0.1:8080/music.mp3">用音响播放</a> <a href="/deleteMp3">删除</a> <a href="/music.mp3">下载(长按/右键另存为)</a>
-    </form>
-    <form action="/uploadCfg" method="post" action enctype="multipart/form-data">
-        <h3>备份与恢复</h3>
-        包含闹钟设置和已播放的音乐<br>
-        <input type="file" name="file"><button type="submit">上传配置</button>
-        <br><a href="/cfg.json">下载配置(长按/右键另存为)</a>
-    </form>
-    <div id="info" ></div>
+        <br>
+        <table border="1" id="alarms"></table><br>
+        <form action="/addAlarm" id="alarmForm">
+            <h3>添加闹钟</h3>
+            <label>时间（24小时制 时时分分）：</label>
+            <input type="text" name="hhmm" placeholder="HHmm">
+            <div>
+                <label>闹钟类型：</label>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" name="type2" value="1">法定工作日</label>
+                    <label><input type="checkbox" name="type2" value="2">法定休息日</label><br>
+                    <label><input type="checkbox" name="type2" value="3">一次</label>
+                    <label><input type="checkbox" name="type2" value="4">每天</label><br>
+                    <label><input type="checkbox" name="type2" value="5">周日</label>
+                    <label><input type="checkbox" name="type2" value="6">周一</label><br>
+                    <label><input type="checkbox" name="type2" value="7">周二</label>
+                    <label><input type="checkbox" name="type2" value="8">周三</label><br>
+                    <label><input type="checkbox" name="type2" value="9">周四</label>
+                    <label><input type="checkbox" name="type2" value="10">周五</label><br>
+                    <label><input type="checkbox" name="type2" value="11">周六</label>   
+                </div>
+                <div>
+                    <label>或者指定日期（月月日日）：</label>
+                    <input type="text" name="datemmdd" placeholder="mmdd">
+                </div>
+                <input type="hidden" name="type" id="alarmtype">
+                <button type="submit">添加闹钟</button>
+            </div>
+            <a href="/testAlarm">模拟闹钟</a><br>
+            <a href="/skipAlarm?n=1">跳过1次闹钟</a>&nbsp;&nbsp;&nbsp;<a href="/skipAlarm?n=0">取消跳过</a><br>
+        </form>
+        <form action="/updateCfg">
+            <h3>设置</h3>
+            默认音量<input type="text" name="volDefault" id="volDefault" placeholder="0-100"><br>
+            闹钟音量<input type="text" name="volAlarm" id="volAlarm" placeholder="0-100"><br>
+            闹钟时长<input type="text" name="alarmTime" id="alarmTime" placeholder="4.5">分钟<br>
+            （闹钟一直播放直到达到设定时长）<br>
+            闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
+            默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
+            （在没有上一首时按上一首时播放该歌单）<br>
+            时区UTC+<input type="text" name="tz" id="tz" placeholder="中国是+8区填8"><br>
+            天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
+            更新时间<input type="text" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm"><br>
+            （每天定时更新保存作为昨天天气）<br>
+            CPU唤醒锁<input type="checkbox" name="wakelock" id="wakelock" value="1">重启生效<br>
+            （关闭可以最大程度的节省电量，但闹钟可能不响）<br>
+            停止时静音<input type="checkbox" name="muteWhenStop" id="muteWhenStop" value="1"><br>
+            <button type="submit">保存设置</button>
+            <br><br><div id="weatherMsg" ></div>
+            <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
+        </form>
+        <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
+            <h3>兜底音乐</h3>
+            在断网时将使用此音乐播放<br>
+            <input type="file" name="file"><button type="submit">上传</button>
+            <br><a href="/play?url=http://127.0.0.1:8080/music.mp3">用音响播放</a> <a href="/deleteMp3">删除</a> <a href="/music.mp3">下载(长按/右键另存为)</a>
+        </form>
+        <form action="/uploadCfg" method="post" action enctype="multipart/form-data">
+            <h3>备份与恢复</h3>
+            包含闹钟设置和已播放的音乐<br>
+            <input type="file" name="file"><button type="submit">上传配置</button>
+            <br><a href="/cfg.json">下载配置(长按/右键另存为)</a>
+        </form>
+        <div class="box">
+            <h3>闹钟播放记录</h3>
+            <div id="info" ></div>
+        </div>
+    </div>
     <script>
         document.getElementById('alarmForm').addEventListener('submit', function(e) {
             // 获取所有选中的checkbox
@@ -123,15 +128,15 @@
                     document.getElementById('wakelock').checked = d.wakelock
                     document.getElementById('alarmTime').value = d.alarmTime
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
-                    var html = '<tr><th>时分</th><th>类型</th><th>删除</th></tr>';
+                    var html = '<tr><th>时分</th><th>类型</th><th>操作</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
-                        var typeList = d.alarm[hhmm];
+                        var typeList = d.alarm[hhmm] || [];
                         var typeStr = ""
                         for(var i=0; i< typeList.length; i++) {
                             var t = typeList[i]
                             typeStr += (t == 1 ? '法定工作日' : t == 2 ? '法定休息日' : t == 3 ? '一次' : t == 4 ? '每天' : t == 5 ? '周日' : t == 6 ? '周一' : t == 7 ? '周二' : t == 8 ? '周三' : t == 9 ? '周四' : t == 10 ? '周五' : t == 11 ? '周六' : t.substr(0,2)+'月'+t.substr(2)) + '<br>';
                         }
-                        html += '<tr><td>' + hhmm + '</td><td>' + typeStr + '</td><td><form action="/delAlarm"><button type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
+                        html += '<tr><td>' + hhmm + '</td><td>' + typeStr + '</td><td><form action="/delAlarm"><button class="red" type="submit" name="hhmm" value="' + hhmm + '">删除</button></form></td></tr>';
                     }
                     document.getElementById('alarms').innerHTML = html;
                     html = '当前已播放 ' + d.nePlayed.length + ' 首<br>'; 

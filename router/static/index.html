@@ -6,37 +6,38 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <div class="main-container">
     <div class="linemode">
         <img src="/favicon.ico"><br><br>
-        <h1>工作咩闹钟</h1>
+        <h1 class="me-title">工作咩闹钟</h1>
     </div>
-    <br>
     <div class="linemode" id="statusMsg">&nbsp;</div>
-    <br>
-    <div class="linemode">
-        <form action="/stop">
-            <button type="submit">停止</button>
-        </form>
-        <form action="/pause">
-            <button type="submit">暂停</button>
-        </form>
-        <form action="/resume">
-            <button type="submit">恢复播放</button>
-        </form>
-    </div><br>
-    <div class="linemode">
-        <form action="/volm">
-            <button type="submit">音量减</button>
-        </form>
-        <form action="/volp">
-            <button type="submit">音量加</button>
-        </form>
-        <form action="/prev">
-            <button type="submit">上一首</button>
-        </form>
-        <form action="/next">
-            <button type="submit">下一首</button>
-        </form>
+    <div class="linemode ctrlbox">
+        <div class="linemode">
+            <form action="/stop">
+                <button type="submit">停止</button>
+            </form>
+            <form action="/pause">
+                <button type="submit">暂停</button>
+            </form>
+            <form action="/resume">
+                <button type="submit">恢复播放</button>
+            </form>
+        </div>
+        <div class="linemode">
+            <form action="/volm">
+                <button type="submit">音量减</button>
+            </form>
+            <form action="/volp">
+                <button type="submit">音量加</button>
+            </form>
+            <form action="/prev">
+                <button type="submit">上一首</button>
+            </form>
+            <form action="/next">
+                <button type="submit">下一首</button>
+            </form>
+        </div>
     </div>
     <form action="/play" id="playUrlForm" onsubmit="return playurl()">
         <button type="submit">播放url</button>
@@ -56,6 +57,7 @@
     </form>
     <div>
         <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a>
+    </div>
     </div>
     <script>
         function plalist() {
