@@ -76,6 +76,7 @@ form, .box {
     border-radius: unset;
     box-shadow: unset;
     background-color: unset;
+    border:0;
 }
 
 /* 居中 */
@@ -299,6 +300,11 @@ img[src="/favicon.ico"] {
     color: #495057;
 }
 
+/* 为了在不支持css的设正常显示 */
+#info br {
+    display: none;
+}
+
 #info a {
     display: block;
     margin-bottom: 5px;
@@ -363,4 +369,145 @@ img[src="/favicon.ico"] {
     #playUrl {
         width: 16em;
     }
+}
+
+
+@media (prefers-color-scheme: dark) {
+    body {
+        color: #e0e0e0;
+        background-color: #121212;
+    }
+
+    .main-container {
+        background-color: #1e1e1e;
+    }
+
+    h1, h3 {
+        color: #f0f0f0;
+        border-bottom-color: #444;
+    }
+
+    a {
+        color: #5dade2;
+    }
+
+    a:hover, a:focus {
+        color: #85c1e9;
+    }
+
+    form, .box {
+        background-color: #2c2c2c;
+    }
+
+    label {
+        color: #d0d0d0;
+    }
+
+    input[type="text"],
+    input[type="file"],
+    select,
+    textarea {
+        color: #e0e0e0;
+        background-color: #333333;
+        border-color: #555555;
+    }
+
+    input[type="text"]:focus,
+    input[type="file"]:focus,
+    select:focus,
+    textarea:focus {
+        border-color: #5dade2;
+        box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.25);
+        background-color: #3a3a3a;
+    }
+
+    input::placeholder, textarea::placeholder {
+        color: #888888;
+    }
+
+    button {
+        background-color: #4a90e2;
+        color: #ffffff;
+    }
+
+    button:hover {
+        background-color: #3c7ac0;
+    }
+
+    .red {
+        background-color: #e74c3c;
+        color: white;
+    }
+    .red:hover {
+        background-color: #c0392b;
+    }
+
+    .linemode {
+        background-color: #282828;
+        border: none;
+    }
+
+    .checkbox-group label {
+        color: #d0d0d0;
+    }
+
+    input[type="checkbox"] {
+        border: 1px solid #777777;
+        background-color: #333333;
+    }
+
+    input[type="checkbox"]:checked {
+        background-color: #4a90e2;
+        border-color: #4a90e2;
+    }
+
+    input[type="checkbox"]:checked::before {
+        color: #ffffff;
+    }
+
+    table#alarms {
+        border: 1px solid #383838;
+    }
+
+    table#alarms th,
+    table#alarms td {
+        border: 1px solid #444444;
+    }
+
+    table#alarms th {
+        background-color: #3a3a3a;
+        color: #d0d0d0;
+    }
+
+    table#alarms tr:nth-child(even) td {
+        background-color: #2f2f2f;
+    }
+
+    table#alarms tr:hover td {
+        background-color: #3c3c3c;
+    }
+
+    #info, #weatherMsg, #statusMsg {
+        background-color: #222222;
+        border: none;
+        color: #c0c0c0;
+    }
+
+    #info a {
+        color: #5dade2;
+    }
+    #info a:hover {
+        color: #85c1e9;
+    }
+
+    .ctrlbox {
+        background-color: #2c2c2c !important;
+        border: none;
+    }
+
+    .ctrlbox .linemode {
+        background-color: #2c2c2c !important;
+        border: none;
+    }
+
 }
