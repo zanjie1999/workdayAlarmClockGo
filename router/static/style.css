@@ -163,7 +163,7 @@ button:active {
     flex-wrap: wrap;
     /* margin: 1.5em 0; */
     padding: 15px;
-    background-color: #ecf0f1;
+    /* background-color: #ecf0f1; */
     border-radius: 8px;
 }
 
@@ -443,7 +443,7 @@ img[src="/favicon.ico"] {
     }
 
     .linemode {
-        background-color: #282828;
+        /* background-color: #282828; */
         border: none;
     }
 
