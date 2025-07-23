@@ -36,3 +36,10 @@ mv workdayAlarmClock build/workdayAlarmClock-darwin-arm64
 export GOARCH=amd64
 go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-darwin
+# 设置交叉编译的环境变量
+export GOOS=linux
+export GOARCH=arm
+export GOARM=7
+export CGO_ENABLED=0
+go build -ldflags="-w -s"
+mv workdayAlarmClock build/workdayAlarmClock-arm

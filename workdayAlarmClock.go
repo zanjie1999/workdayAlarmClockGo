@@ -152,5 +152,5 @@ func main() {
 	workDayApi()
 	go timer()
 	go shellInput()
-	router.Init("/").Run(":8080")
+	router.Init("/").Run(":18081")
 }
