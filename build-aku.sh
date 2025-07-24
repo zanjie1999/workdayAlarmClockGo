@@ -8,3 +8,4 @@ export GOARM=7
 export CGO_ENABLED=0
 go build -ldflags="-w -s"
 mv workdayAlarmClock build/workdayAlarmClock-arm
+echo '编译完成'

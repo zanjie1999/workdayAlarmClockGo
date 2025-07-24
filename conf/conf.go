@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+	Port            int                 `json:"port"`
 	VolDefault      string              `json:"volDefault"`
 	VolAlarm        string              `json:"volAlarm"`
 	Alarm           map[string][]string `json:"alarm"`

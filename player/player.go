@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -197,7 +198,7 @@ func Stop() {
 		IsAlarm = false
 		IsPlayWeather = true
 		// 结束闹钟时播放天气
-		PlayUrl("http://127.0.0.1:8080/weather.mp3")
+		PlayUrl("http://127.0.0.1:" + strconv.Itoa(conf.Cfg.Port) + "/weather.mp3")
 	} else if IsPlayWeather {
 		IsPlayWeather = false
 		if conf.Cfg.MuteWhenStop {
@@ -253,7 +254,7 @@ func PlayAlarm() {
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")
-		PlayUrl("http://127.0.0.1:8080/music.mp3")
+		PlayUrl("http://127.0.0.1:" + strconv.Itoa(conf.Cfg.Port) + "/music.mp3")
 		return
 	} else {
 		// 放完一次了 重置
@@ -272,7 +273,7 @@ func PlayAlarm() {
 		if len(PlayList) == 0 {
 			// 你该不是在拿咩咩寻开心吧
 			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")
-			PlayList = append(PlayList, "http://127.0.0.1:8080/music.mp3")
+			PlayList = append(PlayList, "http://127.0.0.1:"+strconv.Itoa(conf.Cfg.Port)+"/music.mp3")
 		}
 		conf.Save()
 		Next()
