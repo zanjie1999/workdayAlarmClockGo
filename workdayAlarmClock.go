@@ -19,7 +19,7 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "14.1"
+var VERSION = "15.5"
 
 var workDayApiErr = false
 
@@ -138,6 +138,9 @@ func main() {
 			player.ShellPlayer = os.Args[1]
 		}
 	}
+	// 全局禁用TLS验证 兼容老系统
+	httpme.SetSkipVerify(true)
+
 	if !conf.IsApp {
 		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}

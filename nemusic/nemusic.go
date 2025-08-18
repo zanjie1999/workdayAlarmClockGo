@@ -48,6 +48,18 @@ func MusicUrl(id string) string {
 			return resp.R.Request.URL.String()
 		} else {
 			log.Println("需要VIP", id)
+			// 使用第三方尝试解析vip  接口谷歌找的
+			resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?level=standard&id=" + id)
+			if err == nil {
+				var j map[string]interface{}
+				resp.Json(&j)
+				if j["code"].(float64) == 200 {
+					l := j["data"].([]interface{})
+					if len(l) > 0 {
+						return l[0].(map[string]interface{})["url"].(string)
+					}
+				}
+			}
 			return ""
 		}
 	}
