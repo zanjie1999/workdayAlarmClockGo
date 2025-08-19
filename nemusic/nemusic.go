@@ -9,6 +9,7 @@ package nemusic
 import (
 	"fmt"
 	"log"
+	"workdayAlarmClock/conf"
 
 	"github.com/zanjie1999/httpme"
 )
@@ -38,31 +39,44 @@ func PlayList(id string) []string {
 // 获取音乐播放地址 不一定能放先检查下
 func MusicUrl(id string) string {
 	req := httpme.Httpme()
-	// 带这个ua可以放10秒，但没有任何意义
-	// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
-	resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
-	if err == nil {
-		resp.R.Body.Close()
-		if resp.R.Request.URL.Path != "/404" {
-			// 302后cdn的地址，时间长会过期
-			return resp.R.Request.URL.String()
-		} else {
-			log.Println("需要VIP", id)
-			// 使用第三方尝试解析vip  接口谷歌找的
-			resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?level=standard&id=" + id)
-			if err == nil {
-				var j map[string]interface{}
-				resp.Json(&j)
-				if j["code"].(float64) == 200 {
-					l := j["data"].([]interface{})
-					if len(l) > 0 {
-						return l[0].(map[string]interface{})["url"].(string)
-					}
+	flag := false
+	if conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard" {
+		// 带这个ua可以放10秒，但没有任何意义
+		// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
+		resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
+		if err == nil {
+			resp.R.Body.Close()
+			if resp.R.Request.URL.Path != "/404" {
+				// 302后cdn的地址，时间长会过期
+				return resp.R.Request.URL.String()
+			} else {
+				log.Println("需要VIP", id)
+				flag = true
+				return ""
+			}
+		}
+		log.Println("检查歌曲是否可用出错", err)
+	} else {
+		flag = true
+	}
+	if flag {
+		if conf.Cfg.MusicQuality == "" {
+			conf.Cfg.MusicQuality = "standard"
+		}
+		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
+		// 使用第三方尝试解析vip  接口谷歌找的
+		resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?level=" + conf.Cfg.MusicQuality + "&id=" + id)
+		if err == nil {
+			var j map[string]interface{}
+			resp.Json(&j)
+			if j["code"].(float64) == 200 {
+				l := j["data"].([]interface{})
+				if len(l) > 0 {
+					return l[0].(map[string]interface{})["url"].(string)
 				}
 			}
-			return ""
 		}
+		log.Println("使用接口获取歌曲地址出错", err)
 	}
-	log.Println("检查歌曲是否可用出错", err)
 	return ""
 }

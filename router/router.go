@@ -156,8 +156,12 @@ func Init(urlPrefix string) *gin.Engine {
 		if len(typeS) > 0 && typeS[len(typeS)-1] == ',' {
 			typeS = typeS[:len(typeS)-1]
 		}
-		if hhmm == "" || typeS == "" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm or type is empty</h1>"+js2home))
+		if typeS == "" {
+			// 默认一次
+			typeS = "3"
+		}
+		if hhmm == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm is empty</h1>"+js2home))
 			return
 		}
 		if typeList, exists := conf.Cfg.Alarm[hhmm]; exists {
@@ -204,6 +208,7 @@ func Init(urlPrefix string) *gin.Engine {
 		wakelock := c.Query("wakelock")
 		alarmTime := c.Query("alarmTime")
 		muteWhenStop := c.Query("muteWhenStop")
+		musicQuality := c.Query("musicQuality")
 		log.Println(wakelock)
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
@@ -234,6 +239,7 @@ func Init(urlPrefix string) *gin.Engine {
 		if alarmTime != "" {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}
+		conf.Cfg.MusicQuality = musicQuality
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})

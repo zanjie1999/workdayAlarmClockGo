@@ -31,6 +31,7 @@ type Config struct {
 	Wakelock        bool                `json:"wakelock"`
 	AlarmTime       float64             `json:"alarmTime"`
 	MuteWhenStop    bool                `json:"muteWhenStop"`
+	MusicQuality    string              `json:"musicQuality"`
 }
 
 var (
@@ -63,6 +64,8 @@ var (
 		AlarmTime: 4.5,
 		// 停止时静音
 		MuteWhenStop: false,
+		// 音质
+		MusicQuality: "standard",
 	}
 )
 

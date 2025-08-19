@@ -58,8 +58,15 @@
             CPU唤醒锁<input type="checkbox" name="wakelock" id="wakelock" value="1">重启生效<br>
             （关闭可以最大程度的节省电量，但闹钟可能不响）<br>
             停止时静音<input type="checkbox" name="muteWhenStop" id="muteWhenStop" value="1"><br>
+            音质选择<select name="musicQuality" id="musicQuality" style="margin-bottom: 0">
+                <option value="standard">128 mp3</option>
+                <option value="exhigh">320 mp3</option>
+                <option value="lossless">无损flac</option>
+                <option value="jymaster">母带flac</option>
+            </select><br>
+            量力而行，音质过高可能会卡，不建议超过无损，推荐128处理最快<br>
             <button type="submit">保存设置</button>
-            <br><br><div id="weatherMsg" ></div>
+            <br><br><div id="weatherMsg" >请打开浏览器的JavaScript功能</div>
             <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
         </form>
         <form action="/uploadMp3" method="post" action enctype="multipart/form-data">
@@ -76,7 +83,7 @@
         </form>
         <div class="box">
             <h3>闹钟播放记录</h3>
-            <div id="info" ></div>
+            <div id="info" >请打开浏览器的JavaScript功能</div>
         </div>
     </div>
     <script>
@@ -128,6 +135,7 @@
                     document.getElementById('wakelock').checked = d.wakelock
                     document.getElementById('alarmTime').value = d.alarmTime
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
+                    document.getElementById('musicQuality').value = d.musicQuality
                     var html = '<tr><th>时分</th><th>类型</th><th>操作</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var typeList = d.alarm[hhmm] || [];
