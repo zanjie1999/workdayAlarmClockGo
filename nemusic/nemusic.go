@@ -53,8 +53,9 @@ func MusicUrl(id string) string {
 				log.Println("需要VIP", id)
 				flag = true
 			}
+		} else {
+			log.Println("检查歌曲是否可用出错", err)
 		}
-		log.Println("检查歌曲是否可用出错", err)
 	} else {
 		flag = true
 	}
@@ -74,8 +75,10 @@ func MusicUrl(id string) string {
 					return l[0].(map[string]interface{})["url"].(string)
 				}
 			}
+		} else {
+			log.Println("使用接口获取歌曲地址出错", err)
 		}
-		log.Println("使用接口获取歌曲地址出错", err)
+
 	}
 	return ""
 }
