@@ -74,6 +74,8 @@ func MusicUrl(id string) string {
 				if len(l) > 0 {
 					return l[0].(map[string]interface{})["url"].(string)
 				}
+			} else {
+				log.Println("使用接口获取歌曲地址出错", j)
 			}
 		} else {
 			log.Println("使用接口获取歌曲地址出错", err)
