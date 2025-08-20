@@ -52,7 +52,6 @@ func MusicUrl(id string) string {
 			} else {
 				log.Println("需要VIP", id)
 				flag = true
-				return ""
 			}
 		}
 		log.Println("检查歌曲是否可用出错", err)
