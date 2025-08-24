@@ -102,7 +102,7 @@ func Next() string {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
 			if len(PlayList) > 0 {
-				fmt.Println("ECHO 正在播放 " + strconv.Itoa(len(PlayList)))
+				fmt.Println("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
 			} else {
 				fmt.Println("ECHO 正在播放")
 			}
