@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -49,6 +50,7 @@ func Prev() string {
 		PrevRdmFlag = false
 	}
 	if PrevRdmFlag {
+		fmt.Println("ECHO 随机播放列表")
 		PrevRdmFlag = false
 		NowUrl = ""
 		PrevUrl = ""
@@ -63,6 +65,7 @@ func Prev() string {
 		Next()
 		return "随机播放列表"
 	} else if PrevUrl != "" {
+		fmt.Println("ECHO 上一首")
 		PlayList = append([]string{NowUrl}, PlayList...)
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
@@ -70,6 +73,7 @@ func Prev() string {
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
+		fmt.Println("ECHO 播放歌单" + conf.Cfg.DefPlayListId)
 		PrevRdmFlag = true
 		// 不清空就会在播放歌单和上一首之间循环
 		NowUrl = ""
@@ -97,6 +101,11 @@ func Next() string {
 		if len(PlayList) > 0 {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
+			if len(PlayList) > 0 {
+				fmt.Println("ECHO 正在播放 " + strconv.Itoa(len(PlayList)))
+			} else {
+				fmt.Println("ECHO 正在播放")
+			}
 			if len(now) > 3 && now[:4] == "http" {
 				PlayUrl(now)
 				return now
@@ -169,6 +178,7 @@ func PlayUrl(url string) {
 }
 
 func Stop() {
+	fmt.Println("ECHO 工作咩闹钟")
 	PrevRdmFlag = false
 	PrevUrl = NowUrl
 	NowUrl = ""
@@ -237,6 +247,7 @@ func filterList(in, filter []string) []string {
 
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
+	fmt.Println("ECHO 闹钟")
 	if SkipAlarm > 0 {
 		SkipAlarm--
 		log.Println("跳过闹钟")
