@@ -170,6 +170,7 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.Alarm[hhmm] = strings.Split(typeS, ",")
 		}
 		conf.Save()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -182,6 +183,7 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		delete(conf.Cfg.Alarm, hhmm)
 		conf.Save()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -241,6 +243,7 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		conf.Cfg.MusicQuality = musicQuality
 		conf.Save()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -358,4 +361,15 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	return r
+}
+
+// 更新app中每分钟锁的开关状态
+func updateAppAlarmWake() {
+	if conf.IsApp {
+		if len(conf.Cfg.Alarm) > 0 {
+			fmt.Println("ALARMON")
+		} else {
+			fmt.Println("ALARMOFF")
+		}
+	}
 }

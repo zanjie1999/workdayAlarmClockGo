@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	VERSION       = "17.3"
+	VERSION       = "17.4"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -166,15 +166,21 @@ func main() {
 		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}
 	conf.Init()
-	if conf.Cfg.Wakelock {
+	if conf.IsApp && conf.Cfg.Wakelock {
 		fmt.Println("WAKELOCK")
+	}
+	if conf.IsApp && len(conf.Cfg.Alarm) > 0 {
+		fmt.Println("ALARMON")
 	}
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	workDayApi()
-	go timer()
+	if conf.IsApp && conf.Cfg.Wakelock {
+		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
+		go timer()
+	}
 	go shellInput()
 	router.Init("/").Run(":8080")
 }

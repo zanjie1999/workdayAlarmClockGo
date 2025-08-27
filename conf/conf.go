@@ -59,7 +59,7 @@ var (
 		// 默认更新天气的时间
 		WeatherUpdate: "0700",
 		// Android唤醒锁开
-		Wakelock: true,
+		Wakelock: false,
 		// 闹钟时长
 		AlarmTime: 4.5,
 		// 停止时静音
