@@ -101,6 +101,13 @@ func timeJob() {
 					}
 				}
 				conf.Save()
+				if conf.IsApp {
+					if len(conf.Cfg.Alarm) > 0 {
+						fmt.Println("ALARMON")
+					} else {
+						fmt.Println("ALARMOFF")
+					}
+				}
 				break
 			} else if dayType == mmdd {
 				// 月日
