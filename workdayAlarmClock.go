@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
@@ -19,9 +20,11 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-var VERSION = "17.1"
-
-var workDayApiErr = false
+var (
+	VERSION       = "17.3"
+	workDayApiErr = false
+	lasthhmm      = ""
+)
 
 // 获取今天是不是工作日
 func workDayApi() {
@@ -51,50 +54,60 @@ func workDayApi() {
 // 定时器 go timer()
 func timer() {
 	for {
-		now := time.Now()
-		mmdd := now.Format("0102")
-		hhmm := now.Format("1504")
-		// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
-		if workDayApiErr || hhmm == "0000" {
-			workDayApi()
-		}
-		if hhmm == conf.Cfg.WeatherUpdate {
-			weather.GetWeather("")
-		}
-		if dayTypeList, ok := conf.Cfg.Alarm[hhmm]; ok {
-			// 增加 同时间 多类型 的闹钟支持
-			for _, dayType := range dayTypeList {
-				//  法定工作日                           法定休息日                           每天            周 日一二三四五六
-				if (dayType == "1" && conf.IsWorkDay) || (dayType == "2" && !conf.IsWorkDay) || dayType == "4" || dayType == strconv.Itoa(int(now.Weekday())+5) {
-					log.Println("闹钟时间到", hhmm)
-					player.PlayAlarm()
-					break
-				} else if dayType == "3" {
-					// 一次性闹钟
-					log.Println("一次性闹钟时间到", hhmm)
-					player.PlayAlarm()
-					if len(dayTypeList) == 1 {
-						delete(conf.Cfg.Alarm, hhmm)
-					} else {
-						// 只删掉这条3的
-						for i, v := range dayTypeList {
-							if v == "3" {
-								conf.Cfg.Alarm[hhmm] = append(dayTypeList[:i], dayTypeList[i+1:]...)
-							}
-						}
-					}
-					conf.Save()
-					break
-				} else if dayType == mmdd {
-					// 月日
-					log.Println("闹钟时间到", mmdd, "的", hhmm)
-					player.PlayAlarm()
-					break
-				}
-			}
-		}
+		timeJob()
 		// 秒对齐
 		time.Sleep(time.Duration(60-time.Now().Unix()%60) * time.Second)
+	}
+}
+
+func timeJob() {
+	now := time.Now()
+	mmdd := now.Format("0102")
+	hhmm := now.Format("1504")
+	if lasthhmm == hhmm {
+		log.Print("定时器重复执行", hhmm)
+		return
+	}
+	lasthhmm = hhmm
+
+	// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
+	if workDayApiErr || hhmm == "0000" {
+		workDayApi()
+	}
+	if hhmm == conf.Cfg.WeatherUpdate {
+		weather.GetWeather("")
+	}
+	if dayTypeList, ok := conf.Cfg.Alarm[hhmm]; ok {
+		// 增加 同时间 多类型 的闹钟支持
+		for _, dayType := range dayTypeList {
+			//  法定工作日                           法定休息日                           每天            周 日一二三四五六
+			if (dayType == "1" && conf.IsWorkDay) || (dayType == "2" && !conf.IsWorkDay) || dayType == "4" || dayType == strconv.Itoa(int(now.Weekday())+5) {
+				log.Println("闹钟时间到", hhmm)
+				player.PlayAlarm()
+				break
+			} else if dayType == "3" {
+				// 一次性闹钟
+				log.Println("一次性闹钟时间到", hhmm)
+				player.PlayAlarm()
+				if len(dayTypeList) == 1 {
+					delete(conf.Cfg.Alarm, hhmm)
+				} else {
+					// 只删掉这条3的
+					for i, v := range dayTypeList {
+						if v == "3" {
+							conf.Cfg.Alarm[hhmm] = append(dayTypeList[:i], dayTypeList[i+1:]...)
+						}
+					}
+				}
+				conf.Save()
+				break
+			} else if dayType == mmdd {
+				// 月日
+				log.Println("闹钟时间到", mmdd, "的", hhmm)
+				player.PlayAlarm()
+				break
+			}
+		}
 	}
 }
 
@@ -121,8 +134,14 @@ func shellInput() {
 					fmt.Println("程序已退出，可以使用shell命令或使用 echo EXIT 退出App")
 				}
 				os.Exit(0)
+			case "wake":
+				timeJob()
 			default:
-				fmt.Println("未知命令", cmd)
+				if strings.HasPrefix(cmd, "playlist ") {
+					player.PlayPlaylist(cmd[9:], false)
+				} else {
+					fmt.Println("未知命令", cmd)
+				}
 			}
 		}
 	}
