@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -113,9 +114,10 @@ func timeJob() {
 
 // 处理shell输入 go shellInput()
 func shellInput() {
+	reader := bufio.NewReader(os.Stdin)
 	for {
-		var cmd string
-		_, err := fmt.Scanln(&cmd)
+		cmd, err := reader.ReadString('\n')
+		cmd = strings.TrimSpace(cmd)
 		if err != nil {
 			fmt.Println("输入错误", err)
 			break
