@@ -20,7 +20,7 @@
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
-其他平台（Windows，Linux）推荐使用 [workdayAlarmClockGo](https://github.com/zanjie1999/meMp3Player) 作为播放器使用  
+其他平台（Windows，Linux）推荐使用 [meMp3Player](https://github.com/zanjie1999/meMp3Player) 作为播放器使用  
 即这样启动 `workdayAlarmClock 你的播放器路径`  
 比如 `workdayAlarmClock ./meMp3Player`
 
