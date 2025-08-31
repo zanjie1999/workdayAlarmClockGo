@@ -7,8 +7,10 @@
 package nemusic
 
 import (
+	"encoding/gob"
 	"fmt"
 	"log"
+	"os"
 	"workdayAlarmClock/conf"
 
 	"github.com/zanjie1999/httpme"
@@ -30,17 +32,45 @@ func PlayList(id string) []string {
 		for i, v := range tids {
 			ids[i] = fmt.Sprintf("%.0f", v.(map[string]interface{})["id"].(float64))
 		}
+		if conf.Cfg.SavePath != "" {
+			// 本地缓存
+			file, err := os.Create(conf.Cfg.SavePath + id + ".list")
+			if err != nil {
+				log.Println("创建歌单缓存文件失败", err)
+			} else {
+				gob.NewEncoder(file).Encode(ids)
+			}
+			file.Close()
+		}
 		return ids
 	}
 	log.Println("获取歌单信息出错", err)
+	if conf.Cfg.SavePath != "" {
+		file, err := os.Open(conf.Cfg.SavePath + id + ".list")
+		if err != nil {
+			log.Println("使用缓存")
+			var ids []string
+			gob.NewDecoder(file).Decode(&ids)
+			return ids
+		} else {
+			log.Println("没有缓存", err)
+		}
+	}
 	return []string{}
 }
 
 // 获取音乐播放地址 不一定能放先检查下
 func MusicUrl(id string) string {
 	req := httpme.Httpme()
-	flag := false
-	if conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard" {
+	var url = ""
+	// 本地缓存
+	if conf.Cfg.SavePath != "" {
+		if stat, err := os.Stat(conf.Cfg.SavePath + id + ".mp3"); err == nil && stat.Size() > 0 {
+			url = conf.Cfg.SavePath + id + ".mp3"
+			log.Println("播放缓存", url)
+		}
+	}
+	if url == "" && (conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard") {
 		// 带这个ua可以放10秒，但没有任何意义
 		// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
 		resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
@@ -48,18 +78,15 @@ func MusicUrl(id string) string {
 			resp.R.Body.Close()
 			if resp.R.Request.URL.Path != "/404" {
 				// 302后cdn的地址，时间长会过期
-				return resp.R.Request.URL.String()
+				url = resp.R.Request.URL.String()
 			} else {
 				log.Println("需要VIP", id)
-				flag = true
 			}
 		} else {
 			log.Println("检查歌曲是否可用出错", err)
 		}
-	} else {
-		flag = true
 	}
-	if flag {
+	if url == "" {
 		if conf.Cfg.MusicQuality == "" {
 			conf.Cfg.MusicQuality = "standard"
 		}
@@ -72,7 +99,7 @@ func MusicUrl(id string) string {
 			if j["code"].(float64) == 200 {
 				l := j["data"].([]interface{})
 				if len(l) > 0 {
-					return l[0].(map[string]interface{})["url"].(string)
+					url = l[0].(map[string]interface{})["url"].(string)
 				}
 			} else {
 				log.Println("使用接口获取歌曲地址出错", j)
@@ -82,5 +109,16 @@ func MusicUrl(id string) string {
 		}
 
 	}
-	return ""
+	if conf.Cfg.SavePath != "" && url != "" {
+		// 缓存
+		log.Println("开始下载到", conf.Cfg.SavePath+id+".mp3")
+		resp, err := httpme.Get(url)
+		if err != nil {
+			log.Println("下载出错", err)
+		} else {
+			url = conf.Cfg.SavePath + id + ".mp3"
+			resp.SaveFile(url)
+		}
+	}
+	return url
 }

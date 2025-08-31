@@ -32,6 +32,7 @@ type Config struct {
 	AlarmTime       float64             `json:"alarmTime"`
 	MuteWhenStop    bool                `json:"muteWhenStop"`
 	MusicQuality    string              `json:"musicQuality"`
+	SavePath        string              `json:"savePath"`
 }
 
 var (
@@ -66,6 +67,8 @@ var (
 		MuteWhenStop: false,
 		// 音质
 		MusicQuality: "standard",
+		// 保存音乐文件缓存
+		SavePath: "",
 	}
 )
 

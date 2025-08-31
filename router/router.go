@@ -56,6 +56,21 @@ func Init(urlPrefix string) *gin.Engine {
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
 	root.StaticFile("/weather.mp3", "./weather.mp3")
+	// 允许直接浏览缓存
+	if conf.Cfg.SavePath != "" {
+		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))
+	}
+
+	// 删除缓存目录
+	root.GET("/delSave", func(c *gin.Context) {
+		if conf.Cfg.SavePath != "" && conf.Cfg.SavePath != "/" && conf.Cfg.SavePath != "./" {
+			os.RemoveAll(conf.Cfg.SavePath)
+			os.MkdirAll(conf.Cfg.SavePath, os.ModePerm)
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>已删除</h1>"+js2home))
+		} else {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>你的操作很危险，驳回</h1><br>"+conf.Cfg.SavePath+js2home))
+		}
+	})
 
 	root.GET("/hello", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -211,6 +226,7 @@ func Init(urlPrefix string) *gin.Engine {
 		alarmTime := c.Query("alarmTime")
 		muteWhenStop := c.Query("muteWhenStop")
 		musicQuality := c.Query("musicQuality")
+		savePath := c.Query("savePath")
 		log.Println(wakelock)
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
@@ -242,6 +258,26 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}
 		conf.Cfg.MusicQuality = musicQuality
+		if savePath == "" {
+			conf.Cfg.SavePath = ""
+		} else if savePath != "/" && savePath != "./" {
+			conf.Cfg.SavePath = savePath
+			if conf.IsApp && conf.Cfg.SavePath[0] != '/' && conf.Cfg.SavePath[0] != '.' {
+				conf.Cfg.SavePath = "./" + conf.Cfg.SavePath
+			}
+			if !strings.HasSuffix(conf.Cfg.SavePath, "/") {
+				conf.Cfg.SavePath += "/"
+			}
+		} else {
+			conf.Cfg.SavePath = "./music/"
+		}
+		if conf.Cfg.SavePath != "" {
+			err := os.MkdirAll(conf.Cfg.SavePath, os.ModePerm)
+			if err != nil {
+				log.Println("创建缓存目录出错", conf.Cfg.SavePath, err)
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>创建缓存目录出错"+conf.Cfg.SavePath+"</h1>"))
+			}
+		}
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})

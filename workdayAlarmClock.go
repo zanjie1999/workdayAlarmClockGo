@@ -22,13 +22,14 @@ import (
 )
 
 var (
-	VERSION       = "17.4"
+	VERSION       = "18.0"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
 
 // 获取今天是不是工作日
 func workDayApi() {
+	log.Println("正在获取工作日状态，如时间很长请检查网络")
 	req := httpme.Httpme()
 	yymmdd := time.Now().Format("2006-01-02")
 	if yymmdd == "1970-01-01" {
