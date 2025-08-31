@@ -66,11 +66,11 @@ func MusicUrl(id string) string {
 	// 本地缓存
 	if conf.Cfg.SavePath != "" {
 		if stat, err := os.Stat(conf.Cfg.SavePath + id + ".mp3"); err == nil && stat.Size() > 0 {
-			url = conf.Cfg.SavePath + id + ".mp3"
 			log.Println("播放缓存", url)
+			return conf.Cfg.SavePath + id + ".mp3"
 		}
 	}
-	if url == "" && (conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard") {
+	if conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard" {
 		// 带这个ua可以放10秒，但没有任何意义
 		// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
 		resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
