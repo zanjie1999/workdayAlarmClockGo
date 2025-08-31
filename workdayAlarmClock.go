@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"workdayAlarmClock/conf"
+	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/router"
 	"workdayAlarmClock/weather"
@@ -22,7 +23,7 @@ import (
 )
 
 var (
-	VERSION       = "18.0"
+	VERSION       = "18.1"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -149,6 +150,8 @@ func shellInput() {
 			default:
 				if strings.HasPrefix(cmd, "playlist ") {
 					player.PlayPlaylist(cmd[9:], false)
+				} else if strings.HasPrefix(cmd, "playlistdl ") {
+					nemusic.PlaylistDownload(cmd[11:])
 				} else {
 					fmt.Println("未知命令", cmd)
 				}

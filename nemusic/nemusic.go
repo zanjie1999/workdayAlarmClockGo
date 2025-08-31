@@ -122,3 +122,17 @@ func MusicUrl(id string) string {
 	}
 	return url
 }
+
+// 下载歌单缓存
+func PlaylistDownload(id string) {
+	if conf.Cfg.SavePath == "" {
+		log.Println("你还没配置缓存目录")
+		return
+	}
+	log.Println("开始下载列表", id)
+	ids := PlayList(id)
+	for i, v := range ids {
+		log.Println(len(ids), "/", i+1, v)
+		MusicUrl(v)
+	}
+}
