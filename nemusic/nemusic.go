@@ -47,7 +47,7 @@ func PlayList(id string) []string {
 	log.Println("获取歌单信息出错", err)
 	if conf.Cfg.SavePath != "" {
 		file, err := os.Open(conf.Cfg.SavePath + id + ".list")
-		if err != nil {
+		if err == nil {
 			log.Println("使用缓存")
 			var ids []string
 			gob.NewDecoder(file).Decode(&ids)
