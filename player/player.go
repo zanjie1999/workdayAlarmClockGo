@@ -22,6 +22,7 @@ import (
 	"workdayAlarmClock/weather"
 
 	"github.com/zanjie1999/httpme"
+	"golang.org/x/tools/go/cfg"
 )
 
 var (
@@ -207,7 +208,11 @@ func Stop() {
 		IsAlarm = false
 		IsPlayWeather = true
 		// 结束闹钟时播放天气
-		PlayUrl("http://127.0.0.1:8080/weather.mp3")
+		if cfg.IsApp {
+			PlayUrl("./weather.mp3")
+		} else {
+			PlayUrl("http://127.0.0.1:8080/weather.mp3")
+		}
 	} else if IsPlayWeather {
 		IsPlayWeather = false
 		if conf.Cfg.MuteWhenStop {
@@ -216,6 +221,9 @@ func Stop() {
 			SetVol(conf.Cfg.VolDefault)
 		}
 		PrevUrl = ""
+		if conf.IsApp {
+			fmt.Println("SCREENOFF")
+		}
 	} else if conf.Cfg.MuteWhenStop {
 		SetVol("0")
 	}
@@ -254,6 +262,9 @@ func PlayAlarm() {
 		return
 	}
 	IsAlarm = true
+	if conf.IsApp {
+		fmt.Println("ALARM")
+	}
 	SetVol(conf.Cfg.VolAlarm)
 	PlayList = []string{}
 	ids := nemusic.PlayList(conf.Cfg.NePlayListId)

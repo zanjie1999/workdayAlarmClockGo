@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	VERSION       = "18.1"
+	VERSION       = "18.2"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -148,7 +148,9 @@ func shellInput() {
 			case "wake":
 				timeJob()
 			default:
-				if strings.HasPrefix(cmd, "playlist ") {
+				if strings.HasPrefix(cmd, "echo ") {
+					fmt.Println(cmd[5:])
+				} else if strings.HasPrefix(cmd, "playlist ") {
 					player.PlayPlaylist(cmd[9:], false)
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
@@ -193,5 +195,8 @@ func main() {
 		go timer()
 	}
 	go shellInput()
+	if conf.IsApp {
+		fmt.Println("ECHO 工作咩闹钟")
+	}
 	router.Init("/").Run(":8080")
 }
