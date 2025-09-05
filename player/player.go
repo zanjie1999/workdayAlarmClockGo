@@ -22,7 +22,6 @@ import (
 	"workdayAlarmClock/weather"
 
 	"github.com/zanjie1999/httpme"
-	"golang.org/x/tools/go/cfg"
 )
 
 var (
@@ -208,10 +207,12 @@ func Stop() {
 		IsAlarm = false
 		IsPlayWeather = true
 		// 结束闹钟时播放天气
-		if cfg.IsApp {
-			PlayUrl("./weather.mp3")
-		} else {
-			PlayUrl("http://127.0.0.1:8080/weather.mp3")
+		if stat, err := os.Stat("weather.mp3"); err == nil && stat.Size() > 0 {
+			if conf.IsApp {
+				PlayUrl("./weather.mp3")
+			} else {
+				PlayUrl("http://127.0.0.1:8080/weather.mp3")
+			}
 		}
 	} else if IsPlayWeather {
 		IsPlayWeather = false

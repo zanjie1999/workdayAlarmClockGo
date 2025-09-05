@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	VERSION       = "18.2"
+	VERSION       = "18.3"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -198,5 +198,6 @@ func main() {
 	if conf.IsApp {
 		fmt.Println("ECHO 工作咩闹钟")
 	}
+	timeJob()
 	router.Init("/").Run(":8080")
 }
