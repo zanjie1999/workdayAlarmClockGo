@@ -13,6 +13,8 @@ go build -ldflags="-w -s"
 mv workdayAlarmClock.exe build/workdayAlarmClock-i386.exe
 export GOOS=linux
 go build -ldflags="-w -s"
+mkdir -p $AndroidProject/app/libs/x86
+cp workdayAlarmClock $AndroidProject/app/libs/x86/libWorkdayAlarmClock.so
 mv workdayAlarmClock build/workdayAlarmClock-linux-i386
 export GOARCH=amd64
 go build -ldflags="-w -s"

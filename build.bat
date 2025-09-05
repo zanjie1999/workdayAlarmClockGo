@@ -14,6 +14,8 @@ move /y workdayAlarmClock.exe build\workdayAlarmClock-i386.exe
 SET CGO_ENABLED=0
 SET GOOS=linux
 go build -ldflags="-w -s"
+mkdir %AndroidProject%\app\libs\x86
+copy /y workdayAlarmClock %AndroidProject%\app\libs\x86\libWorkdayAlarmClock.so
 move /y workdayAlarmClock build\workdayAlarmClock-linux-i386
 SET GOARCH=amd64
 go build -ldflags="-w -s"
