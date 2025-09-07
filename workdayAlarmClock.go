@@ -189,6 +189,7 @@ func main() {
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
+	log.Println("请使用浏览器访问http://127.0.0.1:8080或http://设备ip:8080来进入后台")
 	workDayApi()
 	if conf.IsApp && conf.Cfg.Wakelock {
 		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
