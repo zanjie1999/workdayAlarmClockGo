@@ -167,7 +167,7 @@ func shellInput() {
 func GetLocalIP() (string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return "", err
+		return "设备ip", err
 	}
 
 	for _, iface := range interfaces {
