@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -162,6 +163,53 @@ func shellInput() {
 	}
 }
 
+// 获取本地ip
+func GetLocalIP() (string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	for _, iface := range interfaces {
+		// 检查接口状态：是否启动且非回环
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		// 获取接口上的地址列表
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.Printf("Error getting addresses for interface %s: %v\n", iface.Name, err)
+			continue
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+			// 类型断言，处理 *net.IPNet 和 *net.IPAddr
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			default:
+				continue
+			}
+
+			// 跳过回环地址和IPv6地址
+			if ip.IsLoopback() || ip.To4() == nil {
+				continue
+			}
+			// 跳过链路本地地址
+			if ip.IsLinkLocalUnicast() {
+				continue
+			}
+
+			return ip.String(), nil
+		}
+	}
+	return "设备ip", fmt.Errorf("no suitable IPv4 address found")
+}
+
 func main() {
 	// libWorkdayAlarmClock.so app
 	if len(os.Args) > 1 {
@@ -203,12 +251,13 @@ func main() {
 	timeJob()
 	run := router.Init("/")
 	port := 8080
+	ip, _ := GetLocalIP()
 	for {
 		addr := fmt.Sprintf(":%d", port)
 		if conf.IsApp {
-			fmt.Println("ECHO 访问http://设备ip" + addr)
+			fmt.Println("ECHO 访问http://" + ip + addr)
 		}
-		log.Println("使用浏览器访问http://127.0.0.1" + addr + "或http://设备ip" + addr + "进入后台")
+		log.Println("使用浏览器访问http://127.0.0.1" + addr + "或http://" + ip + addr + "进入后台")
 		if err := run.Run(":8080"); err != nil {
 			port++
 			log.Println("启动失败，端口被占" + addr)
