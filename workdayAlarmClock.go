@@ -188,6 +188,11 @@ func main() {
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
+	if conf.IsApp {
+		log.Println("下载更新和开源仓库：https://github.com/zanjie1999/workdayAlarmClockAndroid")
+	} else {
+		log.Println("下载更新和开源仓库：https://github.com/zanjie1999/workdayAlarmClockGo")
+	}
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	workDayApi()
 	if conf.IsApp && conf.Cfg.Wakelock {
