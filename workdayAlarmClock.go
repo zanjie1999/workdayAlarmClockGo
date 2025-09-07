@@ -257,7 +257,7 @@ func main() {
 		if conf.IsApp {
 			fmt.Println("ECHO 访问http://" + ip + addr)
 		}
-		log.Println("使用浏览器访问http://127.0.0.1" + addr + "或http://" + ip + addr + "进入后台")
+		log.Println("使用浏览器访问http://" + ip + addr + "进入后台")
 		if err := run.Run(":8080"); err != nil {
 			port++
 			log.Println("启动失败，端口被占" + addr)
