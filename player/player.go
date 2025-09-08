@@ -74,13 +74,17 @@ func Prev() string {
 		return "上一首"
 	} else {
 		fmt.Println("ECHO 播放歌单" + conf.Cfg.DefPlayListId)
-		PrevRdmFlag = true
 		// 不清空就会在播放歌单和上一首之间循环
 		NowUrl = ""
 		PrevUrl = ""
 		NowId = ""
-		PlayPlaylist(conf.Cfg.DefPlayListId, false)
-		return "播放歌单" + conf.Cfg.DefPlayListId
+		if strings.HasPrefix(conf.Cfg.DefPlayListId, "http") {
+			PlayUrl(conf.Cfg.DefPlayListId)
+			return "播放默认URL" + conf.Cfg.DefPlayListId
+		} else {
+			PlayPlaylist(conf.Cfg.DefPlayListId, false)
+			return "播放默认歌单" + conf.Cfg.DefPlayListId
+		}
 	}
 }
 
@@ -138,6 +142,8 @@ func Me1Key() string {
 
 // 播放歌单
 func PlayPlaylist(id string, random bool) {
+	// 在播放任意歌单后，按上一首来随机
+	PrevRdmFlag = true
 	ids := nemusic.PlayList(id)
 	if random {
 		// 打乱歌单
@@ -267,10 +273,15 @@ func PlayAlarm() {
 		fmt.Println("ALARM")
 	}
 	SetVol(conf.Cfg.VolAlarm)
-	PlayList = []string{}
-	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 预下载天气信息
 	go DownWeather()
+	PlayList = []string{}
+	if strings.HasPrefix(conf.Cfg.NePlayListId, "http") {
+		log.Println("闹钟歌单配置的是URL，播放", conf.Cfg.NePlayListId)
+		PlayUrl(conf.Cfg.NePlayListId)
+		return
+	}
+	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 定时停止闹钟
 	StopUnix = time.Now().Unix() + int64(conf.Cfg.AlarmTime*60)
 	if len(ids) == 0 {

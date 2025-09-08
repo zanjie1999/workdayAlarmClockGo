@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "18.4"
+	VERSION       = "18.5"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
