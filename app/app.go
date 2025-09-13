@@ -69,7 +69,8 @@ func SendBroadcast(s string) {
 	pconn := ipv4.NewPacketConn(conn)
 	pconn.SetTTL(1) // 限制在局域网内
 
-	// 发送消息
+	// 发送消息 发两次成功率更高
+	_, _ = conn.Write([]byte(s))
 	_, err = conn.Write([]byte(s))
 	if err != nil {
 		log.Println("发送失败:", err)
