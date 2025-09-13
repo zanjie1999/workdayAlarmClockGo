@@ -33,6 +33,7 @@ type Config struct {
 	MuteWhenStop    bool                `json:"muteWhenStop"`
 	MusicQuality    string              `json:"musicQuality"`
 	SavePath        string              `json:"savePath"`
+	BroadcastMode   bool                `json:"broadcastMode"`
 }
 
 var (
@@ -69,6 +70,8 @@ var (
 		MusicQuality: "standard",
 		// 保存音乐文件缓存
 		SavePath: "",
+		// udp广播群控模式
+		BroadcastMode: false,
 	}
 )
 

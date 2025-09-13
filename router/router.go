@@ -8,7 +8,6 @@ package router
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/weather"
@@ -128,31 +128,31 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>msg is empty</h1>"+js2home))
 			return
 		}
-		fmt.Println(msg)
+		app.Send(msg)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
 	})
 
 	// app暂停播放
 	root.GET("/pause", func(c *gin.Context) {
-		fmt.Println("PAUSE")
+		app.Send("PAUSE")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// app恢复播放
 	root.GET("/resume", func(c *gin.Context) {
-		fmt.Println("RESUME")
+		app.Send("RESUME")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量加
 	root.GET("/volp", func(c *gin.Context) {
-		fmt.Println("VOLP")
+		app.Send("VOLP")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量减
 	root.GET("/volm", func(c *gin.Context) {
-		fmt.Println("VOLM")
+		app.Send("VOLM")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -365,7 +365,7 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/restart", func(c *gin.Context) {
 		// 做不到的，因为要运行完这个方法才会返回
 		// c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
-		fmt.Println("RESTART")
+		app.Send("RESTART")
 		os.Exit(0)
 	})
 
@@ -403,9 +403,9 @@ func Init(urlPrefix string) *gin.Engine {
 func updateAppAlarmWake() {
 	if conf.IsApp {
 		if len(conf.Cfg.Alarm) > 0 {
-			fmt.Println("ALARMON")
+			app.Send("ALARMON")
 		} else {
-			fmt.Println("ALARMOFF")
+			app.Send("ALARMOFF")
 		}
 	}
 }

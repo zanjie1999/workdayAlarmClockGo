@@ -7,7 +7,6 @@
 package player
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net/url"
@@ -17,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/weather"
@@ -50,7 +50,7 @@ func Prev() string {
 		PrevRdmFlag = false
 	}
 	if PrevRdmFlag {
-		fmt.Println("ECHO 随机播放列表")
+		app.Send("ECHO 随机播放列表")
 		PrevRdmFlag = false
 		NowUrl = ""
 		PrevUrl = ""
@@ -65,7 +65,7 @@ func Prev() string {
 		Next()
 		return "随机播放列表"
 	} else if PrevUrl != "" {
-		fmt.Println("ECHO 上一首")
+		app.Send("ECHO 上一首")
 		PlayList = append([]string{NowUrl}, PlayList...)
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
@@ -73,7 +73,7 @@ func Prev() string {
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
-		fmt.Println("ECHO 播放歌单" + conf.Cfg.DefPlayListId)
+		app.Send("ECHO 播放歌单" + conf.Cfg.DefPlayListId)
 		// 不清空就会在播放歌单和上一首之间循环
 		NowUrl = ""
 		PrevUrl = ""
@@ -106,9 +106,9 @@ func Next() string {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
 			if len(PlayList) > 0 {
-				fmt.Println("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
+				app.Send("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
 			} else {
-				fmt.Println("ECHO 正在播放")
+				app.Send("ECHO 正在播放")
 			}
 			if len(now) > 3 && now[:4] == "http" {
 				PlayUrl(now)
@@ -177,14 +177,14 @@ func PlayUrl(url string) {
 	PrevUrl = NowUrl
 	NowUrl = url
 	if conf.IsApp {
-		fmt.Println("PLAY " + url)
+		app.PlayUrl(url)
 	} else {
 		go UnixPlayUrl(url)
 	}
 }
 
 func Stop() {
-	fmt.Println("ECHO 工作咩闹钟")
+	app.Send("ECHO 工作咩闹钟")
 	PrevRdmFlag = false
 	PrevUrl = NowUrl
 	NowUrl = ""
@@ -201,7 +201,7 @@ func Stop() {
 	NowId = ""
 	PlayList = []string{}
 	if conf.IsApp {
-		fmt.Println("STOP")
+		app.Send("STOP")
 	} else {
 		// exec.Command("killall", "play").Run()
 		if UnixCmd != nil {
@@ -229,7 +229,7 @@ func Stop() {
 		}
 		PrevUrl = ""
 		if conf.IsApp {
-			fmt.Println("SCREENOFF")
+			app.Send("SCREENOFF")
 		}
 	} else if conf.Cfg.MuteWhenStop {
 		SetVol("0")
@@ -241,7 +241,7 @@ func Stop() {
 func SetVol(per string) {
 	log.Println("设置音量", per, "%")
 	if conf.IsApp {
-		fmt.Println("VOL " + per)
+		app.Send("VOL " + per)
 	}
 }
 
@@ -262,7 +262,7 @@ func filterList(in, filter []string) []string {
 
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
-	fmt.Println("ECHO 闹钟")
+	app.Send("ECHO 闹钟")
 	if SkipAlarm > 0 {
 		SkipAlarm--
 		log.Println("跳过闹钟")
@@ -270,7 +270,7 @@ func PlayAlarm() {
 	}
 	IsAlarm = true
 	if conf.IsApp {
-		fmt.Println("ALARM")
+		app.Send("ALARM")
 	}
 	SetVol(conf.Cfg.VolAlarm)
 	// 预下载天气信息
@@ -342,7 +342,7 @@ func downloadFile(url string, filename string) error {
 // 	}
 // 	defer streamer.Close()
 // 	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-// 	fmt.Println("music length :", streamer.Len())
+// 	app.Send("music length :", streamer.Len())
 // 	speaker.Play(streamer)
 // 	select {}
 // }

@@ -9,11 +9,11 @@ import (
 	"bufio"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "18.5"
+	VERSION       = "19.0"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -106,9 +106,9 @@ func timeJob() {
 				conf.Save()
 				if conf.IsApp {
 					if len(conf.Cfg.Alarm) > 0 {
-						fmt.Println("ALARMON")
+						app.Send("ALARMON")
 					} else {
-						fmt.Println("ALARMOFF")
+						app.Send("ALARMOFF")
 					}
 				}
 				break
@@ -136,11 +136,11 @@ func shellInput() {
 			case "stop":
 				player.Stop()
 			case "next":
-				fmt.Println(player.Next())
+				app.Send(player.Next())
 			case "prev":
-				fmt.Println(player.Prev())
+				app.Send(player.Prev())
 			case "1key":
-				fmt.Println(player.Me1Key())
+				app.Send(player.Me1Key())
 			case "exit":
 				if conf.IsApp {
 					fmt.Println("程序已退出，可以使用shell命令或使用 echo EXIT 退出App")
@@ -150,7 +150,7 @@ func shellInput() {
 				timeJob()
 			default:
 				if strings.HasPrefix(cmd, "echo ") {
-					fmt.Println(cmd[5:])
+					app.Send(cmd[5:])
 				} else if strings.HasPrefix(cmd, "playlist ") {
 					player.PlayPlaylist(cmd[9:], false)
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
@@ -161,53 +161,6 @@ func shellInput() {
 			}
 		}
 	}
-}
-
-// 获取本地ip
-func GetLocalIP() (string, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return "设备ip", err
-	}
-
-	for _, iface := range interfaces {
-		// 检查接口状态：是否启动且非回环
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-
-		// 获取接口上的地址列表
-		addrs, err := iface.Addrs()
-		if err != nil {
-			log.Printf("Error getting addresses for interface %s: %v\n", iface.Name, err)
-			continue
-		}
-
-		for _, addr := range addrs {
-			var ip net.IP
-			// 类型断言，处理 *net.IPNet 和 *net.IPAddr
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			default:
-				continue
-			}
-
-			// 跳过回环地址和IPv6地址
-			if ip.IsLoopback() || ip.To4() == nil {
-				continue
-			}
-			// 跳过链路本地地址
-			if ip.IsLinkLocalUnicast() {
-				continue
-			}
-
-			return ip.String(), nil
-		}
-	}
-	return "设备ip", fmt.Errorf("no suitable IPv4 address found")
 }
 
 func main() {
@@ -228,10 +181,10 @@ func main() {
 	}
 	conf.Init()
 	if conf.IsApp && conf.Cfg.Wakelock {
-		fmt.Println("WAKELOCK")
+		app.Send("WAKELOCK")
 	}
 	if conf.IsApp && len(conf.Cfg.Alarm) > 0 {
-		fmt.Println("ALARMON")
+		app.Send("ALARMON")
 	}
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
@@ -251,7 +204,7 @@ func main() {
 	timeJob()
 	run := router.Init("/")
 	port := 8080
-	ip, _ := GetLocalIP()
+	ip, _ := app.GetLocalIP()
 	for {
 		addr := fmt.Sprintf(":%d", port)
 		if conf.IsApp {
