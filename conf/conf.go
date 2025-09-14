@@ -34,6 +34,7 @@ type Config struct {
 	MusicQuality    string              `json:"musicQuality"`
 	SavePath        string              `json:"savePath"`
 	BroadcastMode   bool                `json:"broadcastMode"`
+	DefSeek         string              `json:"defSeek"`
 }
 
 var (
@@ -72,6 +73,8 @@ var (
 		SavePath: "",
 		// udp广播群控模式
 		BroadcastMode: false,
+		// 全屋同步补偿ms
+		DefSeek: "0",
 	}
 )
 

@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "19.0"
+	VERSION       = "19.1"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -169,6 +169,8 @@ func main() {
 		if os.Args[1] == "app" {
 			conf.IsApp = true
 			httpme.SetDns("223.6.6.6:53")
+			// 全屋同步补偿ms
+			app.SendLocal("DSEEK " + conf.Cfg.DefSeek)
 		} else {
 			player.ShellPlayer = os.Args[1]
 		}
@@ -181,10 +183,10 @@ func main() {
 	}
 	conf.Init()
 	if conf.IsApp && conf.Cfg.Wakelock {
-		app.Send("WAKELOCK")
+		app.SendLocal("WAKELOCK")
 	}
 	if conf.IsApp && len(conf.Cfg.Alarm) > 0 {
-		app.Send("ALARMON")
+		app.SendLocal("ALARMON")
 	}
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)

@@ -129,7 +129,7 @@ func Init(urlPrefix string) *gin.Engine {
 			return
 		}
 		app.Send(msg)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"+js2home))
 	})
 
 	// app暂停播放
@@ -227,7 +227,8 @@ func Init(urlPrefix string) *gin.Engine {
 		muteWhenStop := c.Query("muteWhenStop")
 		musicQuality := c.Query("musicQuality")
 		savePath := c.Query("savePath")
-		log.Println(wakelock)
+		defSeek := c.Query("defSeek")
+		broadcastMode := c.Query("broadcastMode")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -254,6 +255,11 @@ func Init(urlPrefix string) *gin.Engine {
 		conf.Cfg.WeatherUpdate = WeatherUpdate
 		conf.Cfg.Wakelock = wakelock == "1"
 		conf.Cfg.MuteWhenStop = muteWhenStop == "1"
+		conf.Cfg.BroadcastMode = broadcastMode == "1"
+		conf.Cfg.DefSeek = defSeek
+		if conf.IsApp {
+			app.SendLocal("DSEEK " + defSeek)
+		}
 		if alarmTime != "" {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}

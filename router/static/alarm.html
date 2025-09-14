@@ -66,6 +66,9 @@
             量力而行，音质过高可能会卡或无法播放，推荐128处理最快<br>
             缓存目录<input type="text" name="savePath" id="savePath" placeholder="默认留空不缓存"  style="margin-bottom: 0"><br>
             请输入绝对路径，保证有权限访问，或者输入./music保存在内部 <a href="/delSave">清空缓存</a><br>
+            全屋同步播放服务<input type="checkbox" name="broadcastMode" id="broadcastMode" value="1"><br>
+            同步偏移<input type="text" name="defSeek" id="defSeek" placeholder="毫秒，越大越早播放"  style="margin-bottom: 0"><br>
+            建议服务设置-10左右，客户端默认0，再调大性能差的设备，客户端可能需要开启唤醒锁 <a href="/echo?msg=SEEK" style="margin-left: 20px">尝试对齐</a><br>
             <button type="submit">保存设置</button>
             <br><br><div id="weatherMsg" >请打开浏览器的JavaScript功能</div>
             <a href="/getWeather">测试获取天气</a>-><a href="/downWeather">下载天气音频</a>-><a href="/play?url=http://127.0.0.1:8080/weather.mp3">播放天气音频</a>
@@ -138,6 +141,8 @@
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
                     document.getElementById('musicQuality').value = d.musicQuality
                     document.getElementById('savePath').value = d.savePath
+                    document.getElementById('broadcastMode').checked = d.broadcastMode    
+                    document.getElementById('defSeek').value = d.defSeek
                     var html = '<tr><th>时分</th><th>类型</th><th>操作</th></tr>';
                     for (var hhmm of Object.keys(d.alarm)) {
                         var typeList = d.alarm[hhmm] || [];

@@ -33,10 +33,16 @@ func Init() {
 // 发送给app
 func Send(s string) {
 	if conf.Cfg.BroadcastMode {
+		// 依然会通过管道发送一次，保证能收到，1秒内的重复内容会被忽略
+		fmt.Println(s)
 		SendBroadcast(s)
 	} else {
 		fmt.Println(s)
 	}
+}
+
+func SendLocal(s string) {
+	fmt.Println(s)
 }
 
 // 播放url
@@ -76,7 +82,7 @@ func SendBroadcast(s string) {
 		log.Println("发送失败:", err)
 	}
 
-	log.Println("已发送广播: ", s, "到", broadcastAddr.String())
+	log.Println("广播", s, "到", broadcastAddr.String())
 }
 
 // 获取本地ip

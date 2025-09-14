@@ -241,7 +241,7 @@ func Stop() {
 func SetVol(per string) {
 	log.Println("设置音量", per, "%")
 	if conf.IsApp {
-		app.Send("VOL " + per)
+		app.SendLocal("VOL " + per)
 	}
 }
 
