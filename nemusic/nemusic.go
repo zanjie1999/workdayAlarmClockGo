@@ -96,7 +96,7 @@ func MusicUrl(id string) string {
 		if err == nil {
 			var j map[string]interface{}
 			resp.Json(&j)
-			if j["code"].(float64) == 200 {
+			if j["code"] != nil && j["code"].(float64) == 200 {
 				l := j["data"].([]interface{})
 				if len(l) > 0 {
 					url = l[0].(map[string]interface{})["url"].(string)
