@@ -118,8 +118,17 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
 		}
-		player.PlayPlaylist(id, c.Query("random") == "1")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单"+id+"</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单 "+player.PlayPlaylist(id, c.Query("random") == "1")+"</h1>"+js2home))
+	})
+
+	root.GET("/playmusic", func(c *gin.Context) {
+		id := c.Query("id")
+		if id == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
+			return
+		}
+		player.PlayPlaymusic(id)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌曲"+id+"</h1>"+js2home))
 	})
 
 	root.GET("/echo", func(c *gin.Context) {

@@ -16,8 +16,8 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-// 歌单列表
-func PlayList(id string) []string {
+// 歌单列表                歌单id   歌单名  是否缓存
+func PlayList(id string) ([]string, string, bool) {
 	req := httpme.Httpme()
 	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id=" + id)
 	if err == nil {
@@ -25,7 +25,7 @@ func PlayList(id string) []string {
 		resp.Json(&j)
 		if j["code"].(float64) != 200 {
 			log.Println("获取歌单信息出错", j["code"], j["message"])
-			return []string{}
+			return []string{}, j["message"].(string), false
 		}
 		tids := j["playlist"].(map[string]interface{})["trackIds"].([]interface{})
 		ids := make([]string, len(tids))
@@ -33,7 +33,7 @@ func PlayList(id string) []string {
 			ids[i] = fmt.Sprintf("%.0f", v.(map[string]interface{})["id"].(float64))
 		}
 		if conf.Cfg.SavePath != "" {
-			// 本地缓存
+			// 保存本地缓存
 			file, err := os.Create(conf.Cfg.SavePath + id + ".list")
 			if err != nil {
 				log.Println("创建歌单缓存文件失败", err)
@@ -42,7 +42,7 @@ func PlayList(id string) []string {
 			}
 			file.Close()
 		}
-		return ids
+		return ids, j["playlist"].(map[string]interface{})["name"].(string), false
 	}
 	log.Println("获取歌单信息出错", err)
 	if conf.Cfg.SavePath != "" {
@@ -51,12 +51,12 @@ func PlayList(id string) []string {
 			log.Println("使用缓存")
 			var ids []string
 			gob.NewDecoder(file).Decode(&ids)
-			return ids
+			return ids, "缓存", true
 		} else {
 			log.Println("没有缓存", err)
 		}
 	}
-	return []string{}
+	return []string{}, "无法播放", false
 }
 
 // 获取音乐播放地址 不一定能放先检查下
@@ -70,10 +70,15 @@ func MusicUrl(id string) string {
 			return conf.Cfg.SavePath + id + ".mp3"
 		}
 	}
-	if conf.Cfg.MusicQuality == "" || conf.Cfg.MusicQuality == "standard" {
+	if conf.Cfg.MusicQuality == "" {
+		conf.Cfg.MusicQuality = "standard"
+	}
+	var err error
+	if conf.Cfg.MusicQuality == "standard" {
 		// 带这个ua可以放10秒，但没有任何意义
 		// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
-		resp, err := req.Get("https://music.163.com/song/media/outer/url?id=" + id)
+		var resp *httpme.Response
+		resp, err = req.Get("https://music.163.com/song/media/outer/url?id=" + id)
 		if err == nil {
 			resp.R.Body.Close()
 			if resp.R.Request.URL.Path != "/404" {
@@ -86,10 +91,8 @@ func MusicUrl(id string) string {
 			log.Println("检查歌曲是否可用出错", err)
 		}
 	}
-	if url == "" {
-		if conf.Cfg.MusicQuality == "" {
-			conf.Cfg.MusicQuality = "standard"
-		}
+	// 如果err有值则网络异常
+	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip  接口谷歌找的
 		resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?level=" + conf.Cfg.MusicQuality + "&id=" + id)
@@ -129,8 +132,8 @@ func PlaylistDownload(id string) {
 		log.Println("你还没配置缓存目录")
 		return
 	}
-	log.Println("开始下载列表", id)
-	ids := PlayList(id)
+	ids, name, _ := PlayList(id)
+	log.Println("开始下载列表", id, name)
 	for i, v := range ids {
 		log.Println(len(ids), "/", i+1, v)
 		MusicUrl(v)

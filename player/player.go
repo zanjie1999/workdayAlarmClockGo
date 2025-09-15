@@ -7,6 +7,7 @@
 package player
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net/url"
@@ -132,8 +133,7 @@ func Next() string {
 // 一键急停按钮 自动控制播放停止
 func Me1Key() string {
 	if IsStop {
-		PlayPlaylist(conf.Cfg.DefPlayListId, false)
-		return "play"
+		return PlayPlaylist(conf.Cfg.DefPlayListId, false)
 	} else {
 		Stop()
 		return "stop"
@@ -141,10 +141,10 @@ func Me1Key() string {
 }
 
 // 播放歌单
-func PlayPlaylist(id string, random bool) {
+func PlayPlaylist(id string, random bool) string {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
-	ids := nemusic.PlayList(id)
+	ids, name, _ := nemusic.PlayList(id)
 	if random {
 		// 打乱歌单
 		rand.Seed(time.Now().UnixNano())
@@ -154,6 +154,17 @@ func PlayPlaylist(id string, random bool) {
 	}
 	PlayList = ids
 	Next()
+	return name
+}
+
+// 播放歌曲
+func PlayPlaymusic(id string) {
+	// 在播放任意歌单后，按上一首来随机
+	PrevRdmFlag = true
+	url := nemusic.MusicUrl(id)
+	if url != "" {
+		PlayUrl(url)
+	}
 }
 
 // 预下载播报的天气
@@ -260,6 +271,26 @@ func filterList(in, filter []string) []string {
 	return out
 }
 
+func filterListHasCache(in []string) []string {
+	filterMap := make(map[string]struct{})
+	files, err := os.ReadDir(conf.Cfg.SavePath)
+	if err != nil {
+		fmt.Println("读取缓存目录出错:", err)
+		return []string{}
+	}
+	for _, file := range files {
+		// 文件名是id
+		filterMap[strings.SplitN(file.Name(), ".", 2)[0]] = struct{}{}
+	}
+	var out []string
+	for _, id := range in {
+		if _, exists := filterMap[id]; exists {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
 	app.Send("ECHO 闹钟")
@@ -281,7 +312,7 @@ func PlayAlarm() {
 		PlayUrl(conf.Cfg.NePlayListId)
 		return
 	}
-	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
+	ids, _, isCache := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 定时停止闹钟
 	StopUnix = time.Now().Unix() + int64(conf.Cfg.AlarmTime*60)
 	if len(ids) == 0 {
@@ -290,6 +321,16 @@ func PlayAlarm() {
 		PlayUrl("http://127.0.0.1:8080/music.mp3")
 		return
 	} else {
+		if isCache {
+			// 放的是缓存，那要筛选出缓存有的
+			ids = filterListHasCache(ids)
+			log.Println("使用缓存，可播放", len(ids))
+			if len(ids) == 0 {
+				log.Println("没有可用缓存，播放默认歌曲")
+				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				return
+			}
+		}
 		// 放完一次了 重置
 		if len(conf.Cfg.NePlayed)+1 >= len(ids) {
 			log.Println("闹钟歌单，共", len(ids), "，重置已播放")
@@ -297,6 +338,12 @@ func PlayAlarm() {
 		} else {
 			log.Println("闹钟歌单，共", len(ids), "，已播放", len(conf.Cfg.NePlayed))
 			ids = filterList(ids, conf.Cfg.NePlayed)
+			if len(ids) == 0 {
+				log.Println("虽然不知道为什么但是为空了，播放默认歌曲")
+				conf.Cfg.NePlayed = []string{}
+				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				return
+			}
 		}
 		rand.Seed(time.Now().UnixNano())
 		rand.Shuffle(len(ids), func(i, j int) {

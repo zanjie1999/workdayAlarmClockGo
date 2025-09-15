@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "19.1"
+	VERSION       = "19.2"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -148,11 +148,16 @@ func shellInput() {
 				os.Exit(0)
 			case "wake":
 				timeJob()
+			case "testalarm":
+				player.PlayAlarm()
 			default:
 				if strings.HasPrefix(cmd, "echo ") {
 					app.Send(cmd[5:])
 				} else if strings.HasPrefix(cmd, "playlist ") {
-					player.PlayPlaylist(cmd[9:], false)
+					log.Println("播放歌单", player.PlayPlaylist(cmd[9:], false))
+				} else if strings.HasPrefix(cmd, "playmusic ") {
+					log.Println("播放歌曲")
+					player.PlayPlaymusic(cmd[10:])
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
 				} else {

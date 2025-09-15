@@ -43,13 +43,17 @@
         <button type="submit">播放url</button>
         <input type="text" name="url" id="playUrl" value="http://127.0.0.1:8080/static/music.mp3">
     </form>
-    <form action="/playlist" onsubmit="return plalist()">
-        <button type="submit">播放歌单/歌曲</button>
+    <form action="/playlist" onsubmit="return playlist()">
+        <button type="submit">播放歌单</button>
         <input type="text" name="id" id="playlistId" placeholder="歌单id或分享链接" value="21777546">
         <select name="random">
             <option value="0">顺序播放</option>
             <option value="1">随机播放</option>
         </select>
+    </form>
+    <form action="/playlist" onsubmit="return playmusic()">
+        <button type="submit">播放歌曲</button>
+        <input type="text" name="id" id="playmusicId" placeholder="歌曲id或分享链接" value="2604307454">
     </form>
     <form action="/timeStop" id="timeStopForm">
         <button type="submit">定时停止</button>
@@ -60,7 +64,7 @@
     </div>
     </div>
     <script>
-        function plalist() {
+        function playlist() {
             var pl = document.getElementById('playlistId').value
             var m = /playlist\?id=(\d+)/.exec(pl);
             if (m) {
@@ -68,15 +72,19 @@
                 document.getElementById('playlistId').value = m[1];
                 localStorage.setItem('lastPlayList', m[1]);
             } else {
-                var m = /song\?id=(\d+)/.exec(pl);
-                if (m) {
-                    // 歌曲分享链接
-                    document.getElementById('playUrl').value = "http://music.163.com/song/media/outer/url?id=" + m[1];
-                    document.getElementById('playUrlForm').submit();
-                    return false
-                } else {
-                    localStorage.setItem('lastPlayList', pl);
-                }
+                localStorage.setItem('lastPlayList', pl);
+            }
+            return true;
+        }
+        function playmusic() {
+            var pl = document.getElementById('playmusicId').value
+            var m = /song\?id=(\d+)/.exec(pl);
+            if (m) {
+                // 歌曲分享链接
+                document.getElementById('playmusicId').value = m[1];
+                localStorage.setItem('lastPlayMusic', m[1]);
+            } else {
+                localStorage.setItem('lastPlayMusic', pl);
             }
             return true;
         }
@@ -108,6 +116,10 @@
             var lastPlayList = localStorage.getItem('lastPlayList')
             if (lastPlayList) {
                 document.getElementById('playlistId').value = lastPlayList
+            }
+            var lastPlayMusic = localStorage.getItem('lastPlayMusic')
+            if (lastPlayMusic) {
+                document.getElementById('playmusicId').value = lastPlayMusic
             }
         }
         window.onload = getStatus;
