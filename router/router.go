@@ -60,6 +60,7 @@ func Init(urlPrefix string) *gin.Engine {
 	if conf.Cfg.SavePath != "" {
 		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))
 	}
+	root.StaticFS("/sdcard", gin.Dir("/sdcard", true))
 
 	// 删除缓存目录
 	root.GET("/delSave", func(c *gin.Context) {
