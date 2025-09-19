@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "19.4"
+	VERSION       = "19.5"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -150,6 +150,8 @@ func shellInput() {
 				timeJob()
 			case "testalarm":
 				player.PlayAlarm()
+			case "savepath":
+				fmt.Println("savepath", conf.Cfg.SavePath)
 			default:
 				if strings.HasPrefix(cmd, "echo ") {
 					app.Send(cmd[5:])
@@ -160,6 +162,18 @@ func shellInput() {
 					player.PlayPlaymusic(cmd[10:])
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
+				} else if strings.HasPrefix(cmd, "touch ") {
+					os.Create(cmd[6:])
+				} else if strings.HasPrefix(cmd, "rm ") {
+					os.Remove(cmd[3:])
+				} else if strings.HasPrefix(cmd, "savepath ") {
+					if cmd[9:] == "null" {
+						conf.Cfg.SavePath = ""
+					} else {
+						conf.Cfg.SavePath = cmd[9:]
+					}
+					conf.Save()
+					fmt.Println("SavePath已修改为", conf.Cfg.SavePath)
 				} else {
 					fmt.Println("未知命令", cmd)
 				}
