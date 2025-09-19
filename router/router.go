@@ -278,7 +278,7 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.SavePath = ""
 		} else if savePath != "/" && savePath != "./" {
 			conf.Cfg.SavePath = savePath
-			if conf.IsApp && conf.Cfg.SavePath[0] != '/' && conf.Cfg.SavePath[0] != '.' {
+			if conf.IsApp && conf.Cfg.SavePath[0] != '/' && conf.Cfg.SavePath[0] != '.' && (len(conf.Cfg.SavePath) == 1 || conf.Cfg.SavePath[1] != ':') {
 				conf.Cfg.SavePath = "./" + conf.Cfg.SavePath
 			}
 			if !strings.HasSuffix(conf.Cfg.SavePath, "/") {

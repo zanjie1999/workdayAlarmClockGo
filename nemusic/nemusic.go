@@ -120,7 +120,10 @@ func MusicUrl(id string) string {
 			log.Println("下载出错", err)
 		} else {
 			url = conf.Cfg.SavePath + id + ".mp3"
-			resp.SaveFile(url)
+			err = resp.SaveFile(url)
+			if err != nil {
+				log.Println("保存出错", err)
+			}
 		}
 	}
 	return url
