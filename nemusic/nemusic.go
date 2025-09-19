@@ -95,7 +95,7 @@ func MusicUrl(id string) string {
 	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip  接口谷歌找的
-		resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?level=" + conf.Cfg.MusicQuality + "&id=" + id)
+		resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?id=" + id + "&level=" + conf.Cfg.MusicQuality)
 		if err == nil {
 			var j map[string]interface{}
 			resp.Json(&j)

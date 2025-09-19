@@ -106,6 +106,10 @@ func Next() string {
 		if len(PlayList) > 0 {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
+			if now == "" {
+				log.Println("不是播放列表怎么有空的播放项目？")
+				continue
+			}
 			if len(PlayList) > 0 {
 				app.Send("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
 			} else {
