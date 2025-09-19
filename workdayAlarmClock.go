@@ -163,9 +163,11 @@ func shellInput() {
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
 				} else if strings.HasPrefix(cmd, "touch ") {
-					os.Create(cmd[6:])
+					f, e := os.Create(cmd[6:])
+					f.Close()
+					log.Println(e)
 				} else if strings.HasPrefix(cmd, "rm ") {
-					os.Remove(cmd[3:])
+					log.Println(os.Remove(cmd[3:]))
 				} else if strings.HasPrefix(cmd, "savepath ") {
 					if cmd[9:] == "null" {
 						conf.Cfg.SavePath = ""

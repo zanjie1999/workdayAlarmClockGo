@@ -55,6 +55,16 @@ exit
 1key
 # 播放歌单id
 playlist 7668635210
+# 播放歌曲
+playmusic 2604307454
+# 测试闹钟
+testalarm
+# 创建文件
+touch 文件名
+# 删除文件
+rm 文件名
+# 设置缓存路径 路径为null则关闭，不传则输出当前值
+savepath 路径
 ```
 
 ### 关于“上一首”按钮的特殊说明
