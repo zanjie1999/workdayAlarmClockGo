@@ -67,7 +67,11 @@ func Prev() string {
 		return "随机播放列表"
 	} else if PrevUrl != "" {
 		app.Send("ECHO 上一首")
-		PlayList = append([]string{NowUrl}, PlayList...)
+		if len(PlayList) == 0 {
+			PlayList = []string{NowUrl}
+		} else {
+			PlayList = append([]string{NowUrl}, PlayList...)
+		}
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
 		NowId = ""
