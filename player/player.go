@@ -119,7 +119,7 @@ func Next() string {
 			} else {
 				app.Send("ECHO 正在播放")
 			}
-			if len(now) > 3 && now[:4] == "http" {
+			if len(now) > 3 && (now[:4] == "http" || now[0] == '.' || now[0] == '/' || now[1] == ':') {
 				PlayUrl(now)
 				return now
 			} else {
