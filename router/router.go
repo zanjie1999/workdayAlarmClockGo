@@ -150,7 +150,11 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// app恢复播放
 	root.GET("/resume", func(c *gin.Context) {
-		app.Send("RESUME")
+		if player.IsStop {
+			player.Me1Key()
+		} else {
+			app.Send("RESUME")
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
