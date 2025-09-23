@@ -94,7 +94,24 @@ func MusicUrl(id string) string {
 	// 如果err有值则网络异常
 	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
-		// 使用第三方尝试解析vip  接口谷歌找的
+		// 使用第三方尝试解析vip  找了个新的
+		resp, err := req.Get("https://api.kxzjoker.cn/api/163_music?type=json&ids=" + id + "&level=" + conf.Cfg.MusicQuality)
+		if err == nil {
+			var j map[string]interface{}
+			resp.Json(&j)
+			if j["status"] != nil && j["status"].(float64) == 200 {
+				url = j["url"].(string)
+			} else {
+				log.Println("使用接口获取歌曲地址出错", resp.Text())
+			}
+		} else {
+			log.Println("使用接口获取歌曲地址出错", err)
+		}
+
+	}
+	if url == "" && err == nil {
+		log.Println("获取地址2 音质", conf.Cfg.MusicQuality)
+		// 使用第三方尝试解析vip  接口谷歌找的 这个接口好像废了，很多接口的上游都是这个
 		resp, err := req.Get("https://api.toubiec.cn/wyapi/getMusicUrl.php?id=" + id + "&level=" + conf.Cfg.MusicQuality)
 		if err == nil {
 			var j map[string]interface{}
@@ -105,10 +122,10 @@ func MusicUrl(id string) string {
 					url = l[0].(map[string]interface{})["url"].(string)
 				}
 			} else {
-				log.Println("使用接口获取歌曲地址出错", resp.Text())
+				log.Println("使用接口2获取歌曲地址出错", resp.Text())
 			}
 		} else {
-			log.Println("使用接口获取歌曲地址出错", err)
+			log.Println("使用接口2获取歌曲地址出错", err)
 		}
 
 	}
