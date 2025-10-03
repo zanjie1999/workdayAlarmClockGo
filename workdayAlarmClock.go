@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "19.6"
+	VERSION       = "19.7"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -219,8 +219,9 @@ func main() {
 	}
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	workDayApi()
-	if conf.IsApp && conf.Cfg.Wakelock {
+	if !conf.IsApp || conf.IsApp && conf.Cfg.Wakelock {
 		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
+		log.Println("内置定时器已启用")
 		go timer()
 	}
 	go shellInput()
