@@ -69,7 +69,7 @@ func timeJob() {
 	mmdd := now.Format("0102")
 	hhmm := now.Format("1504")
 	if lasthhmm == hhmm {
-		log.Print("定时器重复执行", hhmm)
+		// log.Print("定时器重复执行", hhmm)
 		return
 	}
 	lasthhmm = hhmm
