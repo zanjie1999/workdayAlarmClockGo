@@ -40,29 +40,42 @@ func GetCityCode(q string) (string, string, error) {
 	return "", "", errors.New("没有结果")
 }
 
-func GetWeatherApi(code string) (map[string]string, map[string]string, error) {
+func GetWeatherApi(code string) (map[string]string, map[string]string, string, string, error) {
 	if code != "" {
 		resp, err := httpme.Get("http://d1.weather.com.cn/weather_index/"+code+".html", httpme.Header{"Referer": "http://www.weather.com.cn/html/weather/" + code + ".html"})
 		if err != nil {
 			log.Println("GetWeather 请求出错", err)
-			return nil, nil, err
+			return nil, nil, "", "", err
 		}
 		if resp.R.Request.URL.Path == "/other/weather_error_404.html" {
-			return nil, nil, errors.New("code错误")
+			return nil, nil, "", "", errors.New("code错误")
 		}
 
 		// 如果code不对会炸无法判断
 		str := resp.Text()
 
-		// 感觉没啥用
+		// 今天天气
 		// indexStart := strings.Index(str, "weatherinfo\":")
 		// indexEnd := strings.Index(str, "};var alarmDZ")
 		// jsonCityDZ := str[indexStart+13 : indexEnd]
-		// fmt.Println(jsonCityDZ)
+		// fmt.Println("GetWeather weatherinfo", jsonCityDZ)
+		indexStart := strings.Index(str, "\"weather\":\"")
+		indexEnd := strings.Index(str, "\",\"wd\"")
+		weather := str[indexStart+11 : indexEnd]
+		log.Println("GetWeather weather", weather)
+
+		// 预警
+		indexStart = strings.Index(str, "\"w9\":\"")
+		indexEnd = strings.Index(str, "\",\"w10\"")
+		alarm := ""
+		if indexStart != -1 && indexEnd != -1 {
+			alarm = str[indexStart+6 : indexEnd]
+		}
+		log.Println("GetWeather alarm", alarm)
 
 		// 名字 当前气温 天气 日期
-		indexStart := strings.Index(str, "dataSK =")
-		indexEnd := strings.Index(str, ";var dataZS")
+		indexStart = strings.Index(str, "dataSK =")
+		indexEnd = strings.Index(str, ";var dataZS")
 		jsonDataSK := str[indexStart+8 : indexEnd]
 		log.Println("GetWeather sk", jsonDataSK)
 
@@ -76,15 +89,15 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, error) {
 		var sk, fc map[string]string
 		err = json.Unmarshal([]byte(jsonFC), &fc)
 		if err != nil {
-			return sk, fc, err
+			return sk, fc, weather, alarm, err
 		}
 		err = json.Unmarshal([]byte(jsonDataSK), &sk)
 		if err != nil {
-			return sk, fc, err
+			return sk, fc, weather, alarm, err
 		}
-		return sk, fc, nil
+		return sk, fc, weather, alarm, nil
 	}
-	return nil, nil, errors.New("没有code查什么？")
+	return nil, nil, "", "", errors.New("没有code查什么？")
 }
 
 func GetWeather(code string) string {
@@ -92,7 +105,7 @@ func GetWeather(code string) string {
 		code = conf.Cfg.WeatherCityCode
 	}
 	if code != "" {
-		sk, fc, err := GetWeatherApi(code)
+		sk, fc, weather, alarm, err := GetWeatherApi(code)
 		if err == nil {
 			// 更新cfg中的天气
 			if sk["date"] != conf.Cfg.Today {
@@ -110,7 +123,7 @@ func GetWeather(code string) string {
 				conf.Cfg.TodayFd, _ = strconv.Atoi(fc["fd"])
 			}
 
-			msg := "今天是" + sk["date"] + "，" + sk["cityname"] + sk["weather"] + "，" + fc["fc"] + "到" + fc["fd"] + "度，"
+			msg := "今天是" + sk["date"] + "，" + sk["cityname"] + weather + "，" + fc["fc"] + "到" + fc["fd"] + "度，"
 			if conf.Cfg.TodayFc > conf.Cfg.LastdayFc {
 				msg += fmt.Sprintf("最高比昨天高%d度，", conf.Cfg.TodayFc-conf.Cfg.LastdayFc)
 			} else if conf.Cfg.TodayFc < conf.Cfg.LastdayFc {
@@ -121,7 +134,8 @@ func GetWeather(code string) string {
 			} else if conf.Cfg.TodayFd < conf.Cfg.LastdayFd {
 				msg += fmt.Sprintf("最低比昨天低%d度，", conf.Cfg.LastdayFd-conf.Cfg.TodayFd)
 			}
-			msg += "现在" + sk["temp"] + "度"
+
+			msg += "现在" + sk["weather"] + "，" + sk["temp"] + "度。" + alarm
 			return msg
 		} else {
 			return err.Error()
