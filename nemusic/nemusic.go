@@ -95,7 +95,7 @@ func MusicUrl(id string) string {
 	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip
-		resp, err := req.PostJson("https://wyapi.toubiec.cn/api/music/url", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}")
+		resp, err := req.PostJson("https://wyapi.toubiec.cn/api/music/url", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
 		if err == nil {
 			var j map[string]interface{}
 			resp.Json(&j)
