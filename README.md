@@ -53,6 +53,8 @@ prev
 exit
 # 一键播放歌单、停止
 1key
+# 定时停止
+stop 分钟数
 # 播放歌单id
 playlist 7668635210
 # 播放歌曲

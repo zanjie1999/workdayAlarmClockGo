@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION       = "19.8"
+	VERSION       = "20.2"
 	workDayApiErr = false
 	lasthhmm      = ""
 )
@@ -176,6 +176,15 @@ func shellInput() {
 					}
 					conf.Save()
 					fmt.Println("SavePath已修改为", conf.Cfg.SavePath)
+				} else if strings.HasPrefix(cmd, "stop ") {
+					minF, _ := strconv.ParseFloat(cmd[5:], 64)
+					if minF > 0 {
+						player.StopUnix = time.Now().Unix() + int64(minF*60)
+						fmt.Println("将在", minF, "分钟后停止播放")
+					} else {
+						player.StopUnix = 0
+						fmt.Println("已取消定时停止")
+					}
 				} else {
 					fmt.Println("未知命令", cmd)
 				}
