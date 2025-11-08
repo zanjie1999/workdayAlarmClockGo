@@ -152,6 +152,9 @@ func shellInput() {
 				player.PlayAlarm()
 			case "savepath":
 				fmt.Println("savepath", conf.Cfg.SavePath)
+			case "ip":
+				ip, _ := app.GetLocalIP()
+				fmt.Println(ip)
 			default:
 				if strings.HasPrefix(cmd, "echo ") {
 					app.Send(cmd[5:])
