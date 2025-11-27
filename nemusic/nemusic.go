@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 
 	"github.com/zanjie1999/httpme"
@@ -128,6 +129,10 @@ func MusicUrl(id string) string {
 		}
 	}
 	if conf.Cfg.SavePath != "" && url != "" {
+		// 下载用时较长，先暂停
+		if conf.IsApp {
+			app.SendLocal("PAUSE")
+		}
 		// 缓存
 		log.Println("开始下载到", conf.Cfg.SavePath+id+".mp3")
 		resp, err := httpme.Get(url)
