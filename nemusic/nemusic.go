@@ -96,20 +96,23 @@ func MusicUrl(id string) string {
 	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip
-		resp, err := req.PostJson("https://wyapi.toubiec.cn/api/music/url", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
-		if err == nil {
-			var j map[string]interface{}
-			resp.Json(&j)
-			if j["code"] != nil && j["code"].(float64) == 200 {
-				l := j["data"].([]interface{})
-				if len(l) > 0 {
-					url = l[0].(map[string]interface{})["url"].(string)
+		for _, dm := range []string{"wyapi-1.toubiec.cn", "wyapi-2.toubiec.cn", "wyapi.toubiec.cn"} {
+			resp, err := req.PostJson("https://"+dm+"/api/music/url", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
+			if err == nil {
+				var j map[string]interface{}
+				resp.Json(&j)
+				if j["code"] != nil && j["code"].(float64) == 200 {
+					l := j["data"].([]interface{})
+					if len(l) > 0 {
+						url = l[0].(map[string]interface{})["url"].(string)
+						break
+					}
+				} else {
+					log.Println("使用接口获取歌曲地址出错", resp.Text())
 				}
 			} else {
-				log.Println("使用接口获取歌曲地址出错", resp.Text())
+				log.Println("使用接口获取歌曲地址出错", err)
 			}
-		} else {
-			log.Println("使用接口获取歌曲地址出错", err)
 		}
 	}
 	if url == "" && err == nil {
