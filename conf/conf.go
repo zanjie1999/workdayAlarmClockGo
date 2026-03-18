@@ -172,6 +172,9 @@ func WorkDayApi() {
 				smallWeekDate = smallWeekDate.AddDate(0, 0, 7)
 				for {
 					smallWeekDate = smallWeekDate.AddDate(0, 0, 7)
+					if smallWeekDate.Before(time.Now()) {
+						continue
+					}
 					resp, err := req.Get("https://timor.tech/api/holiday/info/" + yymmdd)
 					if err == nil {
 						var j map[string]interface{}
