@@ -24,36 +24,9 @@ import (
 )
 
 var (
-	VERSION       = "20.4"
-	workDayApiErr = false
-	lasthhmm      = ""
+	VERSION  = "22.0"
+	lasthhmm = ""
 )
-
-// 获取今天是不是工作日
-func workDayApi() {
-	log.Println("正在获取工作日状态，如时间很长请检查网络")
-	req := httpme.Httpme()
-	yymmdd := time.Now().Format("2006-01-02")
-	if yymmdd == "1970-01-01" {
-		log.Println("等待时间同步再获取工作日信息")
-		workDayApiErr = true
-		return
-	}
-	resp, err := req.Get("https://timor.tech/api/holiday/info/" + yymmdd)
-	if err == nil {
-		var j map[string]interface{}
-		resp.Json(&j)
-		if j["code"].(float64) != 200 {
-			conf.IsWorkDay = j["type"].(map[string]interface{})["type"].(float64) == 0 || j["type"].(map[string]interface{})["type"].(float64) == 3
-			log.Println(j["type"].(map[string]interface{})["name"], "工作日吗？", conf.IsWorkDay)
-			workDayApiErr = false
-			return
-		}
-	}
-	workDayApiErr = true
-	log.Println("获取工作日信息出错", err)
-	conf.IsWorkDay = time.Now().Weekday() != time.Saturday && time.Now().Weekday() != time.Sunday
-}
 
 // 定时器 go timer()
 func timer() {
@@ -75,8 +48,8 @@ func timeJob() {
 	lasthhmm = hhmm
 
 	// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
-	if workDayApiErr || hhmm == "0000" {
-		workDayApi()
+	if conf.WorkDayApiErr || hhmm == "0000" {
+		conf.WorkDayApi()
 	}
 	if hhmm == conf.Cfg.WeatherUpdate {
 		weather.GetWeather("")
@@ -230,7 +203,7 @@ func main() {
 		log.Println("下载更新和开源仓库：https://github.com/zanjie1999/workdayAlarmClockGo")
 	}
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
-	workDayApi()
+	conf.WorkDayApi()
 	if !conf.IsApp || conf.IsApp && conf.Cfg.Wakelock {
 		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
 		log.Println("内置定时器已启用")

@@ -243,6 +243,7 @@ func Init(urlPrefix string) *gin.Engine {
 		savePath := c.Query("savePath")
 		defSeek := c.Query("defSeek")
 		broadcastMode := c.Query("broadcastMode")
+		smallWeekDate := c.Query("smallWeekDate")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -298,6 +299,12 @@ func Init(urlPrefix string) *gin.Engine {
 				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>创建缓存目录出错"+conf.Cfg.SavePath+"</h1>"))
 			}
 		}
+		if conf.Cfg.SmallWeekDate != smallWeekDate {
+			conf.Cfg.SmallWeekDate = smallWeekDate
+			if smallWeekDate != "" {
+				conf.WorkDayApi()
+			}
+		}
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
@@ -313,6 +320,7 @@ func Init(urlPrefix string) *gin.Engine {
 		c.SaveUploadedFile(file, "workdayAlarmClock.json")
 		// 重新加载配置
 		conf.Init()
+		conf.WorkDayApi()
 		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
 	})

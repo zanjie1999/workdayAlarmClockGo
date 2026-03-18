@@ -75,62 +75,42 @@ func MusicUrl(id string) string {
 		conf.Cfg.MusicQuality = "standard"
 	}
 	var err error
-	if conf.Cfg.MusicQuality == "standard" {
-		// 带这个ua可以放10秒，但没有任何意义
-		// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
-		var resp *httpme.Response
-		resp, err = req.Get("https://music.163.com/song/media/outer/url?id=" + id)
-		if err == nil {
-			resp.R.Body.Close()
-			if resp.R.Request.URL.Path != "/404" {
-				// 302后cdn的地址，时间长会过期
-				url = resp.R.Request.URL.String()
-			} else {
-				log.Println("需要VIP", id)
-			}
+	// if conf.Cfg.MusicQuality == "standard" {
+	// 带这个ua可以放10秒，但没有任何意义
+	// resp, err := req.Get("https://music.163.com/song/media/outer/url?id="+id, httpme.Header{"User-Agent": "stagefright/1.2 (Linux;Android 7.0)"})
+	var resp *httpme.Response
+	resp, err = req.Get("https://music.163.com/song/media/outer/url?id=" + id)
+	if err == nil {
+		resp.R.Body.Close()
+		if resp.R.Request.URL.Path != "/404" {
+			// 302后cdn的地址，时间长会过期
+			url = resp.R.Request.URL.String()
 		} else {
-			log.Println("检查歌曲是否可用出错", err)
+			log.Println("需要VIP", id)
 		}
+	} else {
+		log.Println("检查歌曲是否可用出错", err)
 	}
-	// 如果err有值则网络异常
-	if url == "" && err == nil {
-		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
-		// 使用第三方尝试解析vip
-		for _, dm := range []string{"wyapi-1.toubiec.cn", "wyapi-2.toubiec.cn", "wyapi.toubiec.cn"} {
-			resp, err := req.PostJson("https://"+dm+"/api/music/url", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
-			if err == nil {
-				var j map[string]interface{}
-				resp.Json(&j)
-				if j["code"] != nil && j["code"].(float64) == 200 {
-					l := j["data"].([]interface{})
-					if len(l) > 0 {
-						url = l[0].(map[string]interface{})["url"].(string)
-						break
-					}
-				} else {
-					log.Println("使用接口获取歌曲地址出错", resp.Text())
-				}
-			} else {
-				log.Println("使用接口获取歌曲地址出错", err)
-			}
-		}
-	}
-	if url == "" && err == nil {
-		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
-		// 使用第三方尝试解析vip
-		resp, err := req.Get("https://api.kxzjoker.cn/api/163_music?type=json&ids=" + id + "&level=" + conf.Cfg.MusicQuality)
-		if err == nil {
-			var j map[string]interface{}
-			resp.Json(&j)
-			if j["status"] != nil && j["status"].(float64) == 200 {
-				url = j["url"].(string)
-			} else {
-				log.Println("使用接口获取歌曲地址出错", resp.Text())
-			}
-		} else {
-			log.Println("使用接口获取歌曲地址出错", err)
-		}
-	}
+	// }
+	// // 如果err有值则网络异常
+	// if url == "" && err == nil {
+	// 	log.Println("获取地址 音质", conf.Cfg.MusicQuality)
+	// 	// 使用第三方尝试解析vip
+	// 	// for _, dm := range []string{""} {
+	// 	resp, err := req.PostJson("https://wyapi-eo.toubiec.cn/api/getSongUrl", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
+	// 	if err == nil {
+	// 		var j map[string]interface{}
+	// 		resp.Json(&j)
+	// 		if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["url"] != nil {
+	// 			url = j["data"].(map[string]interface{})["url"].(string)
+	// 		} else {
+	// 			log.Println("使用接口获取歌曲地址出错", resp.Text())
+	// 		}
+	// 	} else {
+	// 		log.Println("使用接口获取歌曲地址出错", err)
+	// 	}
+	// 	// }
+	// }
 	if conf.Cfg.SavePath != "" && url != "" {
 		// 下载用时较长，先暂停
 		if conf.IsApp {
