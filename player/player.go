@@ -371,11 +371,17 @@ func PlayAlarm() {
 // 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
 func downloadFile(url string, filename string) error {
 	resp, err := httpme.Get(url)
-	if err != nil {
-		return err
+	for i := 0; i < 3; i++ {
+		resp, err = httpme.Get(url)
+		if err != nil || resp.R.StatusCode != 200 {
+			log.Println("下载文件失败，重试中", resp.R.StatusCode, err)
+			time.Sleep(time.Second * 3)
+		} else {
+			resp.SaveFile(filename)
+			return nil
+		}
 	}
-	resp.SaveFile(filename)
-	return nil
+	return err
 }
 
 // beep库 win 和linux alsa可以用 android不行
