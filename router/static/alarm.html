@@ -58,13 +58,13 @@
             CPU唤醒锁<input type="checkbox" name="wakelock" id="wakelock" value="1">重启生效<br>
             （关闭可以最大程度的节省电量，但闹钟可能不响）<br>
             停止时静音<input type="checkbox" name="muteWhenStop" id="muteWhenStop" value="1"><br>
-            <!-- 音质选择<select name="musicQuality" id="musicQuality" style="margin-bottom: 0">
+            音质选择<select name="musicQuality" id="musicQuality" style="margin-bottom: 0">
                 <option value="standard">128 mp3</option>
                 <option value="exhigh">320 mp3</option>
                 <option value="lossless">新无损flac(小)</option>
                 <option value="hires">老无损HiRes(大)</option>
             </select><br>
-            量力而行，音质过高可能会卡或无法播放，推荐128处理最快<br> -->
+            量力而行，音质过高可能会卡或无法播放，推荐128处理最快<br>
             缓存目录<input type="text" name="savePath" id="savePath" placeholder="默认留空不缓存"  style="margin-bottom: 0"><br>
             请输入绝对路径，保证有权限访问，或者输入./music保存在内部 <a href="/delSave">清空缓存</a><br>
             全屋同步播放主机<input type="checkbox" name="broadcastMode" id="broadcastMode" value="1"><br>
@@ -144,7 +144,7 @@
                     document.getElementById('wakelock').checked = d.wakelock
                     document.getElementById('alarmTime').value = d.alarmTime
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
-                    // document.getElementById('musicQuality').value = d.musicQuality
+                    document.getElementById('musicQuality').value = d.musicQuality
                     document.getElementById('savePath').value = d.savePath
                     document.getElementById('broadcastMode').checked = d.broadcastMode    
                     document.getElementById('defSeek').value = d.defSeek
