@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 
@@ -100,19 +99,25 @@ func MusicUrl(id string) string {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip
 		// for _, dm := range []string{""} {]
-		hash := md5.Sum([]byte(fmt.Sprintf("suxiaoqings:%d", time.Now().Unix()/60)))
-		token := hex.EncodeToString(hash[:])
-		resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\",\"token\":\""+token+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
-		if err == nil {
-			var j map[string]interface{}
-			resp.Json(&j)
-			if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["url"] != nil {
-				url = j["data"].(map[string]interface{})["url"].(string)
+		resp, err := req.Get("https://nextmusic.toubiec.cn/api/getip", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
+		var j map[string]interface{}
+		resp.Json(&j)
+		if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["ip"] != nil {
+			hash := md5.Sum([]byte(fmt.Sprintf("suxiaoqings:%s", j["data"].(map[string]interface{})["ip"].(string))))
+			token := hex.EncodeToString(hash[:])
+			resp, err = req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\",\"token\":\""+token+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
+			if err == nil {
+				resp.Json(&j)
+				if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["url"] != nil {
+					url = j["data"].(map[string]interface{})["url"].(string)
+				} else {
+					log.Println("使用接口获取歌曲地址出错", resp.Text())
+				}
 			} else {
-				log.Println("使用接口获取歌曲地址出错", resp.Text())
+				log.Println("使用接口获取歌曲地址出错", err)
 			}
 		} else {
-			log.Println("使用接口获取歌曲地址出错", err)
+			log.Println("使用接口获取歌曲地址出错", resp.Text())
 		}
 		// }
 	}
