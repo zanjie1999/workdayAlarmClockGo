@@ -178,10 +178,13 @@ func PlayPlaymusic(id string) {
 // 预下载播报的天气
 func DownWeather() {
 	os.Remove("weather.mp3")
+	os.Remove("weather2.mp3")
 	msg := weather.GetWeather("")
 	if msg != "" {
-		downloadFile("https://dds.dui.ai/runtime/v1/synthesize?voiceId=cyangfp&speed=1&volume=100&audioType=mp3&text="+url.QueryEscape(msg), "weather.mp3")
+		downloadFile("https://dds.dui.ai/runtime/v1/synthesize?voiceId=cyangfp&speed=1&volume=100&audioType=mp3&text="+url.QueryEscape(msg), "weather2mp3")
+		os.Rename("weather2.mp3", "weather.mp3")
 	}
+
 }
 
 // 播放url音乐
