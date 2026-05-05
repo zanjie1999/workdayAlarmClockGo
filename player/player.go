@@ -377,7 +377,7 @@ func downloadFile(url string, filename string) error {
 	for i := 0; i < 3; i++ {
 		resp, err = httpme.Get(url)
 		if err != nil || resp.R.StatusCode != 200 {
-			log.Println("下载文件失败，重试中", resp.R.StatusCode, err)
+			log.Println("下载文件失败，重试中", err)
 			time.Sleep(time.Second * 3)
 		} else {
 			resp.SaveFile(filename)
