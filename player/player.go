@@ -241,6 +241,12 @@ func Stop() {
 			} else {
 				PlayUrl("http://127.0.0.1:8080/weather.mp3")
 			}
+			// 万一放不了,需要保证会真正停止
+			time.AfterFunc(time.Second*120, func() {
+				if IsPlayWeather {
+					Stop()
+				}
+			})
 		}
 	} else if IsPlayWeather {
 		IsPlayWeather = false
@@ -378,7 +384,10 @@ func downloadFile(url string, filename string) error {
 		resp, err = httpme.Get(url)
 		if err != nil || resp.R.StatusCode != 200 {
 			log.Println("下载文件失败，重试中", err)
-			time.Sleep(time.Second * 3)
+			if resp != nil {
+				log.Println(resp.R.StatusCode, resp.R.Body)
+			}
+			time.Sleep(time.Second * 10)
 		} else {
 			resp.SaveFile(filename)
 			return nil

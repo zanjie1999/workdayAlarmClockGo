@@ -138,7 +138,7 @@ func GetWeather(code string) string {
 			msg += "现在" + sk["weather"] + "，" + sk["temp"] + "度。" + alarm
 			return msg
 		} else {
-			log.Println("GetWeather 获取天气出错", err)
+			// 错误已经输出过一次了
 			return ""
 		}
 	}
