@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "22.6"
+	VERSION  = "23.0"
 	lasthhmm = ""
 )
 
@@ -39,6 +39,10 @@ func timer() {
 
 func timeJob() {
 	now := time.Now()
+	// 避免系统时间未同步时运行8点的闹钟
+	if now.Year() < 2025 {
+		return
+	}
 	mmdd := now.Format("0102")
 	hhmm := now.Format("1504")
 	if lasthhmm == hhmm {
@@ -169,6 +173,23 @@ func shellInput() {
 	}
 }
 
+func checkUpdate() {
+	//请求 https://api.github.com/repos/zanjie1999/workdayAlarmClockAndroid/releases/latest 检查更新
+	req := httpme.Httpme()
+	resp, err := req.Get("https://api.github.com/repos/zanjie1999/workdayAlarmClockAndroid/releases/latest")
+	if err == nil {
+		var j map[string]interface{}
+		resp.Json(&j)
+		if j["tag_name"].(string) != VERSION {
+			fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/zanjie1999/workdayAlarmClockAndroid/releases下载更新，更新内容：" + j["name"].(string) + "\n")
+		} else {
+			log.Println("当前已是最新版本")
+		}
+	} else {
+		log.Println("检查更新失败", err)
+	}
+}
+
 func main() {
 	// libWorkdayAlarmClock.so app
 	if len(os.Args) > 1 {
@@ -211,6 +232,7 @@ func main() {
 	}
 	go shellInput()
 	timeJob()
+	go checkUpdate()
 	run := router.Init("/")
 	port := 8080
 	ip, _ := app.GetLocalIP()
