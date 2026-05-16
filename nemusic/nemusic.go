@@ -7,17 +7,45 @@
 package nemusic
 
 import (
-	"crypto/md5"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/gob"
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 
 	"github.com/zanjie1999/httpme"
 )
+
+type nextMusicKeyData struct {
+	KeyID    string `json:"keyId"`
+	KeyToken string `json:"keyToken"`
+	Key      string `json:"key"`
+}
+
+type nextMusicKeyResponse struct {
+	Code    int              `json:"code"`
+	Message string           `json:"message"`
+	Data    nextMusicKeyData `json:"data"`
+}
+
+type nextMusicSongData struct {
+	URL string `json:"url"`
+}
+
+type nextMusicSongResponse struct {
+	Code       int               `json:"code"`
+	Message    string            `json:"message"`
+	Ciphertext string            `json:"ciphertext"`
+	Data       nextMusicSongData `json:"data"`
+}
 
 // 歌单列表                歌单id   歌单名  是否缓存
 func PlayList(id string) ([]string, string, bool) {
@@ -98,32 +126,22 @@ func MusicUrl(id string) string {
 	if url == "" && err == nil {
 		log.Println("获取地址 音质", conf.Cfg.MusicQuality)
 		// 使用第三方尝试解析vip
-		// for _, dm := range []string{""} {]
-		resp, err := req.Get("https://nextmusic.toubiec.cn/api/getip", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
+		url, err = nextMusicSongURL(req, id, conf.Cfg.MusicQuality)
 		if err == nil {
-			var j map[string]interface{}
-			resp.Json(&j)
-			if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["ip"] != nil {
-				hash := md5.Sum([]byte(fmt.Sprintf("suxiaoqings:%s", j["data"].(map[string]interface{})["ip"].(string))))
-				token := hex.EncodeToString(hash[:])
-				resp, err = req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", "{\"id\":\""+id+"\",\"level\":\""+conf.Cfg.MusicQuality+"\",\"token\":\""+token+"\"}", httpme.Header{"sec-fetch-mode": "cros", "referer": "https://wyapi.toubiec.cn/", "origin": "https://wyapi.toubiec.cn"})
-				if err == nil {
-					resp.Json(&j)
-					if j["code"] != nil && j["code"].(float64) == 200 && j["data"] != nil && j["data"].(map[string]interface{})["url"] != nil {
-						url = j["data"].(map[string]interface{})["url"].(string)
-					} else {
-						log.Println("使用接口获取歌曲地址解析出错", resp.Text())
-					}
-				} else {
-					log.Println("使用接口获取歌曲地址请求出错", err)
-				}
+			if url == "" {
+				log.Println("使用接口获取歌曲地址解析出错", "接口未返回歌曲地址")
 			} else {
-				log.Println("使用接口获取歌曲地址解析出错", resp.Text())
+				log.Println("使用接口获取歌曲地址成功", url)
 			}
 		} else {
-			log.Println("使用接口获取歌曲地址请求出错", err)
+			// 因为有时候会失败 第二次又好了
+			if strings.Contains(err.Error(), "Song not found") {
+				url, err = nextMusicSongURL(req, id, conf.Cfg.MusicQuality)
+			}
+			if err != nil {
+				log.Println("使用接口获取歌曲地址出错", err)
+			}
 		}
-		// }
 	}
 	if conf.Cfg.SavePath != "" && url != "" {
 		// 下载用时较长，先暂停
@@ -159,4 +177,158 @@ func PlaylistDownload(id string) {
 		log.Println(len(ids), "/", i+1, v)
 		MusicUrl(v)
 	}
+}
+
+func nextMusicHeaders() httpme.Header {
+	return httpme.Header{
+		"sec-fetch-mode": "cros",
+		"referer":        "https://wyapi.toubiec.cn/",
+		"origin":         "https://wyapi.toubiec.cn",
+	}
+}
+
+func nextMusicKey(req *httpme.Request) (nextMusicKeyData, error) {
+	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/key", nextMusicHeaders())
+	if err != nil {
+		return nextMusicKeyData{}, fmt.Errorf("key请求失败: %w", err)
+	}
+
+	var j nextMusicKeyResponse
+	if err := resp.Json(&j); err != nil {
+		return nextMusicKeyData{}, fmt.Errorf("key响应解析失败: %w", err)
+	}
+	if j.Code != 200 {
+		if j.Message == "" {
+			j.Message = resp.Text()
+		}
+		return nextMusicKeyData{}, fmt.Errorf("key接口返回异常: %s", j.Message)
+	}
+	if j.Data.KeyID == "" || j.Data.KeyToken == "" || j.Data.Key == "" {
+		return nextMusicKeyData{}, fmt.Errorf("key接口返回数据不完整")
+	}
+	return j.Data, nil
+}
+
+func nextMusicAEAD(keyText string) (cipher.AEAD, error) {
+	key, err := base64.StdEncoding.DecodeString(keyText)
+	if err != nil {
+		return nil, fmt.Errorf("key base64解码失败: %w", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("AES初始化失败: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("AES-GCM初始化失败: %w", err)
+	}
+	return aead, nil
+}
+
+func encryptNextMusicPayload(payload interface{}, keyText string) (string, error) {
+	aead, err := nextMusicAEAD(keyText)
+	if err != nil {
+		return "", err
+	}
+	plainText, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("请求数据编码失败: %w", err)
+	}
+
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("随机数生成失败: %w", err)
+	}
+
+	sealed := aead.Seal(nil, nonce, plainText, nil)
+	tagSize := aead.Overhead()
+	cipherText := sealed[:len(sealed)-tagSize]
+	tag := sealed[len(sealed)-tagSize:]
+	return strings.Join([]string{
+		base64.StdEncoding.EncodeToString(nonce),
+		base64.StdEncoding.EncodeToString(tag),
+		base64.StdEncoding.EncodeToString(cipherText),
+	}, "."), nil
+}
+
+func decryptNextMusicCiphertext(ciphertext string, keyText string) ([]byte, error) {
+	aead, err := nextMusicAEAD(keyText)
+	if err != nil {
+		return nil, err
+	}
+
+	parts := strings.Split(ciphertext, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("响应密文格式错误")
+	}
+	nonce, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("响应nonce解码失败: %w", err)
+	}
+	tag, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("响应tag解码失败: %w", err)
+	}
+	cipherText, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("响应密文解码失败: %w", err)
+	}
+
+	sealed := make([]byte, 0, len(cipherText)+len(tag))
+	sealed = append(sealed, cipherText...)
+	sealed = append(sealed, tag...)
+	plainText, err := aead.Open(nil, nonce, sealed, nil)
+	if err != nil {
+		return nil, fmt.Errorf("响应解密失败: %w", err)
+	}
+	return plainText, nil
+}
+
+func nextMusicSongURL(req *httpme.Request, id string, level string) (string, error) {
+	keyData, err := nextMusicKey(req)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := encryptNextMusicPayload(map[string]interface{}{
+		"id":        id,
+		"level":     level,
+		"timestamp": time.Now().UnixMilli(),
+	}, keyData.Key)
+	if err != nil {
+		return "", fmt.Errorf("getSongUrl请求加密失败: %w", err)
+	}
+
+	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", map[string]string{
+		"keyId":    keyData.KeyID,
+		"keyToken": keyData.KeyToken,
+		"data":     data,
+	}, nextMusicHeaders())
+	if err != nil {
+		return "", fmt.Errorf("getSongUrl请求失败: %w", err)
+	}
+
+	var j nextMusicSongResponse
+	if err := resp.Json(&j); err != nil {
+		return "", fmt.Errorf("getSongUrl响应解析失败: %w", err)
+	}
+	if j.Ciphertext != "" {
+		plainText, err := decryptNextMusicCiphertext(j.Ciphertext, keyData.Key)
+		if err != nil {
+			return "", fmt.Errorf("getSongUrl响应解密失败: %w", err)
+		}
+		if err := json.Unmarshal(plainText, &j); err != nil {
+			return "", fmt.Errorf("getSongUrl解密响应解析失败: %w", err)
+		}
+	}
+	if j.Code != 200 {
+		if j.Message == "" {
+			j.Message = resp.Text()
+		}
+		return "", fmt.Errorf("getSongUrl接口返回异常: %s", j.Message)
+	}
+	if j.Data.URL == "" {
+		return "", fmt.Errorf("getSongUrl接口未返回歌曲地址")
+	}
+	return j.Data.URL, nil
 }
