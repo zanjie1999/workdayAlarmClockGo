@@ -323,10 +323,24 @@ img[src="/favicon.ico"] {
     background-color: #ffffff !important;
 }
 
-/* 调整宽度优化各种屏幕分辨率下的显示 */
-#playUrl {
-    width: 25em;
+#playUrlForm,
+#playlistForm,
+#playmusicForm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
 }
+
+#playUrl,
+#playlistId,
+#playmusicId {
+    flex: 1 1 0;
+    min-width: 8em;
+    width: auto;
+    margin-bottom: 0;
+}
+
 
 @media (max-width: 600px) {
     body {
@@ -348,6 +362,12 @@ img[src="/favicon.ico"] {
     input[type="text"], input[type="file"] {
         width: 12em;
     }
+
+    #playUrl,
+    #playlistId,
+    #playmusicId {
+        width: auto;
+    }
 }
 
 @media (max-width: 500px) {
@@ -363,12 +383,12 @@ img[src="/favicon.ico"] {
         width: 9em;
     }
 
-    #playlistId {
-        width: 7em;
-    }
-
-    #playUrl {
-        width: 16em;
+    #playUrl,
+    #playlistId,
+    #playmusicId {
+        flex-basis: 0;
+        min-width: 7em;
+        width: auto;
     }
 }
 

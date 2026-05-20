@@ -129,8 +129,14 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>url is empty</h1>"+js2home))
 			return
 		}
+		loopMode := c.Query("loopMode") != ""
+		player.LoopMode = loopMode
 		player.PlayUrl(url)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>播放"+url+"</h2>"+js2home))
+		s := "<h2>播放" + url + "</h2>"
+		if loopMode {
+			s += "<h1>单曲循环</h1>"
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
 
 	// 一键急停按钮 自动控制播放停止

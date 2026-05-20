@@ -42,8 +42,9 @@
     <form action="/play" id="playUrlForm" onsubmit="return playurl()">
         <button type="submit">播放url</button>
         <input type="text" name="url" id="playUrl" value="http://127.0.0.1:8080/static/music.mp3">
+        循环<input type="checkbox" name="loopMode" value="0">
     </form>
-    <form action="/playlist" onsubmit="return playlist()">
+    <form action="/playlist" id="playlistForm" onsubmit="return playlist()">
         <button type="submit">播放歌单</button>
         <input type="text" name="id" id="playlistId" placeholder="歌单id或分享链接" value="21777546">
         <select name="random">
@@ -51,7 +52,7 @@
             <option value="1">随机播放</option>
         </select>
     </form>
-    <form action="/playmusic" onsubmit="return playmusic()">
+    <form action="/playmusic" id="playmusicForm" onsubmit="return playmusic()">
         <button type="submit">播放歌曲</button>
         <input type="text" name="id" id="playmusicId" placeholder="歌曲id或分享链接" value="2604307454">
         循环<input type="checkbox" name="loopMode" id="loopMode" value="0">
