@@ -157,6 +157,7 @@ func Me1Key() string {
 func PlayPlaylist(id string, random bool) string {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
+	LoopMode = false
 	ids, name, _ := nemusic.PlayList(id)
 	if random {
 		// 打乱歌单
