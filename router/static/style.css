@@ -392,7 +392,7 @@ img[src="/favicon.ico"] {
     }
 }
 
-@media (max-width: 400px) {
+@media (max-width: 420px) {
     button {
         min-width: 4em;
     }
