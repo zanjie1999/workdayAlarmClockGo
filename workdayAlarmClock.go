@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "23.0"
+	VERSION  = "23.2"
 	lasthhmm = ""
 )
 
@@ -139,7 +139,7 @@ func shellInput() {
 					log.Println("播放歌单", player.PlayPlaylist(cmd[9:], false))
 				} else if strings.HasPrefix(cmd, "playmusic ") {
 					log.Println("播放歌曲")
-					player.PlayPlaymusic(cmd[10:])
+					player.PlayPlaymusic(cmd[10:], false)
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
 				} else if strings.HasPrefix(cmd, "touch ") {

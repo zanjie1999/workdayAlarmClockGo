@@ -54,6 +54,7 @@
     <form action="/playmusic" onsubmit="return playmusic()">
         <button type="submit">播放歌曲</button>
         <input type="text" name="id" id="playmusicId" placeholder="歌曲id或分享链接" value="2604307454">
+        循环<input type="checkbox" name="loopMode" id="loopMode" value="0">
     </form>
     <form action="/timeStop" id="timeStopForm">
         <button type="submit">定时停止</button>
@@ -66,26 +67,12 @@
     <script>
         function playlist() {
             var pl = document.getElementById('playlistId').value
-            var m = /playlist\?id=(\d+)/.exec(pl);
-            if (m) {
-                // 歌单分享链接
-                document.getElementById('playlistId').value = m[1];
-                localStorage.setItem('lastPlayList', m[1]);
-            } else {
-                localStorage.setItem('lastPlayList', pl);
-            }
+            localStorage.setItem('lastPlayList', pl);
             return true;
         }
         function playmusic() {
             var pl = document.getElementById('playmusicId').value
-            var m = /song\?id=(\d+)/.exec(pl);
-            if (m) {
-                // 歌曲分享链接
-                document.getElementById('playmusicId').value = m[1];
-                localStorage.setItem('lastPlayMusic', m[1]);
-            } else {
-                localStorage.setItem('lastPlayMusic', pl);
-            }
+            localStorage.setItem('lastPlayMusic', pl);
             return true;
         }
         function playurl() {

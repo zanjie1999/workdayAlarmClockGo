@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"workdayAlarmClock/weather"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zanjie1999/httpme"
 )
 
 // 下面这个注释配置了需要打包进二进制文件的静态文件
@@ -32,6 +34,29 @@ var (
 	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
 	js2back = "<script>window.history.go(-1)</script>"
 )
+
+func parseNeID(s, typ string) string {
+	if regexp.MustCompile(`^\d+$`).MatchString(s) {
+		return s
+	}
+	if m := regexp.MustCompile(`(https?://)?163cn\.tv/[^\s"'<>，。；、)）]+`).FindStringSubmatch(s); m != nil {
+		url := m[0]
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = "https://" + url
+		}
+		req := httpme.Httpme()
+		if resp, err := req.Get(url); err == nil {
+			resp.R.Body.Close()
+			s = resp.R.Request.URL.String()
+		} else {
+			log.Println("解析网易云短链失败", err)
+		}
+	}
+	if m := regexp.MustCompile(typ + `\?[^#]*?id=(\d+)`).FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return s
+}
 
 func Init(urlPrefix string) *gin.Engine {
 	r := gin.Default()
@@ -114,7 +139,7 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/playlist", func(c *gin.Context) {
-		id := c.Query("id")
+		id := parseNeID(c.Query("id"), "playlist")
 		if id == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
@@ -123,13 +148,18 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/playmusic", func(c *gin.Context) {
-		id := c.Query("id")
+		id := parseNeID(c.Query("id"), "song")
 		if id == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
 		}
-		player.PlayPlaymusic(id)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌曲"+id+"</h1>"+js2home))
+		loopMode := c.Query("loopMode") != ""
+		player.PlayPlaymusic(id, loopMode)
+		s := "<h1>播放歌曲" + id + "</h1>"
+		if loopMode {
+			s += "<h1>单曲循环</h1>"
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
 
 	root.GET("/echo", func(c *gin.Context) {

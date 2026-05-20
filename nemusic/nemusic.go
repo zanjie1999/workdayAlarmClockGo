@@ -136,6 +136,8 @@ func MusicUrl(id string) string {
 		} else {
 			// 因为有时候会失败 第二次又好了
 			if strings.Contains(err.Error(), "Song not found") {
+				log.Println("重试一次")
+				time.Sleep(time.Second)
 				url, err = nextMusicSongURL(req, id, conf.Cfg.MusicQuality)
 			}
 			if err != nil {

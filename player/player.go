@@ -36,6 +36,7 @@ var (
 	NowUrl        = ""
 	PrevUrl       = ""
 	NowId         = ""
+	LoopMode      = false
 	// 开始播放和定时结束时间
 	StartUnix   int64 = 0
 	StopUnix    int64 = 0
@@ -96,6 +97,10 @@ func Prev() string {
 // 下一首
 func Next() string {
 	for {
+		if LoopMode && NowUrl != "" {
+			PlayUrl(NowUrl)
+			return NowUrl
+		}
 		if IsAlarm && NowId != "" {
 			// 保存闹钟放过的记录
 			log.Println("闹钟记录", NowId)
@@ -166,9 +171,10 @@ func PlayPlaylist(id string, random bool) string {
 }
 
 // 播放歌曲
-func PlayPlaymusic(id string) {
+func PlayPlaymusic(id string, loopMode bool) {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
+	LoopMode = loopMode
 	url := nemusic.MusicUrl(id)
 	if url != "" {
 		PlayUrl(url)
@@ -207,6 +213,7 @@ func PlayUrl(url string) {
 
 func Stop() {
 	app.Send("ECHO 工作咩闹钟")
+	LoopMode = false
 	PrevRdmFlag = false
 	PrevUrl = NowUrl
 	NowUrl = ""

@@ -372,6 +372,11 @@ img[src="/favicon.ico"] {
     }
 }
 
+@media (max-width: 400px) {
+    button {
+        min-width: 4em;
+    }
+}
 
 @media (prefers-color-scheme: dark) {
     body {
