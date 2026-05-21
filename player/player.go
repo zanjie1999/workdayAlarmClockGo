@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/weather"
@@ -35,6 +36,7 @@ var (
 	NowUrl        = ""
 	PrevUrl       = ""
 	NowId         = ""
+	LoopMode      = false
 	// 开始播放和定时结束时间
 	StartUnix   int64 = 0
 	StopUnix    int64 = 0
@@ -50,6 +52,7 @@ func Prev() string {
 		PrevRdmFlag = false
 	}
 	if PrevRdmFlag {
+		app.Send("ECHO 随机播放列表")
 		PrevRdmFlag = false
 		NowUrl = ""
 		PrevUrl = ""
@@ -64,26 +67,40 @@ func Prev() string {
 		Next()
 		return "随机播放列表"
 	} else if PrevUrl != "" {
-		PlayList = append([]string{NowUrl}, PlayList...)
+		app.Send("ECHO 上一首")
+		if len(PlayList) == 0 {
+			PlayList = []string{NowUrl}
+		} else {
+			PlayList = append([]string{NowUrl}, PlayList...)
+		}
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
 		NowId = ""
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
-		PrevRdmFlag = true
+		app.Send("ECHO 播放歌单" + conf.Cfg.DefPlayListId)
 		// 不清空就会在播放歌单和上一首之间循环
 		NowUrl = ""
 		PrevUrl = ""
 		NowId = ""
-		PlayPlaylist(conf.Cfg.DefPlayListId, false)
-		return "播放歌单" + conf.Cfg.DefPlayListId
+		if strings.HasPrefix(conf.Cfg.DefPlayListId, "http") {
+			PlayUrl(conf.Cfg.DefPlayListId)
+			return "播放默认URL" + conf.Cfg.DefPlayListId
+		} else {
+			PlayPlaylist(conf.Cfg.DefPlayListId, false)
+			return "播放默认歌单" + conf.Cfg.DefPlayListId
+		}
 	}
 }
 
 // 下一首
 func Next() string {
 	for {
+		if LoopMode && NowUrl != "" {
+			PlayUrl(NowUrl)
+			return NowUrl
+		}
 		if IsAlarm && NowId != "" {
 			// 保存闹钟放过的记录
 			log.Println("闹钟记录", NowId)
@@ -98,7 +115,16 @@ func Next() string {
 		if len(PlayList) > 0 {
 			now := PlayList[0]
 			PlayList = PlayList[1:]
-			if len(now) > 3 && now[:4] == "http" {
+			if now == "" {
+				log.Println("不是播放列表怎么有空的播放项目？")
+				continue
+			}
+			if len(PlayList) > 0 {
+				app.Send("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
+			} else {
+				app.Send("ECHO 正在播放")
+			}
+			if len(now) > 3 && (now[:4] == "http" || now[0] == '.' || now[0] == '/' || now[1] == ':') {
 				PlayUrl(now)
 				return now
 			} else {
@@ -120,8 +146,7 @@ func Next() string {
 // 一键急停按钮 自动控制播放停止
 func Me1Key() string {
 	if IsStop {
-		PlayPlaylist(conf.Cfg.DefPlayListId, false)
-		return "play"
+		return PlayPlaylist(conf.Cfg.DefPlayListId, false)
 	} else {
 		Stop()
 		return "stop"
@@ -129,8 +154,11 @@ func Me1Key() string {
 }
 
 // 播放歌单
-func PlayPlaylist(id string, random bool) {
-	ids := nemusic.PlayList(id)
+func PlayPlaylist(id string, random bool) string {
+	// 在播放任意歌单后，按上一首来随机
+	PrevRdmFlag = true
+	LoopMode = false
+	ids, name, _ := nemusic.PlayList(id)
 	if random {
 		// 打乱歌单
 		rand.Seed(time.Now().UnixNano())
@@ -140,15 +168,30 @@ func PlayPlaylist(id string, random bool) {
 	}
 	PlayList = ids
 	Next()
+	return name
+}
+
+// 播放歌曲
+func PlayPlaymusic(id string, loopMode bool) {
+	// 在播放任意歌单后，按上一首来随机
+	PrevRdmFlag = true
+	LoopMode = loopMode
+	url := nemusic.MusicUrl(id)
+	if url != "" {
+		PlayUrl(url)
+	}
 }
 
 // 预下载播报的天气
 func DownWeather() {
 	os.Remove("weather.mp3")
+	os.Remove("weather2.mp3")
 	msg := weather.GetWeather("")
 	if msg != "" {
-		downloadFile("https://dds.dui.ai/runtime/v1/synthesize?voiceId=cyangfp&speed=1&volume=100&audioType=mp3&text="+url.QueryEscape(msg), "weather.mp3")
+		downloadFile("https://dds.dui.ai/runtime/v1/synthesize?voiceId=cyangfp&speed=1&volume=100&audioType=mp3&text="+url.QueryEscape(msg), "weather2.mp3")
+		os.Rename("weather2.mp3", "weather.mp3")
 	}
+
 }
 
 // 播放url音乐
@@ -163,13 +206,15 @@ func PlayUrl(url string) {
 	PrevUrl = NowUrl
 	NowUrl = url
 	if conf.IsApp {
-		fmt.Println("PLAY " + url)
+		app.PlayUrl(url)
 	} else {
 		go UnixPlayUrl(url)
 	}
 }
 
 func Stop() {
+	app.Send("ECHO 工作咩闹钟")
+	LoopMode = false
 	PrevRdmFlag = false
 	PrevUrl = NowUrl
 	NowUrl = ""
@@ -186,7 +231,7 @@ func Stop() {
 	NowId = ""
 	PlayList = []string{}
 	if conf.IsApp {
-		fmt.Println("STOP")
+		app.Send("STOP")
 	} else {
 		// exec.Command("killall", "play").Run()
 		if UnixCmd != nil {
@@ -198,7 +243,19 @@ func Stop() {
 		IsAlarm = false
 		IsPlayWeather = true
 		// 结束闹钟时播放天气
-		PlayUrl("http://127.0.0.1:" + strconv.Itoa(conf.Cfg.Port) + "/weather.mp3")
+		if stat, err := os.Stat("weather.mp3"); err == nil && stat.Size() > 0 {
+			if conf.IsApp {
+				PlayUrl("./weather.mp3")
+			} else {
+				PlayUrl("http://127.0.0.1:" + strconv.Itoa(conf.Cfg.Port) + "/weather.mp3")
+			}
+			// 万一放不了,需要保证会真正停止
+			time.AfterFunc(time.Second*120, func() {
+				if IsPlayWeather {
+					Stop()
+				}
+			})
+		}
 	} else if IsPlayWeather {
 		IsPlayWeather = false
 		if conf.Cfg.MuteWhenStop {
@@ -207,6 +264,9 @@ func Stop() {
 			SetVol(conf.Cfg.VolDefault)
 		}
 		PrevUrl = ""
+		if conf.IsApp {
+			app.Send("SCREENOFF")
+		}
 	} else if conf.Cfg.MuteWhenStop {
 		SetVol("0")
 	}
@@ -217,7 +277,7 @@ func Stop() {
 func SetVol(per string) {
 	log.Println("设置音量", per, "%")
 	if conf.IsApp {
-		fmt.Println("VOL " + per)
+		app.SendLocal("VOL " + per)
 	}
 }
 
@@ -236,19 +296,48 @@ func filterList(in, filter []string) []string {
 	return out
 }
 
+func filterListHasCache(in []string) []string {
+	filterMap := make(map[string]struct{})
+	files, err := os.ReadDir(conf.Cfg.SavePath)
+	if err != nil {
+		fmt.Println("读取缓存目录出错:", err)
+		return []string{}
+	}
+	for _, file := range files {
+		// 文件名是id
+		filterMap[strings.SplitN(file.Name(), ".", 2)[0]] = struct{}{}
+	}
+	var out []string
+	for _, id := range in {
+		if _, exists := filterMap[id]; exists {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // 播放闹钟音乐 时间到时调用
 func PlayAlarm() {
+	app.Send("ECHO 闹钟")
 	if SkipAlarm > 0 {
 		SkipAlarm--
 		log.Println("跳过闹钟")
 		return
 	}
 	IsAlarm = true
+	if conf.IsApp {
+		app.Send("ALARM")
+	}
 	SetVol(conf.Cfg.VolAlarm)
-	PlayList = []string{}
-	ids := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 预下载天气信息
 	go DownWeather()
+	PlayList = []string{}
+	if strings.HasPrefix(conf.Cfg.NePlayListId, "http") {
+		log.Println("闹钟歌单配置的是URL，播放", conf.Cfg.NePlayListId)
+		PlayUrl(conf.Cfg.NePlayListId)
+		return
+	}
+	ids, _, isCache := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 定时停止闹钟
 	StopUnix = time.Now().Unix() + int64(conf.Cfg.AlarmTime*60)
 	if len(ids) == 0 {
@@ -257,6 +346,16 @@ func PlayAlarm() {
 		PlayUrl("http://127.0.0.1:" + strconv.Itoa(conf.Cfg.Port) + "/music.mp3")
 		return
 	} else {
+		if isCache {
+			// 放的是缓存，那要筛选出缓存有的
+			ids = filterListHasCache(ids)
+			log.Println("使用缓存，可播放", len(ids))
+			if len(ids) == 0 {
+				log.Println("没有可用缓存，播放默认歌曲")
+				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				return
+			}
+		}
 		// 放完一次了 重置
 		if len(conf.Cfg.NePlayed)+1 >= len(ids) {
 			log.Println("闹钟歌单，共", len(ids), "，重置已播放")
@@ -264,6 +363,12 @@ func PlayAlarm() {
 		} else {
 			log.Println("闹钟歌单，共", len(ids), "，已播放", len(conf.Cfg.NePlayed))
 			ids = filterList(ids, conf.Cfg.NePlayed)
+			if len(ids) == 0 {
+				log.Println("虽然不知道为什么但是为空了，播放默认歌曲")
+				conf.Cfg.NePlayed = []string{}
+				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				return
+			}
 		}
 		rand.Seed(time.Now().UnixNano())
 		rand.Shuffle(len(ids), func(i, j int) {
@@ -283,11 +388,20 @@ func PlayAlarm() {
 // 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
 func downloadFile(url string, filename string) error {
 	resp, err := httpme.Get(url)
-	if err != nil {
-		return err
+	for i := 0; i < 3; i++ {
+		resp, err = httpme.Get(url)
+		if err != nil || resp.R.StatusCode != 200 {
+			log.Println("下载文件失败，重试中", err)
+			if resp != nil {
+				log.Println(resp.R.StatusCode, resp.R.Body)
+			}
+			time.Sleep(time.Second * 10)
+		} else {
+			resp.SaveFile(filename)
+			return nil
+		}
 	}
-	resp.SaveFile(filename)
-	return nil
+	return err
 }
 
 // beep库 win 和linux alsa可以用 android不行
@@ -309,7 +423,7 @@ func downloadFile(url string, filename string) error {
 // 	}
 // 	defer streamer.Close()
 // 	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-// 	fmt.Println("music length :", streamer.Len())
+// 	app.Send("music length :", streamer.Len())
 // 	speaker.Play(streamer)
 // 	select {}
 // }

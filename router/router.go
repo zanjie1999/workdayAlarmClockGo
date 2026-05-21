@@ -8,19 +8,21 @@ package router
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/weather"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zanjie1999/httpme"
 )
 
 // 下面这个注释配置了需要打包进二进制文件的静态文件
@@ -32,6 +34,29 @@ var (
 	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
 	js2back = "<script>window.history.go(-1)</script>"
 )
+
+func parseNeID(s, typ string) string {
+	if regexp.MustCompile(`^\d+$`).MatchString(s) {
+		return s
+	}
+	if m := regexp.MustCompile(`(https?://)?163cn\.tv/[^\s"'<>，。；、)）]+`).FindStringSubmatch(s); m != nil {
+		url := m[0]
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = "https://" + url
+		}
+		req := httpme.Httpme()
+		if resp, err := req.Get(url); err == nil {
+			resp.R.Body.Close()
+			s = resp.R.Request.URL.String()
+		} else {
+			log.Println("解析网易云短链失败", err)
+		}
+	}
+	if m := regexp.MustCompile(typ + `\?[^#]*?id=(\d+)`).FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return s
+}
 
 func Init(urlPrefix string) *gin.Engine {
 	r := gin.Default()
@@ -56,6 +81,22 @@ func Init(urlPrefix string) *gin.Engine {
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
 	root.StaticFile("/weather.mp3", "./weather.mp3")
+	// 允许直接浏览缓存
+	if conf.Cfg.SavePath != "" {
+		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))
+	}
+	root.StaticFS("/sdcard", gin.Dir("/sdcard", true))
+
+	// 删除缓存目录
+	root.GET("/delSave", func(c *gin.Context) {
+		if conf.Cfg.SavePath != "" && conf.Cfg.SavePath != "/" && conf.Cfg.SavePath != "./" {
+			os.RemoveAll(conf.Cfg.SavePath)
+			os.MkdirAll(conf.Cfg.SavePath, os.ModePerm)
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>已删除</h1>"+js2home))
+		} else {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>你的操作很危险，驳回</h1><br>"+conf.Cfg.SavePath+js2home))
+		}
+	})
 
 	root.GET("/hello", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -88,8 +129,14 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>url is empty</h1>"+js2home))
 			return
 		}
+		loopMode := c.Query("loopMode") != ""
+		player.LoopMode = loopMode
 		player.PlayUrl(url)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h2>播放"+url+"</h2>"+js2home))
+		s := "<h2>播放" + url + "</h2>"
+		if loopMode {
+			s += "<h1>单曲循环</h1>"
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
 
 	// 一键急停按钮 自动控制播放停止
@@ -98,13 +145,27 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/playlist", func(c *gin.Context) {
-		id := c.Query("id")
+		id := parseNeID(c.Query("id"), "playlist")
 		if id == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
 		}
-		player.PlayPlaylist(id, c.Query("random") == "1")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单"+id+"</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单 "+player.PlayPlaylist(id, c.Query("random") == "1")+"</h1>"+js2home))
+	})
+
+	root.GET("/playmusic", func(c *gin.Context) {
+		id := parseNeID(c.Query("id"), "song")
+		if id == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
+			return
+		}
+		loopMode := c.Query("loopMode") != ""
+		player.PlayPlaymusic(id, loopMode)
+		s := "<h1>播放歌曲" + id + "</h1>"
+		if loopMode {
+			s += "<h1>单曲循环</h1>"
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
 
 	root.GET("/echo", func(c *gin.Context) {
@@ -113,31 +174,35 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>msg is empty</h1>"+js2home))
 			return
 		}
-		fmt.Println(msg)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+		app.Send(msg)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"+js2home))
 	})
 
 	// app暂停播放
 	root.GET("/pause", func(c *gin.Context) {
-		fmt.Println("PAUSE")
+		app.Send("PAUSE")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// app恢复播放
 	root.GET("/resume", func(c *gin.Context) {
-		fmt.Println("RESUME")
+		if player.IsStop {
+			player.Me1Key()
+		} else {
+			app.Send("RESUME")
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量加
 	root.GET("/volp", func(c *gin.Context) {
-		fmt.Println("VOLP")
+		app.Send("VOLP")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量减
 	root.GET("/volm", func(c *gin.Context) {
-		fmt.Println("VOLM")
+		app.Send("VOLM")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -156,8 +221,12 @@ func Init(urlPrefix string) *gin.Engine {
 		if len(typeS) > 0 && typeS[len(typeS)-1] == ',' {
 			typeS = typeS[:len(typeS)-1]
 		}
-		if hhmm == "" || typeS == "" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm or type is empty</h1>"+js2home))
+		if typeS == "" {
+			// 默认一次
+			typeS = "3"
+		}
+		if hhmm == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm is empty</h1>"+js2home))
 			return
 		}
 		if typeList, exists := conf.Cfg.Alarm[hhmm]; exists {
@@ -166,6 +235,7 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.Alarm[hhmm] = strings.Split(typeS, ",")
 		}
 		conf.Save()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -178,6 +248,7 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		delete(conf.Cfg.Alarm, hhmm)
 		conf.Save()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -204,7 +275,11 @@ func Init(urlPrefix string) *gin.Engine {
 		wakelock := c.Query("wakelock")
 		alarmTime := c.Query("alarmTime")
 		muteWhenStop := c.Query("muteWhenStop")
-		log.Println(wakelock)
+		musicQuality := c.Query("musicQuality")
+		savePath := c.Query("savePath")
+		defSeek := c.Query("defSeek")
+		broadcastMode := c.Query("broadcastMode")
+		smallWeekDate := c.Query("smallWeekDate")
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -231,8 +306,40 @@ func Init(urlPrefix string) *gin.Engine {
 		conf.Cfg.WeatherUpdate = WeatherUpdate
 		conf.Cfg.Wakelock = wakelock == "1"
 		conf.Cfg.MuteWhenStop = muteWhenStop == "1"
+		conf.Cfg.BroadcastMode = broadcastMode == "1"
+		conf.Cfg.DefSeek = defSeek
+		if conf.IsApp {
+			app.SendLocal("DSEEK " + defSeek)
+		}
 		if alarmTime != "" {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
+		}
+		conf.Cfg.MusicQuality = musicQuality
+		if savePath == "" {
+			conf.Cfg.SavePath = ""
+		} else if savePath != "/" && savePath != "./" {
+			conf.Cfg.SavePath = savePath
+			if conf.IsApp && conf.Cfg.SavePath[0] != '/' && conf.Cfg.SavePath[0] != '.' && (len(conf.Cfg.SavePath) == 1 || conf.Cfg.SavePath[1] != ':') {
+				conf.Cfg.SavePath = "./" + conf.Cfg.SavePath
+			}
+			if !strings.HasSuffix(conf.Cfg.SavePath, "/") {
+				conf.Cfg.SavePath += "/"
+			}
+		} else {
+			conf.Cfg.SavePath = "./music/"
+		}
+		if conf.Cfg.SavePath != "" {
+			err := os.MkdirAll(conf.Cfg.SavePath, os.ModePerm)
+			if err != nil {
+				log.Println("创建缓存目录出错", conf.Cfg.SavePath, err)
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>创建缓存目录出错"+conf.Cfg.SavePath+"</h1>"))
+			}
+		}
+		if conf.Cfg.SmallWeekDate != smallWeekDate {
+			conf.Cfg.SmallWeekDate = smallWeekDate
+			if smallWeekDate != "" {
+				conf.WorkDayApi()
+			}
 		}
 		conf.Save()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
@@ -249,6 +356,8 @@ func Init(urlPrefix string) *gin.Engine {
 		c.SaveUploadedFile(file, "workdayAlarmClock.json")
 		// 重新加载配置
 		conf.Init()
+		conf.WorkDayApi()
+		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
 	})
 
@@ -320,7 +429,7 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/restart", func(c *gin.Context) {
 		// 做不到的，因为要运行完这个方法才会返回
 		// c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
-		fmt.Println("RESTART")
+		app.Send("RESTART")
 		os.Exit(0)
 	})
 
@@ -352,4 +461,15 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	return r
+}
+
+// 更新app中每分钟锁的开关状态
+func updateAppAlarmWake() {
+	if conf.IsApp {
+		if len(conf.Cfg.Alarm) > 0 {
+			app.Send("ALARMON")
+		} else {
+			app.Send("ALARMOFF")
+		}
+	}
 }
