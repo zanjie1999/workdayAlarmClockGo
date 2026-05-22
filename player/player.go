@@ -114,7 +114,7 @@ func Next() string {
 		}
 		if len(PlayList) > 0 {
 			now := PlayList[0]
-			PlayList = PlayList[1:]
+			PlayList = append([]string(nil), PlayList[1:]...)
 			if now == "" {
 				log.Println("不是播放列表怎么有空的播放项目？")
 				continue
@@ -387,19 +387,23 @@ func PlayAlarm() {
 
 // 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
 func downloadFile(url string, filename string) error {
-	resp, err := httpme.Get(url)
+	var err error
 	for i := 0; i < 3; i++ {
-		resp, err = httpme.Get(url)
-		if err != nil || resp.R.StatusCode != 200 {
+		resp, e := httpme.Get(url)
+		if e != nil {
+			err = e
 			log.Println("下载文件失败，重试中", err)
-			if resp != nil {
-				log.Println(resp.R.StatusCode, resp.R.Body)
-			}
 			time.Sleep(time.Second * 10)
-		} else {
-			resp.SaveFile(filename)
-			return nil
+			continue
 		}
+		if resp.R.StatusCode != 200 {
+			log.Println("下载文件失败，重试中", resp.R.StatusCode)
+			resp.R.Body.Close()
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		resp.SaveFile(filename)
+		return nil
 	}
 	return err
 }
