@@ -7,12 +7,7 @@
 package nemusic
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -24,16 +19,10 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
-type nextMusicKeyData struct {
-	KeyID    string `json:"keyId"`
-	KeyToken string `json:"keyToken"`
-	Key      string `json:"key"`
-}
-
-type nextMusicKeyResponse struct {
-	Code    int              `json:"code"`
-	Message string           `json:"message"`
-	Data    nextMusicKeyData `json:"data"`
+type nextMusicSongRequest struct {
+	ID        string `json:"id"`
+	Level     string `json:"level"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type nextMusicSongData struct {
@@ -41,10 +30,9 @@ type nextMusicSongData struct {
 }
 
 type nextMusicSongResponse struct {
-	Code       int               `json:"code"`
-	Message    string            `json:"message"`
-	Ciphertext string            `json:"ciphertext"`
-	Data       nextMusicSongData `json:"data"`
+	Code    int               `json:"code"`
+	Message string            `json:"message"`
+	Data    nextMusicSongData `json:"data"`
 }
 
 // 歌单列表                歌单id   歌单名  是否缓存
@@ -129,9 +117,9 @@ func MusicUrl(id string) string {
 		url, err = nextMusicSongURL(req, id, conf.Cfg.MusicQuality)
 		if err == nil {
 			if url == "" {
-				log.Println("使用接口获取歌曲地址解析出错", "接口未返回歌曲地址")
+				log.Println("使用接口获取歌曲地址解析出错")
 			} else {
-				log.Println("使用接口获取歌曲地址成功", url)
+				log.Println("使用接口获取歌曲地址成功")
 			}
 		} else {
 			// 因为有时候会失败 第二次又好了
@@ -181,131 +169,15 @@ func PlaylistDownload(id string) {
 	}
 }
 
-func nextMusicHeaders() httpme.Header {
-	return httpme.Header{
-		"sec-fetch-mode": "cros",
-		"referer":        "https://wyapi.toubiec.cn/",
-		"origin":         "https://wyapi.toubiec.cn",
-	}
-}
-
-func nextMusicKey(req *httpme.Request) (nextMusicKeyData, error) {
-	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/key", nextMusicHeaders())
-	if err != nil {
-		return nextMusicKeyData{}, fmt.Errorf("key请求失败: %w", err)
-	}
-
-	var j nextMusicKeyResponse
-	if err := resp.Json(&j); err != nil {
-		return nextMusicKeyData{}, fmt.Errorf("key响应解析失败: %w", err)
-	}
-	if j.Code != 200 {
-		if j.Message == "" {
-			j.Message = resp.Text()
-		}
-		return nextMusicKeyData{}, fmt.Errorf("key接口返回异常: %s", j.Message)
-	}
-	if j.Data.KeyID == "" || j.Data.KeyToken == "" || j.Data.Key == "" {
-		return nextMusicKeyData{}, fmt.Errorf("key接口返回数据不完整")
-	}
-	return j.Data, nil
-}
-
-func nextMusicAEAD(keyText string) (cipher.AEAD, error) {
-	key, err := base64.StdEncoding.DecodeString(keyText)
-	if err != nil {
-		return nil, fmt.Errorf("key base64解码失败: %w", err)
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("AES初始化失败: %w", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("AES-GCM初始化失败: %w", err)
-	}
-	return aead, nil
-}
-
-func encryptNextMusicPayload(payload interface{}, keyText string) (string, error) {
-	aead, err := nextMusicAEAD(keyText)
-	if err != nil {
-		return "", err
-	}
-	plainText, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("请求数据编码失败: %w", err)
-	}
-
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("随机数生成失败: %w", err)
-	}
-
-	sealed := aead.Seal(nil, nonce, plainText, nil)
-	tagSize := aead.Overhead()
-	cipherText := sealed[:len(sealed)-tagSize]
-	tag := sealed[len(sealed)-tagSize:]
-	return strings.Join([]string{
-		base64.StdEncoding.EncodeToString(nonce),
-		base64.StdEncoding.EncodeToString(tag),
-		base64.StdEncoding.EncodeToString(cipherText),
-	}, "."), nil
-}
-
-func decryptNextMusicCiphertext(ciphertext string, keyText string) ([]byte, error) {
-	aead, err := nextMusicAEAD(keyText)
-	if err != nil {
-		return nil, err
-	}
-
-	parts := strings.Split(ciphertext, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("响应密文格式错误")
-	}
-	nonce, err := base64.StdEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, fmt.Errorf("响应nonce解码失败: %w", err)
-	}
-	tag, err := base64.StdEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("响应tag解码失败: %w", err)
-	}
-	cipherText, err := base64.StdEncoding.DecodeString(parts[2])
-	if err != nil {
-		return nil, fmt.Errorf("响应密文解码失败: %w", err)
-	}
-
-	sealed := make([]byte, 0, len(cipherText)+len(tag))
-	sealed = append(sealed, cipherText...)
-	sealed = append(sealed, tag...)
-	plainText, err := aead.Open(nil, nonce, sealed, nil)
-	if err != nil {
-		return nil, fmt.Errorf("响应解密失败: %w", err)
-	}
-	return plainText, nil
-}
-
 func nextMusicSongURL(req *httpme.Request, id string, level string) (string, error) {
-	keyData, err := nextMusicKey(req)
-	if err != nil {
-		return "", err
-	}
-
-	data, err := encryptNextMusicPayload(map[string]interface{}{
-		"id":        id,
-		"level":     level,
-		"timestamp": time.Now().UnixMilli(),
-	}, keyData.Key)
-	if err != nil {
-		return "", fmt.Errorf("getSongUrl请求加密失败: %w", err)
-	}
-
-	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", map[string]string{
-		"keyId":    keyData.KeyID,
-		"keyToken": keyData.KeyToken,
-		"data":     data,
-	}, nextMusicHeaders())
+	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", nextMusicSongRequest{
+		ID:        id,
+		Level:     level,
+		Timestamp: time.Now().UnixMilli(),
+	}, httpme.Header{
+		"origin":         "https://wyapi.toubiec.cn",
+		"sec-fetch-mode": "cors",
+	})
 	if err != nil {
 		return "", fmt.Errorf("getSongUrl请求失败: %w", err)
 	}
@@ -313,15 +185,6 @@ func nextMusicSongURL(req *httpme.Request, id string, level string) (string, err
 	var j nextMusicSongResponse
 	if err := resp.Json(&j); err != nil {
 		return "", fmt.Errorf("getSongUrl响应解析失败: %w", err)
-	}
-	if j.Ciphertext != "" {
-		plainText, err := decryptNextMusicCiphertext(j.Ciphertext, keyData.Key)
-		if err != nil {
-			return "", fmt.Errorf("getSongUrl响应解密失败: %w", err)
-		}
-		if err := json.Unmarshal(plainText, &j); err != nil {
-			return "", fmt.Errorf("getSongUrl解密响应解析失败: %w", err)
-		}
 	}
 	if j.Code != 200 {
 		if j.Message == "" {

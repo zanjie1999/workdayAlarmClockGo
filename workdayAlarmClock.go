@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "23.3"
+	VERSION  = "24.4"
 	lasthhmm = ""
 )
 
@@ -174,16 +174,22 @@ func shellInput() {
 }
 
 func checkUpdate() {
-	//请求 https://api.github.com/repos/zanjie1999/workdayAlarmClockAndroid/releases/latest 检查更新
+	// 检查更新
+	repo := "zanjie1999/workdayAlarmClock"
+	if conf.IsApp {
+		repo += "Android"
+	} else {
+		repo += "Go"
+	}
 	req := httpme.Httpme()
-	resp, err := req.Get("https://api.github.com/repos/zanjie1999/workdayAlarmClockAndroid/releases/latest")
+	resp, err := req.Get("https://api.github.com/repos/" + repo + "/releases/latest")
 	if err == nil {
 		var j map[string]interface{}
 		resp.Json(&j)
 		if j["tag_name"].(string) != VERSION {
-			fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/zanjie1999/workdayAlarmClockAndroid/releases下载更新，更新内容：" + j["name"].(string) + "\n")
+			fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/" + repo + "/releases下载更新，更新内容：" + j["name"].(string) + "\n")
 		} else {
-			log.Println("当前已是最新版本")
+			log.Println("当前已是最新版本 开源仓库：https://github.com/" + repo)
 		}
 	} else {
 		log.Println("检查更新失败", err)
@@ -195,6 +201,10 @@ func main() {
 	if len(os.Args) > 1 {
 		if os.Args[1] == "app" {
 			conf.IsApp = true
+			if len(os.Args) > 2 {
+				// 因为经常会只更新android的版本号，所以在app里传过来，方便在日志里显示
+				VERSION = os.Args[2]
+			}
 			httpme.SetDns("223.6.6.6:53")
 			// 全屋同步补偿ms
 			app.SendLocal("DSEEK " + conf.Cfg.DefSeek)
@@ -218,11 +228,6 @@ func main() {
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
-	if conf.IsApp {
-		log.Println("下载更新和开源仓库：https://github.com/zanjie1999/workdayAlarmClockAndroid")
-	} else {
-		log.Println("下载更新和开源仓库：https://github.com/zanjie1999/workdayAlarmClockGo")
-	}
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	conf.WorkDayApi()
 	if !conf.IsApp || conf.IsApp && conf.Cfg.Wakelock {
