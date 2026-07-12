@@ -39,6 +39,7 @@ type Config struct {
 	BroadcastMode   bool                `json:"broadcastMode"`
 	DefSeek         string              `json:"defSeek"`
 	SmallWeekDate   string              `json:"smallWeekDate"`
+	Port            int                 `json:"port"`
 }
 
 var (
@@ -48,6 +49,8 @@ var (
 	IsApp = false
 	// 获取工作日信息出错
 	WorkDayApiErr = false
+	// 实际端口
+	Port = ":8080"
 
 	// 配置
 	Cfg = Config{
@@ -83,6 +86,8 @@ var (
 		DefSeek: "0",
 		// 下一次小周日期，双休时为空
 		SmallWeekDate: "",
+		// 端口号
+		Port: 8080,
 	}
 )
 

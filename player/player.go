@@ -247,7 +247,7 @@ func Stop() {
 			if conf.IsApp {
 				PlayUrl("./weather.mp3")
 			} else {
-				PlayUrl("http://127.0.0.1:8080/weather.mp3")
+				PlayUrl("http://127.0.0.1" + conf.Port + "/weather.mp3")
 			}
 			// 万一放不了,需要保证会真正停止
 			time.AfterFunc(time.Second*120, func() {
@@ -343,7 +343,7 @@ func PlayAlarm() {
 	if len(ids) == 0 {
 		// 兜底
 		log.Println("获取不到歌单，播放默认歌曲")
-		PlayUrl("http://127.0.0.1:8080/music.mp3")
+		PlayUrl("http://127.0.0.1" + conf.Port + "/music.mp3")
 		return
 	} else {
 		if isCache {
@@ -352,7 +352,7 @@ func PlayAlarm() {
 			log.Println("使用缓存，可播放", len(ids))
 			if len(ids) == 0 {
 				log.Println("没有可用缓存，播放默认歌曲")
-				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				PlayUrl("http://127.0.0.1" + conf.Port + "/music.mp3")
 				return
 			}
 		}
@@ -366,7 +366,7 @@ func PlayAlarm() {
 			if len(ids) == 0 {
 				log.Println("虽然不知道为什么但是为空了，播放默认歌曲")
 				conf.Cfg.NePlayed = []string{}
-				PlayUrl("http://127.0.0.1:8080/music.mp3")
+				PlayUrl("http://127.0.0.1" + conf.Port + "/music.mp3")
 				return
 			}
 		}
@@ -378,7 +378,7 @@ func PlayAlarm() {
 		if len(PlayList) == 0 {
 			// 你该不是在拿咩咩寻开心吧
 			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")
-			PlayList = append(PlayList, "http://127.0.0.1:8080/music.mp3")
+			PlayList = append(PlayList, "http://127.0.0.1"+conf.Port+"/music.mp3")
 		}
 		conf.Save()
 		Next()

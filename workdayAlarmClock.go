@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "24.4"
+	VERSION  = "24.5"
 	lasthhmm = ""
 )
 
@@ -242,14 +242,14 @@ func main() {
 	port := 8080
 	ip, _ := app.GetLocalIP()
 	for {
-		addr := fmt.Sprintf(":%d", port)
+		conf.Port = fmt.Sprintf(":%d", port)
 		if conf.IsApp {
-			fmt.Println("ECHO 访问http://" + ip + addr)
+			fmt.Println("ECHO 访问http://" + ip + conf.Port)
 		}
-		fmt.Println("\n使用浏览器访问 http://" + ip + addr + " 进入后台\n")
-		if err := run.Run(addr); err != nil {
+		fmt.Println("\n使用浏览器访问 http://" + ip + conf.Port + " 进入后台\n")
+		if err := run.Run(conf.Port); err != nil {
 			port++
-			log.Println("启动失败，端口被占" + addr)
+			log.Println("启动失败，端口被占" + conf.Port)
 		}
 	}
 }
