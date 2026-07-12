@@ -239,7 +239,7 @@ func main() {
 	timeJob()
 	go checkUpdate()
 	run := router.Init("/")
-	port := 8080
+	port := conf.Cfg.Port
 	ip, _ := app.GetLocalIP()
 	for {
 		addr := fmt.Sprintf(":%d", port)

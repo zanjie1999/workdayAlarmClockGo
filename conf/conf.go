@@ -16,6 +16,7 @@ import (
 )
 
 type Config struct {
+	Port            int                 `json:"port"`
 	VolDefault      string              `json:"volDefault"`
 	VolAlarm        string              `json:"volAlarm"`
 	Alarm           map[string][]string `json:"alarm"`
@@ -51,6 +52,8 @@ var (
 
 	// 配置
 	Cfg = Config{
+		//默认端口
+		Port: 8080,
 		// 闹钟时间 24小时制hhmm 工作日1 休息日2 一次性3 每天4
 		Alarm: map[string][]string{},
 		// 闹钟歌单
