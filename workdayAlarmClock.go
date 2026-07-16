@@ -185,11 +185,14 @@ func checkUpdate() {
 	resp, err := req.Get("https://api.github.com/repos/" + repo + "/releases/latest")
 	if err == nil {
 		var j map[string]interface{}
-		resp.Json(&j)
-		if j["tag_name"].(string) != VERSION {
-			fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/" + repo + "/releases下载更新，更新内容：" + j["name"].(string) + "\n")
+		if err = resp.Json(&j); err == nil {
+			if tag, ok := j["tag_name"].(string); ok && tag != VERSION {
+				fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/" + repo + "/releases下载更新，更新内容：" + j["name"].(string) + "\n")
+			} else {
+				log.Println("当前已是最新版本 开源仓库：https://github.com/" + repo)
+			}
 		} else {
-			log.Println("当前已是最新版本 开源仓库：https://github.com/" + repo)
+			log.Println("检查更新失败", err)
 		}
 	} else {
 		log.Println("检查更新失败", err)
