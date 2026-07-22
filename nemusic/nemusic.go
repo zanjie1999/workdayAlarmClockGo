@@ -23,6 +23,21 @@ type nextMusicSongRequest struct {
 	ID        string `json:"id"`
 	Level     string `json:"level"`
 	Timestamp int64  `json:"timestamp"`
+	IP        string `json:"ip"`
+}
+
+type nextMusicIPRequest struct {
+	Timestamp int64 `json:"timestamp"`
+}
+
+type nextMusicIPData struct {
+	IP string `json:"ip"`
+}
+
+type nextMusicIPResponse struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    nextMusicIPData `json:"data"`
 }
 
 type nextMusicSongData struct {
@@ -170,14 +185,43 @@ func PlaylistDownload(id string) {
 }
 
 func nextMusicSongURL(req *httpme.Request, id string, level string) (string, error) {
-	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", nextMusicSongRequest{
+	headers := httpme.Header{
+		"Accept":          "*/*",
+		"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7",
+		"DNT":             "1",
+		"Origin":          "https://wyapi.toubiec.cn",
+		"Sec-Fetch-Dest":  "empty",
+		"Sec-Fetch-Mode":  "cors",
+		"Sec-Fetch-Site":  "same-site",
+	}
+
+	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/ip", nextMusicIPRequest{
+		Timestamp: time.Now().UnixMilli(),
+	}, headers)
+	if err != nil {
+		return "", fmt.Errorf("ip请求失败: %w", err)
+	}
+
+	var ipResponse nextMusicIPResponse
+	if err := resp.Json(&ipResponse); err != nil {
+		return "", fmt.Errorf("ip响应解析失败: %w", err)
+	}
+	if ipResponse.Code != 200 {
+		if ipResponse.Message == "" {
+			ipResponse.Message = resp.Text()
+		}
+		return "", fmt.Errorf("ip接口返回异常: %s", ipResponse.Message)
+	}
+	if ipResponse.Data.IP == "" {
+		return "", fmt.Errorf("ip接口未返回IP地址")
+	}
+
+	resp, err = req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", nextMusicSongRequest{
 		ID:        id,
 		Level:     level,
 		Timestamp: time.Now().UnixMilli(),
-	}, httpme.Header{
-		"origin":         "https://wyapi.toubiec.cn",
-		"sec-fetch-mode": "cors",
-	})
+		IP:        ipResponse.Data.IP,
+	}, headers)
 	if err != nil {
 		return "", fmt.Errorf("getSongUrl请求失败: %w", err)
 	}
