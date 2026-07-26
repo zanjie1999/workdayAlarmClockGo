@@ -154,7 +154,7 @@ printf '%s\n' \
 > /etc/init.d/workdayAlarmClock
 
 chmod +x /etc/init.d/workdayAlarmClock
-sed -i 's|^do_start() {$|&\n\t/etc/init.d/workdayAlarmClock start|' /etc/init.d/factorytest_start
+ln -s /etc/init.d/workdayAlarmClock /etc/rcS.d/S90workdayAlarmClock
 # 然后就可以用 /etc/init.d/workdayAlarmClock start 来启动了
 ```
 
