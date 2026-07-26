@@ -138,6 +138,7 @@ chmod +x workdayAlarmClock-linux-arm
 ```
 增加开机启动
 ```
+mount -o rw,remount /
 printf '%s\n' \
 '#!/bin/sh' \
 'case "$1" in' \
@@ -153,6 +154,7 @@ printf '%s\n' \
 > /etc/init.d/workdayAlarmClock
 
 chmod +x /etc/init.d/workdayAlarmClock
+sed -i 's|^do_start() {$|&\n\t/etc/init.d/workdayAlarmClock start|' /etc/init.d/factorytest_start
 # 然后就可以用 /etc/init.d/workdayAlarmClock start 来启动了
 ```
 
