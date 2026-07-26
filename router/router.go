@@ -178,31 +178,27 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"+js2home))
 	})
 
-	// app暂停播放
+	// 暂停播放
 	root.GET("/pause", func(c *gin.Context) {
-		app.Send("PAUSE")
+		player.Pause()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
-	// app恢复播放
+	// 恢复播放
 	root.GET("/resume", func(c *gin.Context) {
-		if player.IsStop {
-			player.Me1Key()
-		} else {
-			app.Send("RESUME")
-		}
+		player.Resume()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量加
 	root.GET("/volp", func(c *gin.Context) {
-		app.Send("VOLP")
+		player.VolUp()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 音量减
 	root.GET("/volm", func(c *gin.Context) {
-		app.Send("VOLM")
+		player.VolDown()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -393,6 +389,7 @@ func Init(urlPrefix string) *gin.Engine {
 		batLevel, _ := os.ReadFile("/sys/class/power_supply/battery/capacity")
 		c.JSON(200, gin.H{
 			"isStop":    player.IsStop,
+			"isPaused":  player.IsPaused,
 			"playList":  player.PlayList,
 			"isAlarm":   player.IsAlarm,
 			"nowUrl":    player.NowUrl,

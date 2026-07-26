@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "25.2"
+	VERSION  = "26.0"
 	lasthhmm = ""
 )
 
@@ -112,6 +112,14 @@ func shellInput() {
 			switch cmd {
 			case "stop":
 				player.Stop()
+			case "pause":
+				player.Pause()
+			case "resume":
+				player.Resume()
+			case "volp":
+				player.VolUp()
+			case "volm":
+				player.VolDown()
 			case "next":
 				app.Send(player.Next())
 			case "prev":

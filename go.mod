@@ -4,7 +4,8 @@ go 1.20
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/zanjie1999/httpme v1.1.0
+	github.com/hajimehoshi/go-mp3 v0.3.4
+	github.com/zanjie1999/httpme v1.2.0
 )
 
 require (

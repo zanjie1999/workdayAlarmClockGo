@@ -25,18 +25,22 @@
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
-其他平台（Windows，Linux）推荐使用 [meMp3Player](https://github.com/zanjie1999/meMp3Player) 作为播放器使用  
+Linux 默认使用 ALSA 的 `aplay` 播放，程序会流式解码 MP3，并使用 `amixer` 控制音量。二者通常由 `alsa-utils` 提供，无需安装 sox。
+
+Kindle 使用系统自带的 GStreamer 播放，程序会直接将解码后的 PCM 交给 `/usr/bin/gst-launch` 和 `mixersink`，不需要安装播放器，音量由 Kindle 系统管理。
+
+其他平台也可以使用 [meMp3Player](https://github.com/zanjie1999/meMp3Player) 作为播放器使用。
 即这样启动 `workdayAlarmClock 你的播放器路径`  
 比如 `workdayAlarmClock ./meMp3Player`
 
-或者需要安装sox和curl，或者使用你喜欢的播放器  
-Linux: `包管理器比如apt或者yum等 install sox curl`  
-macOS: `brew install sox curl` 
+也可以安装 sox，或者使用你喜欢的播放器。  
+Linux: `包管理器比如apt或者yum等 install sox`  
+macOS: `brew install sox`  
 
-Windows随便找个播放器基本都能用，需要播放时阻塞，放完自动退出的那种
+Windows随便找个播放器基本都能用，比如`meMp3Player`，需要播放时阻塞，放完自动退出的那种
 Windows：这样启动 `workdayAlarmClock 你的播放器路径`  
 
-暂停，音量控制目前仅在Android可用
+暂停支持 Android、Linux ALSA 和 Kindle；音量控制支持 Android 与 Linux ALSA，Kindle 使用系统音量
 
 打开同局域网任意设备的浏览器，访问 `http://你的设备ip地址:8080`  
 点击 闹钟设置 根据说明进行设置  
@@ -50,6 +54,14 @@ v18.5开始允许在默认歌单和闹钟歌单id的位置输入流媒体的URL�
 ```shell
 # 停止播放
 stop
+# 暂停
+pause
+# 恢复播放
+resume
+# 音量加
+volp
+# 音量减
+volm
 # 下一首
 next
 # 上一首
@@ -100,6 +112,58 @@ ip
 由于配置不一样的配置的设备处理的速度不一样，所以你可能需要在闹钟设置中配置 `同步偏移`  
 单位是ms毫秒（1秒=1000毫秒），数字越大，将越早开始播放，数字越小（可以为负数）  
 说小米垃圾是有原因的，os1系统的k60pro播放音频的速度居然比骁龙625 miui10的红米note4x还慢了710ms  
+
+
+## 特殊设备适配
+### 作业帮w80博学版等Linux词典笔
+先用`connmanctl`把wifi连一下  
+```
+enable wifi
+agent on
+scan wifi
+services
+# 会输出扫描到的wifi
+connect 复制名字右侧那串
+# 输入密码按回车就连上了
+quit
+```
+下载直接运行`workdayAlarmClock-linux-arm`就可以
+```
+mkdir /home/root/workdayAlarmClock
+cd /home/root/workdayAlarmClock
+curl -L -o workdayAlarmClock-linux-arm https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-arm
+chmod +x workdayAlarmClock-linux-arm
+./workdayAlarmClock-linux-arm
+# 输入exit可以退出
+```
+增加开机启动
+```
+printf '%s\n' \
+'#!/bin/sh' \
+'case "$1" in' \
+'  start)' \
+'    cd /home/root/workdayAlarmClock || exit 1' \
+'    start-stop-daemon --start --background --exec /home/root/workdayAlarmClock/workdayAlarmClock-linux-arm' \
+'    ;;' \
+'  stop)' \
+'    start-stop-daemon --stop --exec /home/root/workdayAlarmClock/workdayAlarmClock-linux-arm' \
+'    ;;' \
+'esac' \
+'exit 0' \
+> /etc/init.d/workdayAlarmClock
+
+chmod +x /etc/init.d/workdayAlarmClock
+# 然后就可以用 /etc/init.d/workdayAlarmClock start 来启动了
+```
+
+### Kindle
+下载方式同上，运行命令不一样
+```
+./workdayAlarmClock-linux-arm kindle
+```
+
+
+
 
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   

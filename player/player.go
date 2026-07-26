@@ -8,6 +8,7 @@ package player
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"workdayAlarmClock/app"
@@ -28,11 +30,14 @@ import (
 var (
 	// 是否停止播放
 	IsStop = true
+	// 是否暂停播放
+	IsPaused = false
 	// 当前的播放列表
 	PlayList      = []string{}
 	IsAlarm       = false
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
+	unixCmdMu     sync.Mutex
 	NowUrl        = ""
 	PrevUrl       = ""
 	NowId         = ""
@@ -40,7 +45,7 @@ var (
 	// 开始播放和定时结束时间
 	StartUnix   int64 = 0
 	StopUnix    int64 = 0
-	ShellPlayer       = "play"
+	ShellPlayer       = defaultShellPlayer()
 	PrevRdmFlag       = false
 	SkipAlarm         = 0
 )
@@ -206,6 +211,7 @@ func PlayUrl(url string) {
 		}
 	}
 	IsStop = false
+	IsPaused = false
 	PrevUrl = NowUrl
 	NowUrl = url
 	if conf.IsApp {
@@ -233,14 +239,12 @@ func Stop() {
 	}
 	NowId = ""
 	PlayList = []string{}
+	IsPaused = false
 	if conf.IsApp {
 		app.Send("STOP")
 	} else {
-		// exec.Command("killall", "play").Run()
-		if UnixCmd != nil {
-			log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
-			log.Println(UnixCmd.Process.Kill())
-		}
+		cancelPlatformPlayback()
+		killUnixCmd()
 	}
 	if IsAlarm {
 		IsAlarm = false
@@ -281,6 +285,52 @@ func SetVol(per string) {
 	log.Println("设置音量", per, "%")
 	if conf.IsApp {
 		app.SendLocal("VOL " + per)
+	} else if err := setPlatformVolume(per); err != nil {
+		log.Println("设置音量失败", err)
+	}
+}
+
+func Pause() {
+	if IsStop || IsPaused {
+		return
+	}
+	IsPaused = true
+	if conf.IsApp {
+		app.Send("PAUSE")
+	} else if err := pausePlatformPlayback(); err != nil {
+		log.Println("暂停播放失败", err)
+	}
+}
+
+func Resume() {
+	if IsStop {
+		Me1Key()
+		return
+	}
+	if !IsPaused {
+		return
+	}
+	IsPaused = false
+	if conf.IsApp {
+		app.Send("RESUME")
+	} else if err := resumePlatformPlayback(); err != nil {
+		log.Println("恢复播放失败", err)
+	}
+}
+
+func VolUp() {
+	if conf.IsApp {
+		app.Send("VOLP")
+	} else if err := changePlatformVolume("5%+"); err != nil {
+		log.Println("增加音量失败", err)
+	}
+}
+
+func VolDown() {
+	if conf.IsApp {
+		app.Send("VOLM")
+	} else if err := changePlatformVolume("5%-"); err != nil {
+		log.Println("降低音量失败", err)
 	}
 }
 
@@ -392,21 +442,32 @@ func PlayAlarm() {
 func downloadFile(url string, filename string) error {
 	var err error
 	for i := 0; i < 3; i++ {
-		resp, e := httpme.Get(url)
+		resp, e := httpme.GetStream(url)
 		if e != nil {
 			err = e
-			log.Println("下载文件失败，重试中", err)
-			time.Sleep(time.Second * 10)
-			continue
-		}
-		if resp.R.StatusCode != 200 {
-			log.Println("下载文件失败，重试中", resp.R.StatusCode)
+		} else if resp.R.StatusCode != 200 {
+			err = fmt.Errorf("HTTP %s", resp.R.Status)
 			resp.R.Body.Close()
-			time.Sleep(time.Second * 10)
-			continue
+		} else {
+			file, e := os.Create(filename)
+			if e != nil {
+				resp.R.Body.Close()
+				return e
+			}
+			_, err = io.Copy(file, resp.R.Body)
+			resp.R.Body.Close()
+			if closeErr := file.Close(); err == nil {
+				err = closeErr
+			}
+			if err == nil {
+				return nil
+			}
+			os.Remove(filename)
 		}
-		resp.SaveFile(filename)
-		return nil
+		log.Println("下载文件失败，重试中", err)
+		if i < 2 {
+			time.Sleep(time.Second * 10)
+		}
 	}
 	return err
 }
@@ -435,22 +496,34 @@ func downloadFile(url string, filename string) error {
 // 	select {}
 // }
 
-// Linux: apt install sox
-// macOS: brew install sox
-// Win和Linux推荐使用meMp3Player
+// Linux 默认使用 aplay，其他平台或命令行指定播放器时沿用外部播放器。
 func UnixPlayUrl(url string) {
 	log.Println("start play:" + url)
-	if UnixCmd != nil {
-		// 需要先kill掉之前的
-		log.Println(UnixCmd.Process.Signal(syscall.SIGINT))
-		log.Println(UnixCmd.Process.Kill())
+	if NowUrl != url {
+		return
+	}
+	cancelPlatformPlayback()
+	killUnixCmd()
+	if usePCMPlayer() {
+		if err := pcmURL(url); err != nil {
+			if !IsStop && NowUrl == url {
+				log.Println(ShellPlayer+" error:", err)
+			}
+			return
+		}
+		if !IsStop && NowUrl == url || IsPlayWeather {
+			log.Println("end play:" + url)
+			Next()
+		}
+		return
 	}
 	pwd, _ := os.Getwd()
 	var err error
+	var cmd *exec.Cmd
 	if strings.Contains(ShellPlayer, "meMp3Player") {
 		// 使用 咩MP3播放器 的时候，无需下载，直接播放音频流
 		log.Println("shell: ", ShellPlayer, url)
-		UnixCmd = exec.Command(ShellPlayer, url)
+		cmd = exec.Command(ShellPlayer, url)
 	} else {
 		err = downloadFile(url, pwd+"/play.mp3")
 		if err != nil {
@@ -459,14 +532,15 @@ func UnixPlayUrl(url string) {
 		}
 
 		log.Println("shell: ", ShellPlayer, pwd+"/play.mp3")
-		UnixCmd = exec.Command(ShellPlayer, pwd+"/play.mp3")
+		cmd = exec.Command(ShellPlayer, pwd+"/play.mp3")
 	}
-	err = UnixCmd.Start()
+	err = startUnixCmd(cmd)
 	if err != nil {
 		log.Println("run " + ShellPlayer + " error:" + err.Error())
 		return
 	}
-	err = UnixCmd.Wait()
+	err = cmd.Wait()
+	clearUnixCmd(cmd)
 	if err != nil {
 		log.Println("wait", ShellPlayer, " error:"+err.Error())
 		return
@@ -484,6 +558,45 @@ func UnixPlayUrl(url string) {
 		// 不删吧留着吧不差这点存储空间
 		log.Println("end play:" + url)
 		Next()
+	}
+}
+
+func startUnixCmd(cmd *exec.Cmd) error {
+	unixCmdMu.Lock()
+	defer unixCmdMu.Unlock()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	UnixCmd = cmd
+	return nil
+}
+
+func signalUnixCmd(sig os.Signal) error {
+	unixCmdMu.Lock()
+	defer unixCmdMu.Unlock()
+	if UnixCmd == nil || UnixCmd.Process == nil {
+		return nil
+	}
+	return UnixCmd.Process.Signal(sig)
+}
+
+func killUnixCmd() {
+	unixCmdMu.Lock()
+	cmd := UnixCmd
+	UnixCmd = nil
+	unixCmdMu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Signal(syscall.SIGINT)
+	_ = cmd.Process.Kill()
+}
+
+func clearUnixCmd(cmd *exec.Cmd) {
+	unixCmdMu.Lock()
+	defer unixCmdMu.Unlock()
+	if UnixCmd == cmd {
+		UnixCmd = nil
 	}
 }
 
