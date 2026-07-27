@@ -189,6 +189,7 @@ SPARKLE
 sed -i '/^exit 0/i \ifconfig wlan0 up; wpa_supplicant -B -i wlan0 -c /etc/wifi/wpa_supplicant.conf; udhcpc -i wlan0 &' /etc/rc.local
 
 ```
+
 下载并添加到开机启动  
 ```
 mkdir /root/workdayAlarmClock
@@ -196,6 +197,7 @@ curl -L -o /root/workdayAlarmClock/workdayAlarmClock-linux-arm https://github.co
 chmod +x /root/workdayAlarmClock/workdayAlarmClock-linux-arm
 
 cat << SPARKLE > /root/workdayAlarmClock/start.sh
+#!/bin/sh
 cd /root/workdayAlarmClock
 ./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
 SPARKLE
@@ -207,6 +209,45 @@ sed -i '/^exit 0/i /root/workdayAlarmClock/start.sh' /etc/rc.local
 
 # 直接启动
 /root/workdayAlarmClock/start.sh
+```
+
+让音量键可以调音量
+```
+cat << 'SPARKLE' > /root/workdayAlarmClock/volKey.sh
+#!/bin/sh
+while true; do
+    HEX=$(dd if=/dev/input/event1 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
+    case "$HEX" in
+        *"01 00 72 00 01 00 00 00"*)
+            amixer set Master 5%- >/dev/null 2>&1
+            ;;
+        *"01 00 73 00 01 00 00 00"*)
+            amixer set Master 5%+ >/dev/null 2>&1
+            ;;
+    esac
+done
+SPARKLE
+
+chmod +x /root/workdayAlarmClock/volKey.sh
+sed -i '/^exit 0/i /root/workdayAlarmClock/volKey.sh &' /etc/rc.local
+```
+
+顶部按键实现1key
+```
+cat << 'SPARKLE' > /root/workdayAlarmClock/pwrKey.sh
+#!/bin/sh
+while true; do
+    HEX=$(dd if=/dev/input/event0 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
+    case "$HEX" in
+        *"01 00 74 00 01 00 00 00"*)
+            wget -qO- 127.0.0.1:8080/1key >/dev/null 2>&1 
+            ;;
+    esac
+done
+SPARKLE
+
+chmod +x /root/workdayAlarmClock/pwrKey.sh
+sed -i '/^exit 0/i /root/workdayAlarmClock/volKey.sh &' /etc/rc.local
 ```
 
 
