@@ -21,7 +21,11 @@
 8. 无大小周支持
 
 ## 如何使用
-#### 如果你想在没有nohup的系统下在后台运行,你需要 `./workdayAlarmClock-linux-arm </dev/null &` 把标准输入指定为null,不然会被系统暂停
+#### 如果你想在没有nohup的系统下在后台运行，你需要这样启动，不然会被系统杀掉
+```
+./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
+```
+
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
@@ -164,6 +168,45 @@ ln -s /etc/init.d/workdayAlarmClock /etc/rcS.d/S90workdayAlarmClock
 下载方式同上，运行命令不一样
 ```
 ./workdayAlarmClock-linux-arm kindle
+```
+
+### AKU音箱
+先配置好网络  
+```
+cat << SPARKLE > /etc/wifi/wpa_supplicant.conf
+ctrl_interface=/etc/wifi/sockets
+update_config=1
+country=US
+
+network={
+    ssid="wifi名字纯英文"
+    psk="wifi密码"
+    key_mgmt=WPA-PSK
+}
+SPARKLE
+
+# 开机连wifi
+sed -i '/^exit 0/i \ifconfig wlan0 up; wpa_supplicant -B -i wlan0 -c /etc/wifi/wpa_supplicant.conf; udhcpc -i wlan0 &' /etc/rc.local
+
+```
+下载并添加到开机启动  
+```
+mkdir /root/workdayAlarmClock
+curl -L -o /root/workdayAlarmClock/workdayAlarmClock-linux-arm https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-arm
+chmod +x /root/workdayAlarmClock/workdayAlarmClock-linux-arm
+
+cat << SPARKLE > /root/workdayAlarmClock/start.sh
+cd /root/workdayAlarmClock
+./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
+SPARKLE
+
+chmod +x /root/workdayAlarmClock/start.sh
+
+# 加到开机启动
+sed -i '/^exit 0/i /root/workdayAlarmClock/start.sh' /etc/rc.local
+
+# 直接启动
+/root/workdayAlarmClock/start.sh
 ```
 
 
