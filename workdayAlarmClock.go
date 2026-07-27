@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "26.0"
+	VERSION  = "26.1"
 	lasthhmm = ""
 )
 
@@ -140,8 +140,18 @@ func shellInput() {
 			case "ip":
 				ip, _ := app.GetLocalIP()
 				fmt.Println(ip)
+			case "play":
+				if player.IsPaused {
+					player.Resume()
+				} else {
+					player.Pause()
+				}
 			default:
-				if strings.HasPrefix(cmd, "echo ") {
+				if strings.HasPrefix(cmd, "play ") {
+					player.PlayUrl(cmd[5:])
+				} else if strings.HasPrefix(cmd, "vol ") {
+					player.SetVol(cmd[4:])
+				} else if strings.HasPrefix(cmd, "echo ") {
 					app.Send(cmd[5:])
 				} else if strings.HasPrefix(cmd, "playlist ") {
 					log.Println("播放歌单", player.PlayPlaylist(cmd[9:], false))

@@ -64,6 +64,12 @@ stop
 pause
 # 恢复播放
 resume
+# 播放URL
+play URL
+# 切换暂停、恢复
+play
+# 设置音量
+vol 数字
 # 音量加
 volp
 # 音量减
