@@ -217,7 +217,7 @@ sed -i '/^exit 0/i /root/workdayAlarmClock/start.sh' /etc/rc.local
 /root/workdayAlarmClock/start.sh
 ```
 
-让音量键可以调音量
+让音量键可以调音量，因为太反人类了右边做成了音量加，暂停再按可以切歌
 ```
 cat << 'SPARKLE' > /root/workdayAlarmClock/volKey.sh
 #!/bin/sh
@@ -225,10 +225,10 @@ while true; do
     HEX=$(dd if=/dev/input/event1 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
     case "$HEX" in
         *"01 00 72 00 01 00 00 00"*)
-            amixer set Master 5%- >/dev/null 2>&1
+            wget -qO- 127.0.0.1:8080/volmp >/dev/null 2>&1 || amixer set Master 5%- >/dev/null 2>&1
             ;;
         *"01 00 73 00 01 00 00 00"*)
-            amixer set Master 5%+ >/dev/null 2>&1
+            wget -qO- 127.0.0.1:8080/volpn >/dev/null 2>&1 || amixer set Master 5%+ >/dev/null 2>&1
             ;;
     esac
 done
@@ -246,7 +246,7 @@ while true; do
     HEX=$(dd if=/dev/input/event0 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
     case "$HEX" in
         *"01 00 74 00 01 00 00 00"*)
-            wget -qO- 127.0.0.1:8080/1key >/dev/null 2>&1 
+            wget -qO- 127.0.0.1:8080/play >/dev/null 2>&1 
             ;;
     esac
 done
