@@ -404,7 +404,7 @@ done
 SPARKLE
 
 chmod +x /root/workdayAlarmClock/timeDisplay.sh
-sed -i '/^exit 0/i /root/workdayAlarmClock/timeDisplay.sh &' /etc/rc.local
+sed -i '/^exit 0/i nice -n 19 /root/workdayAlarmClock/timeDisplay.sh &' /etc/rc.local
 /root/workdayAlarmClock/timeDisplay.sh &
 ```
 </details>
