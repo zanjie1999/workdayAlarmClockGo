@@ -292,8 +292,13 @@ func SetVol(per string) {
 	}
 }
 
+// 暂停 闹钟时重定向到停止
 func Pause() {
 	if IsStop || IsPaused {
+		return
+	}
+	if IsAlarm || IsPlayWeather {
+		Stop()
 		return
 	}
 	IsPaused = true
@@ -304,6 +309,7 @@ func Pause() {
 	}
 }
 
+// 恢复 未播放时重定向到1key
 func Resume() {
 	if IsStop {
 		Me1Key()
