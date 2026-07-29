@@ -256,7 +256,163 @@ chmod +x /root/workdayAlarmClock/pwrKey.sh
 sed -i '/^exit 0/i /root/workdayAlarmClock/volKey.sh &' /etc/rc.local
 ```
 
+屏幕显示时间  
+<details>
+<summary>纯shell暴力实现, 有点长, 点击展开</summary>
 
+```
+cat << 'SPARKLE' > /root/workdayAlarmClock/timeDisplay.sh
+#!/bin/sh
+
+FB=/dev/fb0
+
+LC_ALL=C
+export LC_ALL
+
+draw_time() {
+    TIME_TEXT=$1
+
+    awk -v value="$TIME_TEXT" '
+    BEGIN {
+        mask["0"] = "abcdef"
+        mask["1"] = "bc"
+        mask["2"] = "abdeg"
+        mask["3"] = "abcdg"
+        mask["4"] = "bcfg"
+        mask["5"] = "acdfg"
+        mask["6"] = "acdefg"
+        mask["7"] = "abc"
+        mask["8"] = "abcdefg"
+        mask["9"] = "abcdfg"
+
+        # 128x320 framebuffer包含两个128x160页面
+        for (py = 0; py < 320; py++) {
+            row = ""
+            page_y = py % 160
+
+            for (px = 0; px < 128; px++) {
+                on = 0
+
+                # 每行只使用前120个像素
+                if (px < 120) {
+                    # 物理120x160旋转为视觉160x120
+                    x = 159 - page_y
+                    y = px
+                    on = clock_pixel(x, y, value)
+                }
+
+                if (on)
+                    row = row "\\377\\377\\377"
+                else
+                    row = row "\\000\\000\\000"
+            }
+
+            print row
+        }
+    }
+
+    function clock_pixel(x, y, text, n, dx, dy, digit) {
+        # 冒号的两个方块点
+        if (x >= 77 && x < 84) {
+            if ((y >= 40 && y < 47) ||
+                (y >= 73 && y < 80))
+                return 1
+        }
+
+        # 四个数字
+        if (x >= 8 && x < 35) {
+            n = 0
+            dx = x - 8
+        } else if (x >= 39 && x < 66) {
+            n = 1
+            dx = x - 39
+        } else if (x >= 94 && x < 121) {
+            n = 2
+            dx = x - 94
+        } else if (x >= 125 && x < 152) {
+            n = 3
+            dx = x - 125
+        } else {
+            return 0
+        }
+
+        dy = y - 18
+
+        if (dy < 0 || dy >= 84)
+            return 0
+
+        digit = substr(text, n + 1, 1)
+        return digit_pixel(dx, dy, mask[digit])
+    }
+
+    function digit_pixel(x, y, segments) {
+        width = 27
+        height = 84
+        thick = 5
+        middle = 39
+
+        if (index(segments, "a") &&
+            y < thick &&
+            x >= thick && x < width - thick)
+            return 1
+
+        if (index(segments, "b") &&
+            x >= width - thick &&
+            y >= thick && y < middle)
+            return 1
+
+        if (index(segments, "c") &&
+            x >= width - thick &&
+            y >= middle + thick && y < height - thick)
+            return 1
+
+        if (index(segments, "d") &&
+            y >= height - thick &&
+            x >= thick && x < width - thick)
+            return 1
+
+        if (index(segments, "e") &&
+            x < thick &&
+            y >= middle + thick && y < height - thick)
+            return 1
+
+        if (index(segments, "f") &&
+            x < thick &&
+            y >= thick && y < middle)
+            return 1
+
+        if (index(segments, "g") &&
+            y >= middle && y < middle + thick &&
+            x >= thick && x < width - thick)
+            return 1
+
+        return 0
+    }
+    ' |
+    while IFS= read -r ROW; do
+        printf '%b' "$ROW"
+    done > "$FB"
+}
+
+LAST_TIME=
+
+while true; do
+    CURRENT_TIME=$(date +%I%M)
+
+    if [ "$CURRENT_TIME" != "$LAST_TIME" ]; then
+        draw_time "$CURRENT_TIME"
+        LAST_TIME=$CURRENT_TIME
+    fi
+
+    sleep 1
+done
+SPARKLE
+
+chmod +x /root/workdayAlarmClock/timeDisplay.sh
+sed -i '/^exit 0/i /root/workdayAlarmClock/timeDisplay.sh &' /etc/rc.local
+/root/workdayAlarmClock/timeDisplay.sh &
+```
+</details>
 
 
 ### 协议 咩License
