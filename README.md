@@ -225,10 +225,10 @@ while true; do
     HEX=$(dd if=/dev/input/event1 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
     case "$HEX" in
         *"01 00 72 00 01 00 00 00"*)
-            wget -qO- 127.0.0.1:8080/volmp >/dev/null 2>&1 || amixer set Master 5%- >/dev/null 2>&1
+            wget -qO- 127.0.0.1:8080/volpn >/dev/null 2>&1 || amixer set Master 5%+ >/dev/null 2>&1
             ;;
         *"01 00 73 00 01 00 00 00"*)
-            wget -qO- 127.0.0.1:8080/volpn >/dev/null 2>&1 || amixer set Master 5%+ >/dev/null 2>&1
+            wget -qO- 127.0.0.1:8080/volmp >/dev/null 2>&1 || amixer set Master 5%- >/dev/null 2>&1
             ;;
     esac
 done
