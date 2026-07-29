@@ -286,7 +286,7 @@ draw_time() {
         mask["9"] = "abcdfg"
 
         # 128x320 framebuffer包含两个128x160页面
-        for (py = 0; py < 320; py++) {
+        for (py = 0; py < 160; py++) {
             row = ""
             page_y = py % 160
 
@@ -394,17 +394,12 @@ draw_time() {
     done > "$FB"
 }
 
-LAST_TIME=
-
 while true; do
     CURRENT_TIME=$(date +%I%M)
+    draw_time "$CURRENT_TIME"
 
-    if [ "$CURRENT_TIME" != "$LAST_TIME" ]; then
-        draw_time "$CURRENT_TIME"
-        LAST_TIME=$CURRENT_TIME
-    fi
-
-    sleep 1
+    NOW=$(date +%s)
+    sleep $((60 - NOW % 60))
 done
 SPARKLE
 
