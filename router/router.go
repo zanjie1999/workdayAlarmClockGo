@@ -127,6 +127,14 @@ func Init(urlPrefix string) *gin.Engine {
 		url := c.Query("url")
 		if url == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>url is empty</h1>"+js2home))
+			// 没有参数时一键播放
+			if player.IsStop {
+				player.Me1Key()
+			} else if player.IsPaused {
+				player.Resume()
+			} else {
+				player.Pause()
+			}
 			return
 		}
 		loopMode := c.Query("loopMode") != ""
@@ -168,6 +176,16 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
 
+	root.GET("/vol", func(c *gin.Context) {
+		vol := c.Query("vol")
+		if vol == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>vol=1~100</h1>"+js2home))
+			return
+		}
+		player.SetVol(vol)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"+js2home))
+	})
+
 	root.GET("/echo", func(c *gin.Context) {
 		msg := c.Query("msg")
 		if msg == "" {
@@ -195,10 +213,28 @@ func Init(urlPrefix string) *gin.Engine {
 		player.VolUp()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
+	root.GET("/volpn", func(c *gin.Context) {
+		// 暂停了这就变成下一首按钮了
+		if player.IsPaused {
+			player.Next()
+		} else {
+			player.VolUp()
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
 
 	// 音量减
 	root.GET("/volm", func(c *gin.Context) {
 		player.VolDown()
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
+	})
+	root.GET("/volmp", func(c *gin.Context) {
+		// 暂停了这就变成上一首按钮了
+		if player.IsPaused {
+			player.Prev()
+		} else {
+			player.VolDown()
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 

@@ -75,6 +75,8 @@ func Prev() string {
 		app.Send("ECHO 上一首")
 		if len(PlayList) == 0 {
 			PlayList = []string{NowUrl}
+		} else if NowId != "" {
+			PlayList = append([]string{NowId}, PlayList...)
 		} else {
 			PlayList = append([]string{NowUrl}, PlayList...)
 		}

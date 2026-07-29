@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "26.1"
+	VERSION  = "26.2"
 	lasthhmm = ""
 )
 
@@ -141,7 +141,10 @@ func shellInput() {
 				ip, _ := app.GetLocalIP()
 				fmt.Println(ip)
 			case "play":
-				if player.IsPaused {
+				// 没有参数时一键播放
+				if player.IsStop {
+					player.Me1Key()
+				} else if player.IsPaused {
 					player.Resume()
 				} else {
 					player.Pause()
