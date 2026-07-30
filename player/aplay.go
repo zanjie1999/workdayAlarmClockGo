@@ -3,6 +3,7 @@
 package player
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -168,16 +169,25 @@ func (s *reconnectingHTTPStream) reconnect(cause error) error {
 }
 
 func defaultShellPlayer() string {
+	for _, player := range []string{"aplay", "tinyplay"} {
+		if path, err := exec.LookPath(player); err == nil {
+			return path
+		}
+	}
 	return "aplay"
 }
 
 func usePCMPlayer() bool {
 	name := filepath.Base(ShellPlayer)
-	return name == "aplay" || name == "kindle"
+	return name == "aplay" || name == "tinyplay" || name == "kindle"
 }
 
 func isKindle() bool {
 	return filepath.Base(ShellPlayer) == "kindle"
+}
+
+func isTinyPlay() bool {
+	return filepath.Base(ShellPlayer) == "tinyplay"
 }
 
 func pcmURL(url string) error {
@@ -217,7 +227,34 @@ func pcmURL(url string) error {
 		_ = signalUnixCmd(syscall.SIGSTOP)
 	}
 
-	_, copyErr := io.Copy(stdin, decoder)
+	var copyErr error
+	if isTinyPlay() {
+		const (
+			channels      = uint16(2)
+			bitsPerSample = uint16(16)
+			headerSize    = uint32(44)
+		)
+		blockAlign := channels * bitsPerSample / 8
+		maxDataSize := (^uint32(0) - (headerSize - 8)) / uint32(blockAlign) * uint32(blockAlign)
+		header := make([]byte, headerSize)
+		copy(header[0:4], "RIFF")
+		binary.LittleEndian.PutUint32(header[4:8], headerSize-8+maxDataSize)
+		copy(header[8:12], "WAVE")
+		copy(header[12:16], "fmt ")
+		binary.LittleEndian.PutUint32(header[16:20], 16)
+		binary.LittleEndian.PutUint16(header[20:22], 1)
+		binary.LittleEndian.PutUint16(header[22:24], channels)
+		binary.LittleEndian.PutUint32(header[24:28], uint32(decoder.SampleRate()))
+		binary.LittleEndian.PutUint32(header[28:32], uint32(decoder.SampleRate())*uint32(blockAlign))
+		binary.LittleEndian.PutUint16(header[32:34], blockAlign)
+		binary.LittleEndian.PutUint16(header[34:36], bitsPerSample)
+		copy(header[36:40], "data")
+		binary.LittleEndian.PutUint32(header[40:44], maxDataSize)
+		_, copyErr = stdin.Write(header)
+	}
+	if copyErr == nil {
+		_, copyErr = io.Copy(stdin, decoder)
+	}
 	closeErr := stdin.Close()
 	waitErr := cmd.Wait()
 	clearUnixCmd(cmd)
@@ -252,7 +289,10 @@ func pcmCommand(sampleRate int) *exec.Cmd {
 			"!", "queue", "!", "mixersink",
 		)
 	}
-	return exec.Command("aplay", "-q", "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", rate)
+	if isTinyPlay() {
+		return exec.Command(ShellPlayer, "-", "-i", "wav")
+	}
+	return exec.Command(ShellPlayer, "-q", "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", rate)
 }
 
 func openMP3(url string) (io.ReadCloser, error) {
@@ -340,14 +380,85 @@ func setPlatformVolume(value string) error {
 	if isKindle() {
 		return nil
 	}
-	return runAmixer(strings.TrimSuffix(value, "%") + "%")
+	value = strings.TrimSuffix(value, "%") + "%"
+	if isTinyPlay() {
+		return runTinyMixer(value)
+	}
+	return runAmixer(value)
 }
 
 func changePlatformVolume(value string) error {
 	if isKindle() {
 		return nil
 	}
+	if isTinyPlay() {
+		return runTinyMixer(value)
+	}
 	return runAmixer(value)
+}
+
+func runTinyMixer(value string) error {
+	mixer := "tinymix"
+	if playerPath, err := exec.LookPath(ShellPlayer); err == nil {
+		if absolutePath, absErr := filepath.Abs(playerPath); absErr == nil {
+			sibling := filepath.Join(filepath.Dir(absolutePath), "tinymix")
+			if path, lookErr := exec.LookPath(sibling); lookErr == nil {
+				mixer = path
+			} else if path, lookErr = exec.LookPath("tinymix"); lookErr == nil {
+				mixer = path
+			}
+		}
+	}
+	output, err := exec.Command(mixer, "controls").CombinedOutput()
+	if err != nil {
+		return commandOutputError(mixer+" controls", err, output)
+	}
+
+	preferred := []string{
+		"Master Playback Volume",
+		"PCM Playback Volume",
+		"Speaker Playback Volume",
+		"Master",
+		"PCM",
+		"Speaker",
+	}
+	var lastErr error
+	for _, name := range preferred {
+		for _, line := range strings.Split(string(output), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+			if _, err := strconv.Atoi(fields[0]); err != nil {
+				continue
+			}
+			values, err := strconv.Atoi(fields[2])
+			if err != nil || values < 1 || strings.Join(fields[3:], " ") != name {
+				continue
+			}
+			args := []string{"set", name}
+			for i := 0; i < values; i++ {
+				args = append(args, value)
+			}
+			setOutput, setErr := exec.Command(mixer, args...).CombinedOutput()
+			if setErr == nil {
+				return nil
+			}
+			lastErr = commandOutputError(mixer+" set "+name, setErr, setOutput)
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("tinymix: no Master/PCM/Speaker volume control")
+}
+
+func commandOutputError(command string, err error, output []byte) error {
+	message := strings.TrimSpace(string(output))
+	if message == "" {
+		return fmt.Errorf("%s: %w", command, err)
+	}
+	return fmt.Errorf("%s: %w: %s", command, err, message)
 }
 
 func runAmixer(value string) error {

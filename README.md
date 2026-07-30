@@ -29,7 +29,21 @@
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
-Linux 默认使用 ALSA 的 `aplay` 播放，程序会流式解码 MP3，并使用 `amixer` 控制音量。二者通常由 `alsa-utils` 提供，无需安装 sox。
+Linux 会优先使用 ALSA 的 `aplay`，找不到时自动回退到 TinyALSA 的 `tinyplay`。程序会流式解码 MP3。
+
+如需强制使用 TinyALSA，可以在启动时指定 `tinyplay` 或其完整路径：
+```
+./workdayAlarmClock-linux-arm tinyplay
+# 或
+./workdayAlarmClock-linux-arm /usr/bin/tinyplay
+```
+
+Buildroot 使用 TinyALSA 时需要启用库和工具：
+```
+BR2_PACKAGE_TINYALSA=y
+BR2_PACKAGE_TINYALSA_TOOLS=y
+```
+TinyALSA 使用默认声卡和设备 `0,0`，并要求 `tinyplay`、`tinymix` 采用 TinyALSA 2.0.0 的命令行语法。目标声卡需要原生支持音频文件的采样率，因为 TinyALSA 不负责重采样。
 
 Kindle 使用系统自带的 GStreamer 播放，程序会直接将解码后的 PCM 交给 `/usr/bin/gst-launch` 和 `mixersink`，不需要安装播放器，音量由 Kindle 系统管理。
 

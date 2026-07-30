@@ -504,7 +504,7 @@ func downloadFile(url string, filename string) error {
 // 	select {}
 // }
 
-// Linux 默认使用 aplay，其他平台或命令行指定播放器时沿用外部播放器。
+// Linux 优先使用 aplay，没有时回退到 tinyplay；命令行指定播放器时沿用指定值。
 func UnixPlayUrl(url string) {
 	log.Println("start play:" + url)
 	if NowUrl != url {
