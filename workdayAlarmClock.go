@@ -110,6 +110,10 @@ func shellInput() {
 			break
 		} else {
 			switch cmd {
+			case "pause0":
+				player.IsPaused = false
+			case "pause1":
+				player.IsPaused = true
 			case "stop":
 				player.Stop()
 			case "pause":
