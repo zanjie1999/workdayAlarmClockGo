@@ -5,10 +5,13 @@ rd /s /q build
 mkdir build
 #SET CGO_ENABLED=1
 SET GOARCH=arm
-SET GOOS=android
+SET GOOS=linux
+SET GOARM=5
 go build -ldflags="-w -s"
 mkdir %AndroidProject%\app\libs\armeabi
 move /y  workdayAlarmClock %AndroidProject%\app\libs\armeabi\libWorkdayAlarmClock.so
+SET GOARM=
+SET GOOS=android
 SET GOARCH=arm64
 go build -ldflags="-w -s"
 mkdir %AndroidProject%\app\libs\arm64-v8a
