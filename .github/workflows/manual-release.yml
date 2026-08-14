@@ -49,11 +49,9 @@ jobs:
             libc6-dev-arm64-cross \
             libc6-dev-armel-cross \
             libc6-dev-i386-cross \
-            libc6-dev-mipsel-cross \
             libasound2-dev \
             linux-libc-dev-arm64-cross \
             linux-libc-dev-armel-cross \
-            linux-libc-dev-mipsel-cross \
             make \
             xz-utils
 
@@ -68,6 +66,22 @@ jobs:
           ALSA_VERSION=1.2.11
           ALSA_ARCHIVE="$RUNNER_TEMP/alsa-lib.tar.bz2"
           ALSA_SOURCE="$RUNNER_TEMP/alsa-lib-$ALSA_VERSION"
+
+          MIPSEL_SYSROOT="$RUNNER_TEMP/mipsel-sysroot"
+          MIPSEL_BASE_URL="https://archive.ubuntu.com/ubuntu/pool/universe/c/cross-toolchain-base-ports"
+          mkdir -p "$MIPSEL_SYSROOT"
+          for package in \
+            libc6-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            libc6-dev-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            linux-libc-dev-mipsel-cross_4.4.0-18.34cross1_all.deb; do
+            curl --fail --location --retry 3 \
+              "$MIPSEL_BASE_URL/$package" \
+              --output "$RUNNER_TEMP/$package"
+            dpkg-deb -x "$RUNNER_TEMP/$package" "$MIPSEL_SYSROOT"
+          done
+          test -r "$MIPSEL_SYSROOT/usr/mipsel-linux-gnu/include/gnu/stubs-o32_hard.h"
+          MIPSEL_CC="mipsel-linux-gnu-gcc --sysroot=$MIPSEL_SYSROOT"
+
           curl --fail --location --retry 3 \
             "https://www.alsa-project.org/files/pub/lib/alsa-lib-$ALSA_VERSION.tar.bz2" \
             --output "$ALSA_ARCHIVE"
@@ -78,16 +92,9 @@ jobs:
             local host="$2"
             local compiler="$3"
             local extra_flags="${4:-}"
-            local library_mode="${5:-shared}"
             local build_dir="$RUNNER_TEMP/alsa-build-$name"
             local prefix="$RUNNER_TEMP/alsa-$name"
             local library_flags=(--enable-shared --disable-static)
-            local path_flags=()
-
-            if [[ "$library_mode" == static ]]; then
-              library_flags=(--disable-shared --enable-static)
-              path_flags=(--with-configdir=/usr/share/alsa --with-plugindir=/usr/lib/alsa-lib)
-            fi
 
             mkdir -p "$build_dir"
             (
@@ -100,7 +107,6 @@ jobs:
                   --host="$host" \
                   --prefix="$prefix" \
                   "${library_flags[@]}" \
-                  "${path_flags[@]}" \
                   --disable-python \
                   --without-versioned; then
                 cat config.log
@@ -119,8 +125,6 @@ jobs:
             local goarm="${5:-}"
             local gomips="${6:-}"
             local c_flags="${7:-}"
-            local c_link_flags="${8:-}"
-            local go_link_flags="${9:-}"
 
             env \
               GOOS=linux \
@@ -130,16 +134,14 @@ jobs:
               CGO_ENABLED=1 \
               CC="$compiler" \
               CGO_CFLAGS="-I$alsa_prefix/include $c_flags" \
-              CGO_LDFLAGS="-L$alsa_prefix/lib $c_link_flags" \
-              go build -trimpath -ldflags="-w -s $go_link_flags" -o "build/$output" .
+              CGO_LDFLAGS="-L$alsa_prefix/lib $c_flags" \
+              go build -trimpath -ldflags="-w -s" -o "build/$output" .
           }
 
           build_alsa i386 i686-linux-gnu i686-linux-gnu-gcc
           build_alsa arm arm-linux-gnueabi arm-linux-gnueabi-gcc
           build_alsa arm64 aarch64-linux-gnu aarch64-linux-gnu-gcc
-          # Ubuntu's mipsel cross glibc only provides the hard-float ABI headers.
-          # The target devices also have older glibc, so keep this ALSA build static.
-          build_alsa mipsle mipsel-linux-gnu mipsel-linux-gnu-gcc "" static
+          build_alsa mipsle mipsel-linux-gnu "$MIPSEL_CC"
 
           env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
             go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock.exe .
@@ -151,10 +153,9 @@ jobs:
           build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "$RUNNER_TEMP/alsa-i386"
           build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "$RUNNER_TEMP/alsa-arm" 5
           build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "$RUNNER_TEMP/alsa-arm64"
-          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" hardfloat "" "-static -Wl,--start-group -lasound -ldl -lpthread -lm -lrt -Wl,--end-group" "-extldflags=-static"
-          if mipsel-linux-gnu-readelf -l build/workdayAlarmClock-linux-mipsle | grep -q 'program interpreter'; then
-            echo "MIPS binary is dynamically linked and will depend on the build runner's glibc" >&2
-            exit 1
+          build_linux mipsle workdayAlarmClock-linux-mipsle "$MIPSEL_CC" "$RUNNER_TEMP/alsa-mipsle" "" hardfloat
+          if mipsel-linux-gnu-readelf --version-info build/workdayAlarmClock-linux-mipsle | grep -Eq 'GLIBC_2\.(2[4-9]|[3-9][0-9])'; then
+            echo "MIPS binary requires glibc newer than the target-compatible 2.23 sysroot" >&2
           fi
 
           env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
