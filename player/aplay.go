@@ -182,7 +182,7 @@ func defaultShellPlayer() string {
 
 func usePCMPlayer() bool {
 	name := filepath.Base(ShellPlayer)
-	return name == "aplay" || name == "tinyplay" || name == "kindle"
+	return name == "alsa" || name == "aplay" || name == "tinyplay" || name == "kindle"
 }
 
 func isKindle() bool {
