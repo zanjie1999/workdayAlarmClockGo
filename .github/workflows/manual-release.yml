@@ -82,9 +82,11 @@ jobs:
             local build_dir="$RUNNER_TEMP/alsa-build-$name"
             local prefix="$RUNNER_TEMP/alsa-$name"
             local library_flags=(--enable-shared --disable-static)
+            local path_flags=()
 
             if [[ "$library_mode" == static ]]; then
               library_flags=(--disable-shared --enable-static)
+              path_flags=(--with-configdir=/usr/share/alsa --with-plugindir=/usr/lib/alsa-lib)
             fi
 
             mkdir -p "$build_dir"
@@ -98,6 +100,7 @@ jobs:
                   --host="$host" \
                   --prefix="$prefix" \
                   "${library_flags[@]}" \
+                  "${path_flags[@]}" \
                   --disable-python \
                   --without-versioned; then
                 cat config.log

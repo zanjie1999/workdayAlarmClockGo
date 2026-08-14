@@ -217,9 +217,25 @@ import (
 var (
 	alsaPCMmu      sync.Mutex
 	alsaCurrentPCM *C.wa_alsa_pcm
+	alsaConfigOnce sync.Once
 )
 
+func ensureALSAConfig() {
+	alsaConfigOnce.Do(func() {
+		if os.Getenv("ALSA_CONFIG_PATH") != "" {
+			return
+		}
+		if _, err := os.Stat("/usr/share/alsa/alsa.conf"); err == nil {
+			return
+		}
+		if _, err := os.Stat("/etc/asound.conf"); err == nil {
+			_ = os.Setenv("ALSA_CONFIG_PATH", "/etc/asound.conf")
+		}
+	})
+}
+
 func alsaBackendAvailable() bool {
+	ensureALSAConfig()
 	if matches, _ := filepath.Glob("/dev/snd/pcmC*D*p"); len(matches) == 0 {
 		return false
 	}
@@ -238,6 +254,7 @@ func alsaBackendAvailable() bool {
 }
 
 func alsaPlayURL(url string) error {
+	ensureALSAConfig()
 	stream, err := openMP3(url)
 	if err != nil {
 		return err
@@ -331,6 +348,7 @@ func alsaResumePlayback() error {
 }
 
 func alsaSetVolume(value string) error {
+	ensureALSAConfig()
 	volume, err := parseALSAVolume(value)
 	if err != nil {
 		return err
@@ -342,6 +360,7 @@ func alsaSetVolume(value string) error {
 }
 
 func alsaChangeVolume(value string) error {
+	ensureALSAConfig()
 	trimmed := strings.TrimSpace(value)
 	delta := 1.0
 	if strings.HasSuffix(trimmed, "%-") {
