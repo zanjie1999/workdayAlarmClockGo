@@ -81,6 +81,7 @@ jobs:
             mkdir -p "$build_dir"
             (
               cd "$build_dir"
+              # Avoid a relative version-script path in ALSA's out-of-tree build.
               if ! CC="$compiler" \
                 CFLAGS="-O2 $extra_flags" \
                 PKG_CONFIG=false \
@@ -89,7 +90,8 @@ jobs:
                   --prefix="$prefix" \
                   --enable-shared \
                   --disable-static \
-                  --disable-python; then
+                  --disable-python \
+                  --without-versioned; then
                 cat config.log
                 exit 1
               fi
