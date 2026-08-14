@@ -1,47 +1,38 @@
+@echo off
 
 set AndroidProject=D:\AndroidProject\workdayAlarmClockAndroid
 
 rd /s /q build
 mkdir build
-#SET CGO_ENABLED=1
+SET CGO_ENABLED=0
 SET GOARCH=arm
 SET GOOS=linux
 SET GOARM=5
-go build -ldflags="-w -s"
 mkdir %AndroidProject%\app\libs\armeabi
-move /y  workdayAlarmClock %AndroidProject%\app\libs\armeabi\libWorkdayAlarmClock.so
+go build -ldflags="-w -s" -o %AndroidProject%\app\libs\armeabi\libWorkdayAlarmClock.so
 SET GOARM=
 SET GOOS=android
 SET GOARCH=arm64
-go build -ldflags="-w -s"
 mkdir %AndroidProject%\app\libs\arm64-v8a
-move /y  workdayAlarmClock %AndroidProject%\app\libs\arm64-v8a\libWorkdayAlarmClock.so
+go build -ldflags="-w -s" -o %AndroidProject%\app\libs\arm64-v8a\libWorkdayAlarmClock.so
+
 SET GOARCH=amd64
 SET GOOS=windows
-go build -ldflags="-w -s"
-move /y workdayAlarmClock.exe build\workdayAlarmClock.exe
+go build -ldflags="-w -s" -o build\workdayAlarmClock.exe
 SET GOARCH=386
-go build -ldflags="-w -s"
-move /y workdayAlarmClock.exe build\workdayAlarmClock-i386.exe
-SET CGO_ENABLED=0
+go build -ldflags="-w -s" -o build\workdayAlarmClock-i386.exe
+
 SET GOOS=linux
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-linux-i386
+go build -ldflags="-w -s" -o build\workdayAlarmClock-linux-i386
 SET GOARCH=amd64
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-linux
+go build -ldflags="-w -s" -o build\workdayAlarmClock-linux
 SET GOARCH=arm
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-linux-arm
-SET GOARCH=mips
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-linux-mips
+go build -ldflags="-w -s" -o build\workdayAlarmClock-linux-arm
+SET GOARCH=mipsle
+go build -ldflags="-w -s" -o build\workdayAlarmClock-linux-mipsle
 SET GOARCH=arm64
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-linux-arm64
+go build -ldflags="-w -s" -o build\workdayAlarmClock-linux-arm64
 SET GOOS=darwin
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-darwin-arm64
+go build -ldflags="-w -s" -o build\workdayAlarmClock-darwin-arm64
 SET GOARCH=amd64
-go build -ldflags="-w -s"
-move /y workdayAlarmClock build\workdayAlarmClock-darwin
+go build -ldflags="-w -s" -o build\workdayAlarmClock-darwin

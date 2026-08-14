@@ -169,6 +169,9 @@ func (s *reconnectingHTTPStream) reconnect(cause error) error {
 }
 
 func defaultShellPlayer() string {
+	if alsaBackendAvailable() {
+		return "alsa"
+	}
 	for _, player := range []string{"aplay", "tinyplay"} {
 		if path, err := exec.LookPath(player); err == nil {
 			return path
@@ -190,7 +193,14 @@ func isTinyPlay() bool {
 	return filepath.Base(ShellPlayer) == "tinyplay"
 }
 
+func isDirectALSA() bool {
+	return filepath.Base(ShellPlayer) == "alsa"
+}
+
 func pcmURL(url string) error {
+	if isDirectALSA() {
+		return alsaPlayURL(url)
+	}
 	stream, err := openMP3(url)
 	if err != nil {
 		return err
@@ -360,6 +370,9 @@ func clearPCMStream(stream io.ReadCloser) {
 }
 
 func cancelPlatformPlayback() {
+	if isDirectALSA() {
+		alsaCancelPlayback()
+	}
 	pcmStreamMu.Lock()
 	defer pcmStreamMu.Unlock()
 	if pcmStream != nil {
@@ -369,16 +382,25 @@ func cancelPlatformPlayback() {
 }
 
 func pausePlatformPlayback() error {
+	if isDirectALSA() {
+		return alsaPausePlayback()
+	}
 	return signalUnixCmd(syscall.SIGSTOP)
 }
 
 func resumePlatformPlayback() error {
+	if isDirectALSA() {
+		return alsaResumePlayback()
+	}
 	return signalUnixCmd(syscall.SIGCONT)
 }
 
 func setPlatformVolume(value string) error {
 	if isKindle() {
 		return nil
+	}
+	if isDirectALSA() {
+		return alsaSetVolume(value)
 	}
 	value = strings.TrimSuffix(value, "%") + "%"
 	if isTinyPlay() {
@@ -390,6 +412,9 @@ func setPlatformVolume(value string) error {
 func changePlatformVolume(value string) error {
 	if isKindle() {
 		return nil
+	}
+	if isDirectALSA() {
+		return alsaChangeVolume(value)
 	}
 	if isTinyPlay() {
 		return runTinyMixer(value)

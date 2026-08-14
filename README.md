@@ -29,7 +29,13 @@
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
-Linux 会优先使用 ALSA 的 `aplay`，找不到时自动回退到 TinyALSA 的 `tinyplay`。程序会流式解码 MP3。
+Linux 的 CGO 构建会优先使用直接 ALSA；纯 Go 构建使用 ALSA 的 `aplay`，找不到时自动回退到 TinyALSA 的 `tinyplay`。程序会流式解码 MP3。
+
+使用 `CGO_ENABLED=1` 在 Linux 上编译时，如果检测到 `libasound.so.2` 和 `/dev/snd/pcmC*D*p`，程序会默认直接调用 ALSA 播放和调节音量，不需要 `aplay`、`amixer`。编译环境需要 ALSA 开发头文件和库：
+```
+CGO_ENABLED=1 go build
+```
+没有 ALSA 开发环境时，使用默认的纯 Go 构建，程序会继续使用 `aplay` 或 `tinyplay`。
 
 如需强制使用 TinyALSA，可以在启动时指定 `tinyplay` 或其完整路径：
 ```
