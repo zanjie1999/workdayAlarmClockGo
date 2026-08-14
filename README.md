@@ -430,6 +430,81 @@ sed -i '/^exit 0/i nice -n 19 /root/workdayAlarmClock/timeDisplay.sh &' /etc/rc.
 </details>
 
 
+### 任你说DSVD(移动定制小度小屏音箱)
+他没有aplay和amixer，于是我改了下加了直接用cgo调用alsa的功能，编译环境非常复杂，编译了11次，弄了一晚上终于成功了
+联网
+```
+cat << SPARKLE > /etc/wifi/wpa_supplicant.conf
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+country=GB
+
+network={
+ssid="名称"
+psk="密码"
+key_mgmt=WPA-PSK
+}
+SPARKLE
+sync
+reboot
+
+```
+等他重启完wifi就连上了  
+
+下载安装
+注意因为这实在是编译起来太麻烦了latest不一定会有能用的版本,你也可以找到后adb push到 `/usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle`  
+```
+mkdir /usr/data/workdayAlarmClock
+curl -L -o /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-mipsle
+chmod +x /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle
+
+```
+
+顶部按键实现1key
+```
+cat << 'SPARKLE' > /usr/data/workdayAlarmClock/playKey.sh
+#!/bin/sh
+while true; do
+    HEX=$(dd if=/dev/input/event0 bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02x "')
+    case "$HEX" in
+        *"01 00 67 00 01 00 00 00"*)
+            wget -qO- 127.0.0.1:8080/play >/dev/null 2>&1 
+            ;;
+        *"01 00 a9 00 01 00 00 00"*)
+            wget -qO- 127.0.0.1:8080/1key >/dev/null 2>&1 
+            ;;
+        *"01 00 73 00 01 00 00 00"*)
+            wget -qO- 127.0.0.1:8080/volpn >/dev/null 2>&1 
+            ;;
+        *"01 00 72 00 01 00 00 00"*)
+            wget -qO- 127.0.0.1:8080/volmp >/dev/null 2>&1 
+            ;;
+    esac
+done
+SPARKLE
+
+chmod +x /usr/data/workdayAlarmClock/playKey.sh
+```
+
+加到开机启动
+```
+printf '%s\n' \
+'#!/bin/sh' \
+'case "$1" in' \
+'  start)' \
+'    cd /usr/data/workdayAlarmClock || exit 1' \
+'    /usr/data/workdayAlarmClock/playKey.sh &' \
+'    start-stop-daemon --start --background --exec /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle' \
+'    ;;' \
+'  stop)' \
+'    start-stop-daemon --stop --exec /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle' \
+'    ;;' \
+'esac' \
+'exit 0' \
+> /etc/init.d/S99workdayAlarmClock
+
+```
+
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
 Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   
