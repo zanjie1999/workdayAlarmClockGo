@@ -140,7 +140,7 @@ jobs:
           build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "$RUNNER_TEMP/alsa-i386"
           build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "$RUNNER_TEMP/alsa-arm" 5
           build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "$RUNNER_TEMP/alsa-arm64"
-          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" hard
+          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" hardfloat
 
           env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
             go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin .
