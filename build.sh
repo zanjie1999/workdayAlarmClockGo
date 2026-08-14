@@ -3,14 +3,17 @@ AndroidProject='../../Android/StudioProjects/workdayAlarmClockAndroid'
 cd `dirname $0`
 mkdir -p build
 rm -rf build/*
-export CGO_ENABLED=1
-export GOARCH=arm
-export GOOS=android
-mkdir -p $AndroidProject/app/libs/armeabi
-go build -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
-export GOARCH=arm64
-go build -ldflags="-w -s" -o $AndroidProject/app/libs/arm64-v8a/libWorkdayAlarmClock.so
-mkdir -p $AndroidProject/app/libs/arm64-v8a
+export CGO_ENABLED=0
+if [ "${1:-}" != "1" ]; then
+    export GOARCH=arm
+    export GOOS=linux
+    mkdir -p $AndroidProject/app/libs/armeabi
+    go build -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
+    export GOOS=android
+    export GOARCH=arm64
+    mkdir -p $AndroidProject/app/libs/arm64-v8a
+    go build -ldflags="-w -s" -o $AndroidProject/app/libs/arm64-v8a/libWorkdayAlarmClock.so
+fi
 
 export GOARCH=amd64
 export GOOS=windows

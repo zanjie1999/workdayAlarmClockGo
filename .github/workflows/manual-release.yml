@@ -1,0 +1,143 @@
+name: Manual release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v20.0
+        required: true
+        type: string
+      release_name:
+        description: Release name (defaults to the tag)
+        required: false
+        type: string
+      prerelease:
+        description: Mark the release as a prerelease
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install cross compilers and ALSA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            gcc-i686-linux-gnu \
+            gcc-mipsel-linux-gnu \
+            libasound2-dev \
+            make \
+            xz-utils
+
+      - name: Build release files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf build
+          mkdir -p build
+
+          ALSA_VERSION=1.2.11
+          ALSA_ARCHIVE="$RUNNER_TEMP/alsa-lib.tar.bz2"
+          ALSA_SOURCE="$RUNNER_TEMP/alsa-lib-$ALSA_VERSION"
+          curl --fail --location --retry 3 \
+            "https://www.alsa-project.org/files/pub/lib/alsa-lib-$ALSA_VERSION.tar.bz2" \
+            --output "$ALSA_ARCHIVE"
+          tar -xjf "$ALSA_ARCHIVE" -C "$RUNNER_TEMP"
+
+          build_alsa() {
+            local name="$1"
+            local host="$2"
+            local compiler="$3"
+            local extra_flags="${4:-}"
+            local build_dir="$RUNNER_TEMP/alsa-build-$name"
+            local prefix="$RUNNER_TEMP/alsa-$name"
+
+            mkdir -p "$build_dir"
+            (
+              cd "$build_dir"
+              CC="$compiler" \
+              CFLAGS="-O2 $extra_flags" \
+              PKG_CONFIG=false \
+              "$ALSA_SOURCE/configure" \
+                --host="$host" \
+                --prefix="$prefix" \
+                --enable-shared \
+                --disable-static \
+                --disable-python
+              make -j"$(nproc)"
+              make install
+            )
+          }
+
+          build_linux() {
+            local goarch="$1"
+            local output="$2"
+            local compiler="$3"
+            local alsa_prefix="$4"
+            local goarm="${5:-}"
+            local gomips="${6:-}"
+            local c_flags="${7:-}"
+
+            env \
+              GOOS=linux \
+              GOARCH="$goarch" \
+              GOARM="$goarm" \
+              GOMIPS="$gomips" \
+              CGO_ENABLED=1 \
+              CC="$compiler" \
+              CGO_CFLAGS="-I$alsa_prefix/include $c_flags" \
+              CGO_LDFLAGS="-L$alsa_prefix/lib $c_flags" \
+              go build -trimpath -ldflags="-w -s" -o "build/$output" .
+          }
+
+          build_alsa i386 i686-linux-gnu i686-linux-gnu-gcc
+          build_alsa arm arm-linux-gnueabi arm-linux-gnueabi-gcc
+          build_alsa arm64 aarch64-linux-gnu aarch64-linux-gnu-gcc
+          build_alsa mipsle mipsel-linux-gnu mipsel-linux-gnu-gcc -msoft-float
+
+          env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock.exe .
+          env GOOS=windows GOARCH=386 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-i386.exe .
+
+          env GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=gcc \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-linux .
+          build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "$RUNNER_TEMP/alsa-i386"
+          build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "$RUNNER_TEMP/alsa-arm" 5
+          build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "$RUNNER_TEMP/alsa-arm64"
+          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" softfloat -msoft-float
+
+          env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin .
+          env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin-arm64 .
+
+          ls -lh build
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.release_name || inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          files: build/*
