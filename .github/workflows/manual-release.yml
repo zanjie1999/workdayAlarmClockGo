@@ -43,7 +43,14 @@ jobs:
             gcc-arm-linux-gnueabi \
             gcc-i686-linux-gnu \
             gcc-mipsel-linux-gnu \
+            libc6-dev-arm64-cross \
+            libc6-dev-armel-cross \
+            libc6-dev-i386-cross \
+            libc6-dev-mipsel-cross \
             libasound2-dev \
+            linux-libc-dev-arm64-cross \
+            linux-libc-dev-armel-cross \
+            linux-libc-dev-mipsel-cross \
             make \
             xz-utils
 
@@ -74,15 +81,18 @@ jobs:
             mkdir -p "$build_dir"
             (
               cd "$build_dir"
-              CC="$compiler" \
-              CFLAGS="-O2 $extra_flags" \
-              PKG_CONFIG=false \
-              "$ALSA_SOURCE/configure" \
-                --host="$host" \
-                --prefix="$prefix" \
-                --enable-shared \
-                --disable-static \
-                --disable-python
+              if ! CC="$compiler" \
+                CFLAGS="-O2 $extra_flags" \
+                PKG_CONFIG=false \
+                "$ALSA_SOURCE/configure" \
+                  --host="$host" \
+                  --prefix="$prefix" \
+                  --enable-shared \
+                  --disable-static \
+                  --disable-python; then
+                cat config.log
+                exit 1
+              fi
               make -j"$(nproc)"
               make install
             )
