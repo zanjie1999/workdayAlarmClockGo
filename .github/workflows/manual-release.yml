@@ -80,7 +80,16 @@ jobs:
             dpkg-deb -x "$RUNNER_TEMP/$package" "$MIPSEL_SYSROOT"
           done
           test -r "$MIPSEL_SYSROOT/usr/mipsel-linux-gnu/include/gnu/stubs-o32_hard.h"
-          MIPSEL_CC="mipsel-linux-gnu-gcc --sysroot=$MIPSEL_SYSROOT"
+          test -r "$MIPSEL_SYSROOT/usr/mipsel-linux-gnu/lib/crt1.o"
+          if [[ ! -e "$MIPSEL_SYSROOT/usr/include" ]]; then
+            ln -s mipsel-linux-gnu/include "$MIPSEL_SYSROOT/usr/include"
+          fi
+          if [[ ! -e "$MIPSEL_SYSROOT/lib" ]]; then
+            ln -s usr/mipsel-linux-gnu/lib "$MIPSEL_SYSROOT/lib"
+          fi
+          MIPSEL_LIB="$MIPSEL_SYSROOT/usr/mipsel-linux-gnu/lib"
+          MIPSEL_INCLUDE="$MIPSEL_SYSROOT/usr/mipsel-linux-gnu/include"
+          MIPSEL_CC="mipsel-linux-gnu-gcc --sysroot=$MIPSEL_SYSROOT -B$MIPSEL_LIB/ -isystem $MIPSEL_INCLUDE -L$MIPSEL_LIB"
 
           curl --fail --location --retry 3 \
             "https://www.alsa-project.org/files/pub/lib/alsa-lib-$ALSA_VERSION.tar.bz2" \
@@ -156,6 +165,7 @@ jobs:
           build_linux mipsle workdayAlarmClock-linux-mipsle "$MIPSEL_CC" "$RUNNER_TEMP/alsa-mipsle" "" hardfloat
           if mipsel-linux-gnu-readelf --version-info build/workdayAlarmClock-linux-mipsle | grep -Eq 'GLIBC_2\.(2[4-9]|[3-9][0-9])'; then
             echo "MIPS binary requires glibc newer than the target-compatible 2.23 sysroot" >&2
+            exit 1
           fi
 
           env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
