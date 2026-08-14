@@ -124,7 +124,10 @@ jobs:
           build_alsa i386 i686-linux-gnu i686-linux-gnu-gcc
           build_alsa arm arm-linux-gnueabi arm-linux-gnueabi-gcc
           build_alsa arm64 aarch64-linux-gnu aarch64-linux-gnu-gcc
-          build_alsa mipsle mipsel-linux-gnu mipsel-linux-gnu-gcc -msoft-float
+          # Ubuntu's mipsel cross glibc does not ship the soft-float stub headers.
+          # Build the C dependency with the toolchain default ABI; Go still emits
+          # soft-float code below via GOMIPS=softfloat.
+          build_alsa mipsle mipsel-linux-gnu mipsel-linux-gnu-gcc
 
           env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
             go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock.exe .
@@ -136,7 +139,7 @@ jobs:
           build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "$RUNNER_TEMP/alsa-i386"
           build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "$RUNNER_TEMP/alsa-arm" 5
           build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "$RUNNER_TEMP/alsa-arm64"
-          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" softfloat -msoft-float
+          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc "$RUNNER_TEMP/alsa-mipsle" "" softfloat
 
           env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
             go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin .
