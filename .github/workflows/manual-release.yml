@@ -33,6 +33,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download Go dependencies
+        run: go mod download
+
       - name: Install cross compilers and ALSA headers
         run: |
           sudo apt-get update
