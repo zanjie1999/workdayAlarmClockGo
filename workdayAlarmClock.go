@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "27.2"
+	VERSION  = "28.0"
 	lasthhmm = ""
 )
 
@@ -153,6 +153,8 @@ func shellInput() {
 				} else {
 					player.Pause()
 				}
+			case "weather":
+				weather.GetWeather("")
 			default:
 				if strings.HasPrefix(cmd, "play ") {
 					player.PlayUrl(cmd[5:])
