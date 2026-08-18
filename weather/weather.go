@@ -59,14 +59,15 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, string, s
 		// indexEnd := strings.Index(str, "};var alarmDZ")
 		// jsonCityDZ := str[indexStart+13 : indexEnd]
 		// fmt.Println("GetWeather weatherinfo", jsonCityDZ)
-		indexStart := strings.Index(str, "\"weather\":\"")
-		indexEnd := strings.Index(str, "\",\"wd\"")
-		weather := str[indexStart+11 : indexEnd]
-		log.Println("GetWeather weather", weather)
+
+		// 20260819当天天气文字描述没了(比如晴转多云)
+		// indexStart := strings.Index(str, "\"weather\":\"")
+		// indexEnd := strings.Index(str, "\",\"wd\"")
+		// weather := str[indexStart+11 : indexEnd]
 
 		// 预警
-		indexStart = strings.Index(str, "\"w9\":\"")
-		indexEnd = strings.Index(str, "\",\"w10\"")
+		indexStart := strings.Index(str, "\"w9\":\"")
+		indexEnd := strings.Index(str, "\",\"w10\"")
 		alarm := ""
 		if indexStart != -1 && indexEnd != -1 {
 			alarm = str[indexStart+6 : indexEnd]
@@ -85,6 +86,52 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, string, s
 		indexEnd = strings.Index(str, ",{\"fa")
 		jsonFC := str[indexStart+5 : indexEnd]
 		log.Println("GetWeather fc", jsonFC)
+
+		// 图标转文字
+		weatherMap := map[string]string{
+			"00": "晴",
+			"01": "多云",
+			"02": "阴",
+			"03": "阵雨",
+			"04": "雷阵雨",
+			"05": "雷阵雨伴有冰雹",
+			"06": "雨夹雪",
+			"07": "小雨",
+			"08": "中雨",
+			"09": "大雨",
+			"10": "暴雨",
+			"11": "大暴雨",
+			"12": "特大暴雨",
+			"13": "阵雪",
+			"14": "小雪",
+			"15": "中雪",
+			"16": "大雪",
+			"17": "暴雪",
+			"18": "雾",
+			"19": "冻雨",
+			"20": "沙尘暴",
+			"21": "小到中雨",
+			"22": "中到大雨",
+			"23": "大到暴雨",
+			"24": "暴雨到大暴雨",
+			"25": "大暴雨到特大暴雨",
+			"26": "小到中雪",
+			"27": "中到大雪",
+			"28": "大到暴雪",
+			"29": "浮尘",
+			"30": "扬沙",
+			"31": "强沙尘暴",
+			"32": "霾",
+		}
+		fa := jsonFC[7:9]
+		fb := jsonFC[17:19]
+		var weather string
+		if fa == fb {
+			weather = weatherMap[fa]
+		} else {
+			weather = weatherMap[fa] + "转" + weatherMap[fb]
+		}
+		log.Println("GetWeather weather", weather)
 
 		var sk, fc map[string]string
 		err = json.Unmarshal([]byte(jsonFC), &fc)

@@ -486,7 +486,8 @@ SPARKLE
 chmod +x /usr/data/workdayAlarmClock/playKey.sh
 ```
 
-加到开机启动
+加到开机启动  
+其中 `echo 10 > /sys/class/backlight/pwm-backlight.0/brightness` 是调亮度的, 最大255   
 ```
 printf '%s\n' \
 '#!/bin/sh' \
@@ -494,6 +495,7 @@ printf '%s\n' \
 '  start)' \
 '    cd /usr/data/workdayAlarmClock || exit 1' \
 '    /usr/data/workdayAlarmClock/playKey.sh &' \
+'    echo 10 > /sys/class/backlight/pwm-backlight.0/brightness' \
 '    start-stop-daemon --start --background --exec /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle' \
 '    ;;' \
 '  stop)' \
