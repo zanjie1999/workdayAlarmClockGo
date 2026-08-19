@@ -196,6 +196,10 @@ func shellInput() {
 					fmt.Println("未知命令", cmd)
 				}
 			}
+			// 丢掉在处理过程中输入的命令(比如疯狂的next会堆积起来)
+			if reader.Buffered() > 0 {
+				reader.Discard(reader.Buffered())
+			}
 		}
 	}
 }
