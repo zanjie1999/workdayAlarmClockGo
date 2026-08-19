@@ -186,6 +186,9 @@ func PlayPlaymusic(id string, loopMode bool) {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
 	LoopMode = loopMode
+	if conf.IsApp {
+		app.Send("SONGID " + id)
+	}
 	url := nemusic.MusicUrl(id)
 	if url != "" {
 		PlayUrl(url)

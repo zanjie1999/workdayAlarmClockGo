@@ -31,7 +31,7 @@ import (
 var f embed.FS
 
 var (
-	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script>"
+	js2home = "\n<script>setInterval(function(){window.history.go(-1)},3000);</script><style>@media(prefers-color-scheme:dark){body{color:#e0e0e0;background-color:#121212;}</style>"
 	js2back = "<script>window.history.go(-1)</script>"
 )
 
