@@ -41,6 +41,7 @@ var (
 	NowUrl        = ""
 	PrevUrl       = ""
 	NowId         = ""
+	PrevId        = ""
 	LoopMode      = false
 	// 开始播放和定时结束时间
 	StartUnix   int64 = 0
@@ -83,6 +84,9 @@ func Prev() string {
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
 		NowId = ""
+		if PrevId != "" && conf.IsApp {
+			app.Send("SONGID " + PrevId)
+		}
 		PlayUrl(PrevUrl)
 		return "上一首"
 	} else {
@@ -217,6 +221,7 @@ func PlayUrl(url string) {
 	}
 	IsStop = false
 	IsPaused = false
+	PrevId = NowId
 	PrevUrl = NowUrl
 	NowUrl = url
 	if conf.IsApp {
@@ -230,6 +235,7 @@ func Stop() {
 	app.Send("ECHO 工作咩闹钟")
 	LoopMode = false
 	PrevRdmFlag = false
+	PrevId = NowId
 	PrevUrl = NowUrl
 	NowUrl = ""
 	StartUnix = 0
@@ -241,6 +247,7 @@ func Stop() {
 		}
 		log.Println("闹钟保存，已播放", len(conf.Cfg.NePlayed))
 		conf.Save()
+		NowId = ""
 	}
 	NowId = ""
 	PlayList = []string{}
