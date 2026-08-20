@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "28.3"
+	VERSION  = "29.1"
 	lasthhmm = ""
 )
 
@@ -245,6 +245,9 @@ func main() {
 		} else {
 			player.ShellPlayer = os.Args[1]
 		}
+	}
+	if !conf.IsApp {
+		player.InitDefaultShellPlayer()
 	}
 	// 全局禁用TLS验证 兼容老系统
 	httpme.SetSkipVerify(true)

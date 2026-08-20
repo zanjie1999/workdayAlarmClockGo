@@ -44,12 +44,23 @@ var (
 	PrevId        = ""
 	LoopMode      = false
 	// 开始播放和定时结束时间
-	StartUnix   int64 = 0
-	StopUnix    int64 = 0
-	ShellPlayer       = defaultShellPlayer()
-	PrevRdmFlag       = false
-	SkipAlarm         = 0
+	StartUnix int64 = 0
+	StopUnix  int64 = 0
+	// Resolve the local player only for standalone Linux builds. Android app
+	// mode delegates playback to the host app and must not probe executables
+	// during package initialization (Android blocks faccessat2).
+	ShellPlayer = ""
+	PrevRdmFlag = false
+	SkipAlarm   = 0
 )
+
+// InitDefaultShellPlayer resolves the local command-line player. It is kept
+// out of package initialization so Android app mode never calls exec.LookPath.
+func InitDefaultShellPlayer() {
+	if ShellPlayer == "" {
+		ShellPlayer = defaultShellPlayer()
+	}
+}
 
 // 上一首 或一键者播放指定歌单
 // 第一次按上一首键会放上一曲（如果有)，第二次会顺序播放歌单，第三次会随机播放歌单（如果没有放完一首）
