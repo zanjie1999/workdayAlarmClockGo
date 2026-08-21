@@ -185,6 +185,8 @@ func GetWeather(code string) string {
 			msg += "现在" + sk["weather"] + "，" + sk["temp"] + "度。" + alarm
 			// 给android返回当前天气
 			fmt.Println("WEATHER " + sk["weather"] + sk["temp"] + "℃")
+			// xx区发布雷雨大风红色预警信号 之类的信息
+			fmt.Println("WEATHERAL " + alarm)
 			return msg
 		} else {
 			// 错误已经输出过一次了
