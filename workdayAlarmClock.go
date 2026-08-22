@@ -33,6 +33,7 @@ func timer() {
 	for {
 		timeJob()
 		// 秒对齐
+		time.Sleep(time.Second)
 		time.Sleep(time.Duration(60-time.Now().Unix()%60) * time.Second)
 	}
 }
