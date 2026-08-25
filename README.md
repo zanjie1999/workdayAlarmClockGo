@@ -520,6 +520,7 @@ printf '%s\n' \
 'exit 0' \
 > /etc/init.d/S99workdayAlarmClock
 
+chmod +x /etc/init.d/S99workdayAlarmClock
 ```
 
 ### 协议 咩License
