@@ -113,6 +113,7 @@ jobs:
               --prefix=/usr \
               --disable-alsaconf \
               --disable-alsaloop \
+              --disable-alsamixer \
               --disable-alsaucm \
               --disable-axfer \
               --disable-bat \
