@@ -462,13 +462,17 @@ reboot
 ```
 等他重启完wifi就连上了  
 
+补全alsa (之前是直接带alsa支持编译,发现更新太麻烦了,那不如给他补全了)
+```
+wget -O /usr/bin/aplay https://github.com/zanjie1999/workdayAlarmClockGo/releases/download/29.3/aplay
+chmod +x /usr/bin/aplay
+```
+
 下载安装
-注意因为这实在是编译起来太麻烦了latest不一定会有能用的版本,你也可以找到后adb push到 `/usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle`  
 ```
 mkdir /usr/data/workdayAlarmClock
-curl -L -o /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-mipsle
+wget -O /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-mipsle
 chmod +x /usr/data/workdayAlarmClock/workdayAlarmClock-linux-mipsle
-
 ```
 
 顶部按键实现1key
