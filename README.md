@@ -217,9 +217,20 @@ sed -i '/^exit 0/i \ifconfig wlan0 up; wpa_supplicant -B -i wlan0 -c /etc/wifi/w
 ```
 
 下载并添加到开机启动  
+
+首先你需要先在Releases手动下载 `workdayAlarmClock-linux-arm`
+然后在adb shell中运行
 ```
 mkdir /root/workdayAlarmClock
-curl -L -o /root/workdayAlarmClock/workdayAlarmClock-linux-arm https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-arm
+```
+
+开个cmd或者终端,不要adb shell
+```
+adb push 把下载的文件拖进来 /root/workdayAlarmClock/workdayAlarmClock-linux-arm
+```
+
+回去继续
+```
 chmod +x /root/workdayAlarmClock/workdayAlarmClock-linux-arm
 
 cat << SPARKLE > /root/workdayAlarmClock/start.sh

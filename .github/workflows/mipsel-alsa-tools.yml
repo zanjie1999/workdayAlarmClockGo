@@ -1,0 +1,164 @@
+name: Build portable MIPS little-endian ALSA tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (leave empty to upload an artifact only)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install MIPS cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            gcc-mipsel-linux-gnu \
+            make \
+            pkg-config \
+            xz-utils
+
+      - name: Build and package aplay and amixer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ALSA_VERSION=1.2.11
+          ALSAUTILS_VERSION=1.2.11
+          WORK="$RUNNER_TEMP/mipsel-alsa"
+          SYSROOT="$WORK/sysroot"
+          ALSA_STAGE="$WORK/alsa-stage"
+          TOOLS_STAGE="$WORK/tools-stage"
+          PACKAGE="$WORK/package"
+          mkdir -p build
+          mkdir -p "$WORK" "$SYSROOT" "$ALSA_STAGE" "$TOOLS_STAGE" "$PACKAGE"
+
+          # Ubuntu's current cross packages target a newer glibc than many
+          # embedded MIPS devices. Keep the same glibc 2.23 sysroot used by
+          # the main release workflow.
+          MIPSEL_BASE_URL="https://archive.ubuntu.com/ubuntu/pool/universe/c/cross-toolchain-base-ports"
+          for package in \
+            libc6-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            libc6-dev-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            linux-libc-dev-mipsel-cross_4.4.0-18.34cross1_all.deb; do
+            curl --fail --location --retry 3 \
+              "$MIPSEL_BASE_URL/$package" \
+              --output "$WORK/$package"
+            dpkg-deb -x "$WORK/$package" "$SYSROOT"
+          done
+          test -r "$SYSROOT/usr/mipsel-linux-gnu/include/gnu/stubs-o32_hard.h"
+          test -r "$SYSROOT/usr/mipsel-linux-gnu/lib/crt1.o"
+          if [[ ! -e "$SYSROOT/usr/include" ]]; then
+            ln -s mipsel-linux-gnu/include "$SYSROOT/usr/include"
+          fi
+          if [[ ! -e "$SYSROOT/lib" ]]; then
+            ln -s usr/mipsel-linux-gnu/lib "$SYSROOT/lib"
+          fi
+          MIPSEL_LIB="$SYSROOT/usr/mipsel-linux-gnu/lib"
+          MIPSEL_INCLUDE="$SYSROOT/usr/mipsel-linux-gnu/include"
+          MIPSEL_CC="mipsel-linux-gnu-gcc --sysroot=$SYSROOT -B$MIPSEL_LIB/ -isystem $MIPSEL_INCLUDE -L$MIPSEL_LIB"
+
+          fetch_source() {
+            local name="$1"
+            local version="$2"
+            local archive="$WORK/$name-$version.tar.bz2"
+            curl --fail --location --retry 3 \
+              "https://www.alsa-project.org/files/pub/$name/$name-$version.tar.bz2" \
+              --output "$archive"
+            tar -xjf "$archive" -C "$WORK"
+          }
+
+          fetch_source alsa-lib "$ALSA_VERSION"
+          fetch_source alsa-utils "$ALSAUTILS_VERSION"
+
+          # Build libasound for headers/linking only. The target device is
+          # expected to provide libasound.so.2 and its ALSA configuration.
+          (
+            cd "$WORK/alsa-lib-$ALSA_VERSION"
+            CC="$MIPSEL_CC" \
+            CFLAGS="-O2 -fPIC" \
+            ./configure \
+              --host=mipsel-linux-gnu \
+              --prefix=/usr \
+              --disable-static \
+              --enable-shared \
+              --disable-python \
+              --without-versioned
+            make -j"$(nproc)"
+            make DESTDIR="$ALSA_STAGE" install
+          )
+
+          # Build only the two command line tools. The target pkg-config file
+          # points into ALSA_STAGE, while the cross compiler still uses SYSROOT
+          # for libc and kernel headers.
+          (
+            cd "$WORK/alsa-utils-$ALSAUTILS_VERSION"
+            PKG_CONFIG_LIBDIR="$ALSA_STAGE/usr/lib/pkgconfig" \
+            PKG_CONFIG_SYSROOT_DIR="$ALSA_STAGE" \
+            CC="$MIPSEL_CC" \
+            CFLAGS="-O2" \
+            CPPFLAGS="-I$ALSA_STAGE/usr/include" \
+            LDFLAGS="-L$ALSA_STAGE/usr/lib" \
+            ./configure \
+              --host=mipsel-linux-gnu \
+              --prefix=/usr \
+              --disable-alsaconf \
+              --disable-alsaloop \
+              --disable-alsaucm \
+              --disable-axfer \
+              --disable-bat \
+              --disable-nls \
+              --disable-rawmidi \
+              --disable-topology \
+              --disable-xmlto \
+              --disable-rst2man
+            make -C aplay aplay
+            make -C amixer amixer
+            install -Dm755 aplay/aplay "$TOOLS_STAGE/usr/bin/aplay.bin"
+            install -Dm755 amixer/amixer "$TOOLS_STAGE/usr/bin/amixer.bin"
+          )
+
+          install -Dm755 "$TOOLS_STAGE/usr/bin/aplay.bin" "$PACKAGE/aplay"
+          install -Dm755 "$TOOLS_STAGE/usr/bin/amixer.bin" "$PACKAGE/amixer"
+
+          cat > "$PACKAGE/README.txt" <<'EOF'
+          Portable ALSA tools for Linux MIPS little-endian (mipsel, o32 hard-float)
+
+          Copy aplay and amixer to a directory on the target and run them.
+          These small binaries intentionally use the target's existing
+          libasound.so.2, libc, ALSA configuration, and plugins. The target
+          still needs a compatible Linux kernel and ALSA device (/dev/snd).
+          EOF
+
+          file "$PACKAGE/aplay" "$PACKAGE/amixer"
+          mipsel-linux-gnu-readelf -h "$PACKAGE/aplay" | grep -E 'Class:|Data:|Machine:'
+          mipsel-linux-gnu-readelf -d "$PACKAGE/aplay" | grep NEEDED
+          mipsel-linux-gnu-readelf -d "$PACKAGE/amixer" | grep NEEDED
+          tar -czf build/alsa-tools-linux-mipsel.tar.gz -C "$PACKAGE" .
+          sha256sum build/alsa-tools-linux-mipsel.tar.gz
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alsa-tools-linux-mipsel
+          path: build/alsa-tools-linux-mipsel.tar.gz
+          if-no-files-found: error
+
+      - name: Publish package release
+        if: ${{ inputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          generate_release_notes: true
+          files: build/alsa-tools-linux-mipsel.tar.gz

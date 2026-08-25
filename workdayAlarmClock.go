@@ -231,7 +231,27 @@ func checkUpdate() {
 	}
 }
 
+// 强制把当前目录加入PATH
+func addPwd2Path() {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		log.Println("获取当前目录失败，无法更新PATH", err)
+		return
+	}
+	pathValue := os.Getenv("PATH")
+	if pathValue == "" {
+		pathValue = workingDir
+	} else {
+		pathValue = workingDir + string(os.PathListSeparator) + pathValue
+	}
+	if err := os.Setenv("PATH", pathValue); err != nil {
+		log.Println("更新PATH失败", err)
+	}
+}
+
 func main() {
+	addPwd2Path()
+
 	// libWorkdayAlarmClock.so app
 	if len(os.Args) > 1 {
 		if os.Args[1] == "app" {
