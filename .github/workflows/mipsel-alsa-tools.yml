@@ -2,14 +2,6 @@ name: Build portable MIPS little-endian ALSA tools
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag to publish (leave empty to upload an artifact only)
-        required: false
-        type: string
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -73,8 +65,14 @@ jobs:
             local name="$1"
             local version="$2"
             local archive="$WORK/$name-$version.tar.bz2"
+            local source_dir="$name"
+            if [[ "$name" == "alsa-utils" ]]; then
+              source_dir="utils"
+            elif [[ "$name" == "alsa-lib" ]]; then
+              source_dir="lib"
+            fi
             curl --fail --location --retry 3 \
-              "https://www.alsa-project.org/files/pub/$name/$name-$version.tar.bz2" \
+              "https://www.alsa-project.org/files/pub/$source_dir/$name-$version.tar.bz2" \
               --output "$archive"
             tar -xjf "$archive" -C "$WORK"
           }
@@ -154,11 +152,3 @@ jobs:
           name: alsa-tools-linux-mipsel
           path: build/alsa-tools-linux-mipsel.tar.gz
           if-no-files-found: error
-
-      - name: Publish package release
-        if: ${{ inputs.tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          generate_release_notes: true
-          files: build/alsa-tools-linux-mipsel.tar.gz
