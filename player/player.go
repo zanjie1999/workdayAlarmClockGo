@@ -150,13 +150,13 @@ func Next() string {
 				PlayUrl(now)
 				return now
 			} else {
-				NowId = now
 				if conf.IsApp {
 					app.Send("SONGID " + now)
 				}
 				u := nemusic.MusicUrl(now)
 				if u != "" {
 					PlayUrl(u)
+					NowId = now
 					return u
 				}
 			}
