@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "29.3"
+	VERSION  = "33.0"
 	lasthhmm = ""
 )
 
@@ -42,6 +42,7 @@ func timeJob() {
 	now := time.Now()
 	// 避免系统时间未同步时运行8点的闹钟
 	if now.Year() < 2025 {
+		log.Println("请检查系统时间是否正确，当前时间", now.Format("2006-01-02 15:04:05"))
 		return
 	}
 	mmdd := now.Format("0102")
