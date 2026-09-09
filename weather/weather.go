@@ -186,7 +186,7 @@ func GetWeather(code string) string {
 			// 给android返回当前天气
 			fmt.Println("WEATHER " + sk["weather"] + sk["temp"] + "℃")
 			// xx区发布雷雨大风红色预警信号 之类的信息
-			fmt.Println("WEATHERAL " + alarm)
+			fmt.Println("WEATHERAL " + shortAlarm(alarm))
 			return msg
 		} else {
 			// 错误已经输出过一次了
@@ -194,4 +194,30 @@ func GetWeather(code string) string {
 		}
 	}
 	return ""
+}
+
+func shortAlarm(s string) string {
+	// 【咩咩区雷雨大风黄色预警信号】受北方向移近的雷雨云团影响，预计未来2-3小时我区有雷雨，并伴有6到8级阵风和短时强降水，咩咩区气象台于1月30日23时15分发布雷雨大风黄色预警信号，请注意防御局地雷击、短时大风、短时强降水及其导致的次生灾害。（预警信息来源：国家预警信息发布中心）
+	// 标题
+	a, b := strings.Index(s, "【"), strings.Index(s, "】")
+	title := s[a : b+3] // 】是3个字节
+
+	// 区前2字
+	key := string([]rune(s[a+3 : b])[:2])
+
+	// 发布时间
+	dayIdx := strings.Index(s, "日")
+	pubIdx := strings.Index(s, "分发布")
+	pub := ""
+	if dayIdx != -1 && pubIdx != -1 {
+		timePart := s[dayIdx+3 : pubIdx+3]
+		pub = timePart + "发布"
+	}
+
+	// 描述：从“预计”到“，key”之前
+	p := strings.Index(s, "预计")
+	k := strings.Index(s[p:], "，"+key)
+	desc := s[p : p+k]
+
+	return pub + title + " " + desc
 }
