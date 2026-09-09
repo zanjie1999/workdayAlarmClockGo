@@ -208,16 +208,16 @@ func shortAlarm(s string) string {
 	// 发布时间
 	dayIdx := strings.Index(s, "日")
 	pubIdx := strings.Index(s, "分发布")
-	pub := ""
+	timePart := ""
 	if dayIdx != -1 && pubIdx != -1 {
-		timePart := s[dayIdx+3 : pubIdx+3]
-		pub = timePart + "发布"
+		timePart = s[dayIdx+3 : pubIdx]
+		timePart = strings.ReplaceAll(timePart, "时", ":")
 	}
 
 	// 描述：从“预计”到“，key”之前
 	p := strings.Index(s, "预计")
 	k := strings.Index(s[p:], "，"+key)
-	desc := s[p : p+k]
+	desc := s[p+6 : p+k]
 
-	return pub + title + " " + desc
+	return timePart + title + desc
 }
