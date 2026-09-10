@@ -198,6 +198,9 @@ func GetWeather(code string) string {
 
 func shortAlarm(s string) string {
 	// 【咩咩区雷雨大风黄色预警信号】受北方向移近的雷雨云团影响，预计未来2-3小时我区有雷雨，并伴有6到8级阵风和短时强降水，咩咩区气象台于1月30日23时15分发布雷雨大风黄色预警信号，请注意防御局地雷击、短时大风、短时强降水及其导致的次生灾害。（预警信息来源：国家预警信息发布中心）
+	if s == "" {
+		return ""
+	}
 	// 标题
 	a, b := strings.Index(s, "【"), strings.Index(s, "】")
 	title := s[a : b+3] // 】是3个字节
