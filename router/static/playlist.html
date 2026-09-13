@@ -364,7 +364,10 @@
                   清除
                 </button>
               </div>
-              <div class="muted">Cookie 保存在当前站点浏览器 Cookie 中。</div>
+              <div class="muted">
+                Cookie保存在当前浏览器中<br>
+                先登录网页版网易云音乐，按F12打开开发者工具，切换到"网络"标签，刷新页面，点击第一个请求，找到"请求标头"中的"Cookie"，右键"复制值"粘贴到上方输入框
+              </div>
             </div>
             <button type="button" id="loginButton">登录</button>
           </div>
@@ -532,6 +535,11 @@
           );
           if (d.code !== 200 || !d.playlist)
             throw Error(d.message || "歌单接口返回错误");
+          p.name = d.playlist.name || p.name;
+          p.coverImgUrl = d.playlist.coverImgUrl || p.coverImgUrl;
+          p.trackCount =
+            d.playlist.trackCount ?? d.playlist.tracks?.length ?? p.trackCount;
+          renderLists();
           image($("detailCover"), d.playlist.coverImgUrl);
           $("detailName").textContent = d.playlist.name || p.name;
           $("detailCount").textContent =
@@ -556,8 +564,23 @@
           let u = await json("/neapi/user/info");
           if (u.code === 301 || !u.userPoint?.userId) {
             account("");
-            $("playlistList").innerHTML =
-              '<div class="empty-state">请先登录后加载歌单</div>';
+            if (state.currentId) {
+              // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单。
+              state.playlists = [
+                {
+                  id: state.currentId,
+                  name: "当前播放歌单",
+                  trackCount: Array.isArray(s.playList) ? s.playList.length : 0,
+                },
+              ];
+              renderLists();
+              let p = state.playlists[0];
+              await select(p, window.matchMedia("(min-width:651px)").matches);
+            } else {
+              state.playlists = [];
+              $("playlistList").innerHTML =
+                '<div class="empty-state">请先登录后加载歌单</div>';
+            }
             return;
           }
           let d = await json(
@@ -594,8 +617,7 @@
         document.cookie = "netease_cookie=; path=/; max-age=0";
         editor(false);
         account("");
-        $("playlistList").innerHTML =
-          '<div class="empty-state">请先登录后加载歌单</div>';
+        load();
       };
       $("backButton").onclick = () => {
         $("detailPanel").classList.add("mobile-hidden");
