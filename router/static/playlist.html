@@ -259,8 +259,6 @@
           color: #f0f0f0;
         }
       }
-    </style>
-    <style>
       .main-container {
         max-width: none;
         width: 100%;
@@ -305,16 +303,10 @@
           min-height: 0;
         }
       }
-    </style>
-    <style>
       .main-container {
         max-width: none;
         width: 100%;
         min-height: 100vh;
-      }
-      .main-container > .linemode,
-      #message {
-        display: none !important;
       }
       .music-shell {
         min-height: 0;
@@ -359,10 +351,7 @@
                 placeholder="粘贴网易云完整 Cookie"
               />
               <div class="account-actions">
-                <button type="button" id="saveCookie">保存并登录</button
-                ><button type="button" class="red" id="clearCookie">
-                  清除
-                </button>
+                <button type="button" id="saveCookie">保存并登录</button><button type="button" class="red" id="clearCookie">清除</button>
               </div>
               <div class="muted">
                 Cookie保存在当前浏览器中<br>
@@ -482,7 +471,7 @@
         )
           .then((r) => {
             if (!r.ok) throw Error("HTTP " + r.status);
-            msg("已发送 " + ids.length + " 首歌曲，从所选歌曲开始播放。");
+            msg("播放 " + ids.length + " 首歌曲");
           })
           .catch((e) => msg("播放请求失败：" + e.message, true));
       }
@@ -546,7 +535,7 @@
             "共 " + d.playlist.tracks.length + " 首歌曲";
           tracks(d.playlist.tracks);
           $("detailContent").hidden = false;
-          msg("歌单加载成功。");
+          msg("歌单加载成功");
           if (showDetail) {
             $("libraryPanel").classList.add("mobile-hidden");
             $("detailPanel").classList.remove("mobile-hidden");
@@ -565,7 +554,7 @@
           if (u.code === 301 || !u.userPoint?.userId) {
             account("");
             if (state.currentId) {
-              // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单。
+              // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单
               state.playlists = [
                 {
                   id: state.currentId,
@@ -594,7 +583,7 @@
           renderLists();
           let p = state.playlists.find((x) => String(x.id) == state.currentId);
           if (p) select(p, window.matchMedia("(min-width:651px)").matches);
-          else msg("请选择一个歌单开始播放。");
+          else msg("请选择一个歌单开始播放");
         } catch (e) {
           account("登录状态读取失败");
           $("playlistList").innerHTML =
@@ -606,7 +595,7 @@
       $("saveCookie").onclick = () => {
         let v = $("cookieInput").value.trim();
         if (!v) {
-          msg("请输入 Cookie。", true);
+          msg("请输入 Cookie", true);
           return;
         }
         setcv(v);
