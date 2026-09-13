@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "35.1"
+	VERSION  = "36.0"
 	lasthhmm = ""
 )
 
@@ -165,10 +165,10 @@ func shellInput() {
 				} else if strings.HasPrefix(cmd, "echo ") {
 					app.Send(cmd[5:])
 				} else if strings.HasPrefix(cmd, "playlist ") {
-					log.Println("播放歌单", player.PlayPlaylist(cmd[9:], false))
+					log.Println("播放歌单", player.PlayNePlaylist(cmd[9:], false))
 				} else if strings.HasPrefix(cmd, "playmusic ") {
 					log.Println("播放歌曲")
-					player.PlayPlaymusic(cmd[10:], false)
+					player.PlayNeMusic(cmd[10:], false)
 				} else if strings.HasPrefix(cmd, "playlistdl ") {
 					nemusic.PlaylistDownload(cmd[11:])
 				} else if strings.HasPrefix(cmd, "touch ") {

@@ -33,6 +33,7 @@ var (
 	// 是否暂停播放
 	IsPaused = false
 	// 当前的播放列表
+	PlayListId    = ""
 	PlayList      = []string{}
 	IsAlarm       = false
 	IsPlayWeather = false
@@ -74,7 +75,7 @@ func Prev() string {
 		NowUrl = ""
 		PrevUrl = ""
 		NowId = ""
-		// PlayPlaylist(conf.Cfg.DefPlayListId, true)
+		// PlayNePlaylist(conf.Cfg.DefPlayListId, true)
 		// return "随机播放歌单" + conf.Cfg.DefPlayListId
 		// 不重新获取 直接随机当前播放列表
 		rand.Seed(time.Now().UnixNano())
@@ -110,7 +111,7 @@ func Prev() string {
 			PlayUrl(conf.Cfg.DefPlayListId)
 			return "播放默认URL" + conf.Cfg.DefPlayListId
 		} else {
-			PlayPlaylist(conf.Cfg.DefPlayListId, false)
+			PlayNePlaylist(conf.Cfg.DefPlayListId, false)
 			return "播放默认歌单" + conf.Cfg.DefPlayListId
 		}
 	}
@@ -171,7 +172,7 @@ func Next() string {
 // 一键急停按钮 自动控制播放停止
 func Me1Key() string {
 	if IsStop {
-		return PlayPlaylist(conf.Cfg.DefPlayListId, false)
+		return PlayNePlaylist(conf.Cfg.DefPlayListId, false)
 	} else {
 		Stop()
 		return "stop"
@@ -179,10 +180,11 @@ func Me1Key() string {
 }
 
 // 播放歌单
-func PlayPlaylist(id string, random bool) string {
+func PlayNePlaylist(id string, random bool) string {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
 	LoopMode = false
+	PlayListId = id
 	ids, name, _ := nemusic.PlayList(id)
 	if random {
 		// 打乱歌单
@@ -196,8 +198,25 @@ func PlayPlaylist(id string, random bool) string {
 	return name
 }
 
+// 播放歌曲id列表 由前端解析
+func PlayNeMusicList(ids []string, id string, random bool) {
+	// 在播放任意歌单后，按上一首来随机
+	PrevRdmFlag = true
+	LoopMode = false
+	PlayListId = id
+	if random {
+		// 打乱歌单
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(ids), func(i, j int) {
+			ids[i], ids[j] = ids[j], ids[i]
+		})
+	}
+	PlayList = ids
+	Next()
+}
+
 // 播放歌曲
-func PlayPlaymusic(id string, loopMode bool) {
+func PlayNeMusic(id string, loopMode bool) {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
 	LoopMode = loopMode
@@ -249,6 +268,7 @@ func Stop() {
 	PrevId = NowId
 	PrevUrl = NowUrl
 	NowUrl = ""
+	PlayListId = ""
 	StartUnix = 0
 	StopUnix = 0
 	// 保存闹钟播放记录

@@ -158,7 +158,18 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
 		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单 "+player.PlayPlaylist(id, c.Query("random") == "1")+"</h1>"+js2home))
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单 "+player.PlayNePlaylist(id, c.Query("random") == "1")+"</h1>"+js2home))
+	})
+
+	// 由前端解析播放列表
+	root.GET("/playmusiclist", func(c *gin.Context) {
+		ids := c.Query("ids")
+		if ids == "" {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>ids is empty</h1>"+js2home))
+			return
+		}
+		player.PlayNeMusicList(strings.Split(ids, ","), c.Query("id"), c.Query("random") == "1")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
 	})
 
 	root.GET("/playmusic", func(c *gin.Context) {
@@ -168,7 +179,7 @@ func Init(urlPrefix string) *gin.Engine {
 			return
 		}
 		loopMode := c.Query("loopMode") != ""
-		player.PlayPlaymusic(id, loopMode)
+		player.PlayNeMusic(id, loopMode)
 		s := "<h1>播放歌曲" + id + "</h1>"
 		if loopMode {
 			s += "<h1>单曲循环</h1>"
@@ -424,17 +435,18 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/status", func(c *gin.Context) {
 		batLevel, _ := os.ReadFile("/sys/class/power_supply/battery/capacity")
 		c.JSON(200, gin.H{
-			"isStop":    player.IsStop,
-			"isPaused":  player.IsPaused,
-			"playList":  player.PlayList,
-			"isAlarm":   player.IsAlarm,
-			"nowUrl":    player.NowUrl,
-			"prevUrl":   player.PrevUrl,
-			"batLevel":  string(batLevel),
-			"nowId":     player.NowId,
-			"startUnix": player.StartUnix,
-			"stopUnix":  player.StopUnix,
-			"skipAlarm": player.SkipAlarm,
+			"isStop":     player.IsStop,
+			"isPaused":   player.IsPaused,
+			"playList":   player.PlayList,
+			"playListId": player.PlayListId,
+			"isAlarm":    player.IsAlarm,
+			"nowUrl":     player.NowUrl,
+			"prevUrl":    player.PrevUrl,
+			"batLevel":   string(batLevel),
+			"nowId":      player.NowId,
+			"startUnix":  player.StartUnix,
+			"stopUnix":   player.StopUnix,
+			"skipAlarm":  player.SkipAlarm,
 		})
 	})
 
