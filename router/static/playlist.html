@@ -199,6 +199,9 @@
       #message {
         white-space: pre-line;
       }
+      [hidden] {
+        display: none !important;
+      }
       @media (max-width: 650px) {
         .main-container {
           padding: 10px;
@@ -385,19 +388,39 @@
       </div>
     </div>
     <script>
-      const $ = (id) => document.getElementById(id),
-        state = { playlists: [], currentId: "", nowId: "", selected: null };
+      var state = {
+        playlists: [],
+        currentId: "",
+        nowId: "",
+        selected: null,
+        trackIds: []
+      };
+      var fullIdsFor = "";
+
+      function $(id) {
+        return document.getElementById(id);
+      }
       function msg(t, e) {
         $("message").textContent = t;
         $("message").style.color = e ? "#c0392b" : "";
       }
+      function decodeCookie(v) {
+        try {
+          return decodeURIComponent(v);
+        } catch (e) {
+          return v;
+        }
+      }
       function cv() {
-        return (
-          document.cookie
-            .split("; ")
-            .find((v) => v.startsWith("netease_cookie="))
-            ?.slice(15) || ""
-        );
+        var values = document.cookie ? document.cookie.split("; ") : [];
+        var prefix = "netease_cookie=";
+        var i;
+        for (i = 0; i < values.length; i++) {
+          if (values[i].indexOf(prefix) === 0) {
+            return values[i].substring(prefix.length);
+          }
+        }
+        return "";
       }
       function setcv(v) {
         document.cookie =
@@ -405,272 +428,467 @@
           encodeURIComponent(v) +
           "; path=/; max-age=2592000; SameSite=Lax";
       }
-      async function json(u) {
-        let r = await fetch(u);
-        if (!r.ok) throw Error("HTTP " + r.status);
-        return r.json();
+      function request(url, done, failed) {
+        var xhr;
+        var finished = false;
+        failed = failed || function () {};
+        function fail(error) {
+          if (finished) return;
+          finished = true;
+          failed(error);
+        }
+        try {
+          xhr = window.XMLHttpRequest
+            ? new XMLHttpRequest()
+            : new ActiveXObject("Microsoft.XMLHTTP");
+          xhr.onreadystatechange = function () {
+            var status;
+            if (xhr.readyState !== 4 || finished) return;
+            status = xhr.status === 1223 ? 204 : xhr.status;
+            if (status >= 200 && status < 300) {
+              finished = true;
+              done(xhr.responseText);
+            } else {
+              fail(new Error("HTTP " + status));
+            }
+          };
+          xhr.onerror = function () {
+            fail(new Error("网络请求失败"));
+          };
+          xhr.open("GET", url, true);
+          xhr.send(null);
+        } catch (e) {
+          fail(e);
+        }
+      }
+      function json(url, done, failed) {
+        request(
+          url,
+          function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              if (failed) failed(e);
+              return;
+            }
+            done(data);
+          },
+          failed
+        );
       }
       function image(i, u) {
-        i.onerror = () => i.removeAttribute("src");
+        i.onerror = function () {
+          i.removeAttribute("src");
+        };
         if (u) i.src = u;
+      }
+      function setHidden(element, hidden) {
+        element.hidden = hidden;
+        element.style.display = hidden ? "none" : "";
+      }
+      function addClass(element, name) {
+        if ((" " + element.className + " ").indexOf(" " + name + " ") < 0) {
+          element.className += (element.className ? " " : "") + name;
+        }
+      }
+      function removeClass(element, name) {
+        var classes = element.className.split(" ");
+        var kept = [];
+        var i;
+        for (i = 0; i < classes.length; i++) {
+          if (classes[i] && classes[i] !== name) kept.push(classes[i]);
+        }
+        element.className = kept.join(" ");
+      }
+      function toggleClass(element, name, enabled) {
+        if (enabled) addClass(element, name);
+        else removeClass(element, name);
       }
       function account(n) {
         $("accountLabel").textContent = n || "未登录";
         $("loginButton").textContent = n ? "更换 Cookie" : "登录";
       }
       function editor(v) {
-        $("cookieEditor").hidden = !v;
-        $("loginButton").hidden = v;
+        setHidden($("cookieEditor"), !v);
+        setHidden($("loginButton"), v);
         if (v) $("cookieInput").focus();
       }
+      function isDesktop() {
+        if (window.matchMedia) return window.matchMedia("(min-width:651px)").matches;
+        return document.documentElement.clientWidth > 650;
+      }
+      function scrollToTop() {
+        if (window.scrollTo) window.scrollTo(0, 0);
+        if (document.documentElement) document.documentElement.scrollTop = 0;
+        if (document.body) document.body.scrollTop = 0;
+      }
       function renderLists() {
-        let l = $("playlistList");
-        l.textContent = "";
+        var list = $("playlistList");
+        var i;
+        var p;
+        var b;
+        var imageNode;
+        var meta;
+        var name;
+        var count;
+        list.textContent = "";
         if (!state.playlists.length) {
-          l.innerHTML = '<div class="empty-state">暂无歌单</div>';
+          list.innerHTML = '<div class="empty-state">暂无歌单</div>';
           return;
         }
-        state.playlists.forEach((p) => {
-          let b = document.createElement("button");
+        for (i = 0; i < state.playlists.length; i++) {
+          p = state.playlists[i];
+          b = document.createElement("button");
           b.type = "button";
           b.className =
             "playlist-item" +
-            (String(p.id) == state.currentId ? " active" : "");
-          let i = document.createElement("img");
-          image(i, p.coverImgUrl);
-          let m = document.createElement("span");
-          m.className = "playlist-meta";
-          let n = document.createElement("span");
-          n.className = "playlist-name";
-          n.textContent = p.name || "未命名歌单";
-          let c = document.createElement("span");
-          c.className = "playlist-count";
-          c.textContent = (p.trackCount || 0) + " 首歌曲";
-          m.append(n, c);
-          b.append(i, m);
-          b.onclick = () => select(p);
-          l.append(b);
-        });
+            (String(p.id) === state.currentId ? " active" : "");
+          imageNode = document.createElement("img");
+          image(imageNode, p.coverImgUrl);
+          meta = document.createElement("span");
+          meta.className = "playlist-meta";
+          name = document.createElement("span");
+          name.className = "playlist-name";
+          name.textContent = p.name || "未命名歌单";
+          count = document.createElement("span");
+          count.className = "playlist-count";
+          count.textContent = (p.trackCount || 0) + " 首歌曲";
+          meta.appendChild(name);
+          meta.appendChild(count);
+          b.appendChild(imageNode);
+          b.appendChild(meta);
+          b.onclick = (function (playlist) {
+            return function () {
+              select(playlist);
+            };
+          })(p);
+          list.appendChild(b);
+        }
+      }
+      function eachTrackRow(callback) {
+        var rows = document.querySelectorAll("#trackList .track-row");
+        var i;
+        for (i = 0; i < rows.length; i++) callback(rows[i], i, rows);
       }
       function updatePlaying(id) {
         state.nowId = String(id);
-        document
-          .querySelectorAll("#trackList .track-row")
-          .forEach((r) =>
-            r.classList.toggle("playing", r.dataset.id === state.nowId),
-          );
+        eachTrackRow(function (row) {
+          toggleClass(row, "playing", row.getAttribute("data-id") === state.nowId);
+        });
       }
       function play(ids) {
         if (!ids.length || !state.selected) return;
         updatePlaying(ids[0]);
-        fetch(
+        request(
           "/playmusiclist?ids=" +
             encodeURIComponent(ids.join(",")) +
             "&id=" +
             encodeURIComponent(state.selected.id),
-        )
-          .then((r) => {
-            if (!r.ok) throw Error("HTTP " + r.status);
+          function () {
             msg("播放 " + ids.length + " 首歌曲");
-          })
-          .catch((e) => msg("播放请求失败：" + e.message, true));
+          },
+          function (e) {
+            msg("播放请求失败：" + e.message, true);
+          }
+        );
+      }
+      function idsFromTracks(ts, start) {
+        var ids = [];
+        var i;
+        var t;
+        for (i = start; i < ts.length; i++) {
+          t = ts[i];
+          if (t && t.id != null) ids.push(String(t.id));
+        }
+        return ids;
+      }
+      function idsFromRows(rows, start) {
+        var ids = [];
+        var i;
+        for (i = start; i < rows.length; i++) {
+          ids.push(rows[i].getAttribute("data-id"));
+        }
+        return ids;
       }
       function tracks(ts) {
-        let l = $("trackList");
-        l.textContent = "";
-        ts.forEach((t, i) => {
-          if (!t || t.id == null) return;
-          let r = document.createElement("div");
-          r.className =
-            "track-row" + (String(t.id) == state.nowId ? " playing" : "");
-          r.dataset.id = t.id;
-          r.onclick = () =>
-            play(
-              ts
-                .slice(i)
-                .filter((x) => x && x.id != null)
-                .map((x) => String(x.id)),
-            );
-          let mark = document.createElement("span");
+        var list = $("trackList");
+        var i;
+        var t;
+        var row;
+        var mark;
+        var number;
+        var info;
+        var name;
+        var artists;
+        var artistNames;
+        var j;
+        list.textContent = "";
+        ts = ts || [];
+        for (i = 0; i < ts.length; i++) {
+          t = ts[i];
+          if (!t || t.id == null) continue;
+          row = document.createElement("div");
+          row.className =
+            "track-row" + (String(t.id) === state.nowId ? " playing" : "");
+          row.setAttribute("data-id", t.id);
+          row.onclick = (function (index, source) {
+            return function () {
+              play(idsFromTracks(source, index));
+            };
+          })(i, ts);
+          mark = document.createElement("span");
           mark.className = "playing-mark";
           mark.textContent = "▶";
-          let num = document.createElement("span");
-          num.className = "track-index";
-          num.textContent = i + 1;
-          let info = document.createElement("span");
+          number = document.createElement("span");
+          number.className = "track-index";
+          number.textContent = i + 1;
+          info = document.createElement("span");
           info.className = "track-info";
-          let n = document.createElement("span");
-          n.className = "track-name";
-          n.textContent = t.name || "未知歌曲";
-          let a = document.createElement("span");
-          a.className = "track-artists";
-          a.textContent =
-            (t.ar || []).map((x) => x.name).join(" / ") || "未知歌手";
-          info.append(n, a);
-          r.append(mark, num, info);
-          l.append(r);
-        });
+          name = document.createElement("span");
+          name.className = "track-name";
+          name.textContent = t.name || "未知歌曲";
+          artists = document.createElement("span");
+          artists.className = "track-artists";
+          artistNames = [];
+          if (t.ar) {
+            for (j = 0; j < t.ar.length; j++) {
+              if (t.ar[j] && t.ar[j].name) artistNames.push(t.ar[j].name);
+            }
+          }
+          artists.textContent = artistNames.join(" / ") || "未知歌手";
+          info.appendChild(name);
+          info.appendChild(artists);
+          row.appendChild(mark);
+          row.appendChild(number);
+          row.appendChild(info);
+          list.appendChild(row);
+        }
       }
-      async function select(p, showDetail = true) {
+      function showSelectError(e) {
+        setHidden($("detailEmpty"), false);
+        msg("歌单加载失败：" + e.message, true);
+      }
+      function select(p, showDetail) {
+        var detail;
+        var detailTracks;
+        if (typeof showDetail === "undefined") showDetail = true;
+        scrollToTop();
         state.selected = p;
         state.currentId = String(p.id);
+        state.trackIds = [];
+        fullIdsFor = "";
         renderLists();
-        $("detailEmpty").hidden = true;
-        $("detailContent").hidden = true;
+        setHidden($("detailEmpty"), true);
+        setHidden($("detailContent"), true);
+        $("detailId").textContent = "歌单 ID: " + p.id;
         msg("正在加载歌单……");
-        try {
-          let d = await json(
-            "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(p.id),
-          );
-          if (d.code !== 200 || !d.playlist)
-            throw Error(d.message || "歌单接口返回错误");
-          p.name = d.playlist.name || p.name;
-          p.coverImgUrl = d.playlist.coverImgUrl || p.coverImgUrl;
-          p.trackCount =
-            d.playlist.trackCount ?? d.playlist.tracks?.length ?? p.trackCount;
-          renderLists();
-          image($("detailCover"), d.playlist.coverImgUrl);
-          $("detailName").textContent = d.playlist.name || p.name;
-          $("detailCount").textContent =
-            "共 " + d.playlist.tracks.length + " 首歌曲";
-          tracks(d.playlist.tracks);
-          $("detailContent").hidden = false;
-          msg("歌单加载成功");
-          if (showDetail) {
-            $("libraryPanel").classList.add("mobile-hidden");
-            $("detailPanel").classList.remove("mobile-hidden");
-          }
-        } catch (e) {
-          $("detailEmpty").hidden = false;
-          msg("歌单加载失败：" + e.message, true);
-        }
-      }
-      async function load() {
-        try {
-          let s = await json("/status?t=" + Date.now());
-          state.currentId = s.playListId || "";
-          state.nowId = s.nowId || "";
-          let u = await json("/neapi/user/info");
-          if (u.code === 301 || !u.userPoint?.userId) {
-            account("");
-            if (state.currentId) {
-              // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单
-              state.playlists = [
-                {
-                  id: state.currentId,
-                  name: "当前播放歌单",
-                  trackCount: Array.isArray(s.playList) ? s.playList.length : 0,
-                },
-              ];
-              renderLists();
-              let p = state.playlists[0];
-              await select(p, window.matchMedia("(min-width:651px)").matches);
-            } else {
-              state.playlists = [];
-              $("playlistList").innerHTML =
-                '<div class="empty-state">请先登录后加载歌单</div>';
+        json(
+          "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(p.id),
+          function (d) {
+            if (d.code !== 200 || !d.playlist) {
+              showSelectError(new Error(d.message || "歌单接口返回错误"));
+              return;
             }
-            return;
-          }
-          let d = await json(
-            "/neapi/user/playlist?limit=99999&uid=" + u.userPoint.userId,
-          );
-          state.playlists = d.playlist || [];
-          account(
-            state.playlists.find((p) => p.creator?.nickname)?.creator
-              .nickname || "用户 " + u.userPoint.userId,
-          );
-          renderLists();
-          let p = state.playlists.find((x) => String(x.id) == state.currentId);
-          if (p) select(p, window.matchMedia("(min-width:651px)").matches);
-          else msg("请选择一个歌单开始播放");
-        } catch (e) {
-          account("登录状态读取失败");
-          $("playlistList").innerHTML =
-            '<div class="empty-state">歌单加载失败</div>';
-          msg("网易云接口请求失败：" + e.message, true);
-        }
+            detail = d.playlist;
+            detailTracks = detail.tracks || [];
+            p.name = detail.name || p.name;
+            p.coverImgUrl = detail.coverImgUrl || p.coverImgUrl;
+            p.trackCount =
+              detail.trackCount != null
+                ? detail.trackCount
+                : detailTracks.length || p.trackCount;
+            renderLists();
+            image($("detailCover"), detail.coverImgUrl);
+            $("detailName").textContent = detail.name || p.name;
+            $("detailCount").textContent =
+              "共 " + detailTracks.length + " 首歌曲";
+            tracks(detailTracks);
+            setHidden($("detailContent"), false);
+            msg("歌单加载成功");
+            if (showDetail) {
+              addClass($("libraryPanel"), "mobile-hidden");
+              removeClass($("detailPanel"), "mobile-hidden");
+            }
+          },
+          showSelectError
+        );
       }
-      $("loginButton").onclick = () => editor(true);
-      $("saveCookie").onclick = () => {
-        let v = $("cookieInput").value.trim();
-        if (!v) {
+      function loadError(e) {
+        account("登录状态读取失败");
+        $("playlistList").innerHTML =
+          '<div class="empty-state">歌单加载失败</div>';
+        msg("网易云接口请求失败：" + e.message, true);
+      }
+      function load() {
+        json(
+          "/status?t=" + new Date().getTime(),
+          function (s) {
+            var userId;
+            var user;
+            var d;
+            var nickname = "";
+            var i;
+            var p = null;
+            state.currentId = s.playListId || "";
+            state.nowId = s.nowId || "";
+            json(
+              "/neapi/user/info",
+              function (u) {
+                if (
+                  u.code === 301 ||
+                  !u.userPoint ||
+                  !u.userPoint.userId
+                ) {
+                  account("");
+                  if (state.currentId) {
+                    // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单
+                    state.playlists = [
+                      {
+                        id: state.currentId,
+                        name: "当前播放歌单",
+                        trackCount:
+                          s.playList && s.playList.length
+                            ? s.playList.length
+                            : 0
+                      }
+                    ];
+                    renderLists();
+                    select(state.playlists[0], isDesktop());
+                  } else {
+                    state.playlists = [];
+                    $("playlistList").innerHTML =
+                      '<div class="empty-state">请先登录后加载歌单</div>';
+                  }
+                  return;
+                }
+                user = u.userPoint;
+                userId = user.userId;
+                json(
+                  "/neapi/user/playlist?limit=99999&uid=" + userId,
+                  function (playlistData) {
+                    d = playlistData;
+                    state.playlists = d.playlist || [];
+                    for (i = 0; i < state.playlists.length; i++) {
+                      if (
+                        state.playlists[i].creator &&
+                        state.playlists[i].creator.nickname
+                      ) {
+                        nickname = state.playlists[i].creator.nickname;
+                        break;
+                      }
+                    }
+                    account(nickname || "用户 " + userId);
+                    renderLists();
+                    for (i = 0; i < state.playlists.length; i++) {
+                      if (
+                        String(state.playlists[i].id) === state.currentId
+                      ) {
+                        p = state.playlists[i];
+                        break;
+                      }
+                    }
+                    if (p) select(p, isDesktop());
+                    else msg("请选择一个歌单开始播放");
+                  },
+                  loadError
+                );
+              },
+              loadError
+            );
+          },
+          loadError
+        );
+      }
+      function bindFullTrackClicks() {
+        var rows = document.querySelectorAll("#trackList .track-row");
+        var i;
+        for (i = 0; i < rows.length; i++) {
+          rows[i].onclick = (function (index, rowList) {
+            return function () {
+              play(
+                state.trackIds.length
+                  ? state.trackIds.slice(index)
+                  : idsFromRows(rowList, index)
+              );
+            };
+          })(i, rows);
+        }
+        $("playAll").onclick = function () {
+          var ids = [];
+          var currentRows = document.querySelectorAll("#trackList .track-row");
+          if (state.trackIds.length) {
+            ids = state.trackIds.slice(0);
+          } else {
+            ids = idsFromRows(currentRows, 0);
+          }
+          play(ids);
+        };
+      }
+      function loadFullTrackIds() {
+        var selectedId;
+        if (!state.selected) return;
+        selectedId = String(state.selected.id);
+        if (fullIdsFor === selectedId) return;
+        fullIdsFor = selectedId;
+        json(
+          "/neapi/v6/playlist/detail?n=99999&id=" +
+            encodeURIComponent(selectedId),
+          function (data) {
+            var rawIds =
+              data.playlist && data.playlist.trackIds
+                ? data.playlist.trackIds
+                : [];
+            var ids = [];
+            var i;
+            var item;
+            for (i = 0; i < rawIds.length; i++) {
+              item = rawIds[i];
+              if (item && item.id != null) ids.push(String(item.id));
+              else if (item != null && item !== "") ids.push(String(item));
+            }
+            if (!state.selected || String(state.selected.id) !== selectedId) {
+              return;
+            }
+            state.trackIds = ids;
+            bindFullTrackClicks();
+          },
+          function () {}
+        );
+      }
+
+      $("cookieInput").type = "text";
+      $("loginButton").onclick = function () {
+        var value = cv();
+        if (value) $("cookieInput").value = decodeCookie(value);
+        editor(true);
+      };
+      $("saveCookie").onclick = function () {
+        var value = $("cookieInput").value.replace(/^\s+|\s+$/g, "");
+        if (!value) {
           msg("请输入 Cookie", true);
           return;
         }
-        setcv(v);
+        setcv(value);
         editor(false);
         load();
       };
-      $("clearCookie").onclick = () => {
+      $("clearCookie").onclick = function () {
         document.cookie = "netease_cookie=; path=/; max-age=0";
         editor(false);
         account("");
         load();
       };
-      $("backButton").onclick = () => {
-        $("detailPanel").classList.add("mobile-hidden");
-        $("libraryPanel").classList.remove("mobile-hidden");
+      $("backButton").onclick = function () {
+        addClass($("detailPanel"), "mobile-hidden");
+        removeClass($("libraryPanel"), "mobile-hidden");
       };
-      $("playAll").onclick = () =>
-        play(
-          [...document.querySelectorAll("#trackList .track-row")].map(
-            (r) => r.dataset.id,
-          ),
-        );
-      if (cv()) $("cookieInput").value = decodeURIComponent(cv());
+      $("playAll").onclick = function () {
+        play(idsFromRows(document.querySelectorAll("#trackList .track-row"), 0));
+      };
+      if (cv()) $("cookieInput").value = decodeCookie(cv());
       load();
-    </script>
-    <script>
-      document.getElementById("cookieInput").type = "text";
-      document
-        .getElementById("loginButton")
-        .addEventListener("click", function () {
-          const value = cv();
-          if (value)
-            document.getElementById("cookieInput").value =
-              decodeURIComponent(value);
-        });
-      document.getElementById("detailId").textContent = state.selected
-        ? "歌单 ID: " + state.selected.id
-        : "";
-      setInterval(function () {
-        if (state.selected)
-          document.getElementById("detailId").textContent =
-            "歌单 ID: " + state.selected.id;
-      }, 200);
-      let fullIdsFor = "";
-      setInterval(async function () {
-        if (!state.selected || fullIdsFor === String(state.selected.id)) return;
-        fullIdsFor = String(state.selected.id);
-        try {
-          const data = await json(
-            "/neapi/v6/playlist/detail?n=99999&id=" +
-              encodeURIComponent(state.selected.id),
-          );
-          state.trackIds = (data.playlist?.trackIds || [])
-            .map((item) => String(item.id ?? item))
-            .filter(Boolean);
-          document
-            .querySelectorAll("#trackList .track-row")
-            .forEach((row, index, rows) => {
-              row.onclick = () =>
-                play(
-                  state.trackIds.length
-                    ? state.trackIds.slice(index)
-                    : rows.slice(index).map((item) => item.dataset.id),
-                );
-            });
-          document.getElementById("playAll").onclick = () =>
-            play(
-              state.trackIds.length
-                ? state.trackIds
-                : [...document.querySelectorAll("#trackList .track-row")].map(
-                    (row) => row.dataset.id,
-                  ),
-            );
-        } catch (_) {}
-      }, 300);
+      setInterval(loadFullTrackIds, 300);
     </script>
   </body>
 </html>
