@@ -8,6 +8,7 @@ package router
 
 import (
 	"embed"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -79,8 +80,58 @@ func Init(urlPrefix string) *gin.Engine {
 	root := r.Group(urlPrefix)
 
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
+	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))
 	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
 	root.StaticFile("/weather.mp3", "./weather.mp3")
+
+	// 网易云 API 流式代理。仅允许明确列出的 API 路径，避免代理被滥用为通用请求器。
+	root.GET("/neapi/*path", func(c *gin.Context) {
+		path := c.Param("path")
+		allowed := path == "/user/info" || path == "/user/playlist" || path == "/v6/playlist/detail"
+		if !allowed {
+			c.JSON(http.StatusNotFound, gin.H{"error": "unsupported netease api"})
+			return
+		}
+		upstreamURL := "https://music.163.com/api" + path
+		if rawQuery := c.Request.URL.RawQuery; rawQuery != "" {
+			upstreamURL += "?" + rawQuery
+		}
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		// Cookie 由调用方提供，支持转发网易云登录态；os=pc 用于请求完整歌单列表。
+		cookie := c.GetHeader("Cookie")
+		// playlist.html stores the user's complete Netease cookie in a local
+		// cookie; extract it before forwarding the upstream request.
+		if savedCookie, err := c.Cookie("netease_cookie"); err == nil && savedCookie != "" {
+			cookie = savedCookie
+		}
+		if cookie == "" {
+			cookie = "os=pc"
+		} else if !strings.Contains(cookie, "os=") {
+			cookie += "; os=pc"
+		}
+		req.Header.Set("Cookie", cookie)
+		req.Header.Set("User-Agent", c.GetHeader("User-Agent"))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+		for key, values := range resp.Header {
+			for _, value := range values {
+				c.Writer.Header().Add(key, value)
+			}
+		}
+		c.Status(resp.StatusCode)
+		if flusher, ok := c.Writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		_, _ = io.Copy(c.Writer, resp.Body)
+	})
 	// 允许直接浏览缓存
 	if conf.Cfg.SavePath != "" {
 		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))

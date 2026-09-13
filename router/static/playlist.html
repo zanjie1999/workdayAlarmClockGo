@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>我的歌单</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+      .music-shell {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+        gap: 18px;
+        min-height: 640px;
+      }
+      .library-panel,
+      .detail-panel {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .detail-panel {
+        padding: 20px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px #00000014;
+      }
+      .panel-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .panel-heading h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 1.25em;
+        font-weight: 500;
+      }
+      .account {
+        padding: 12px;
+        background: #f2f5f7;
+        border-radius: 6px;
+        margin-bottom: 12px;
+      }
+      .account button {
+        margin: 0;
+        padding: 6px 10px;
+        min-height: 2em;
+      }
+      .account input {
+        width: 100%;
+        margin: 8px 0;
+        font-family: monospace;
+      }
+      .account-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .account-actions button {
+        flex: 1;
+      }
+      .muted {
+        color: #7f8c8d;
+        font-size: 0.88em;
+      }
+      .playlist-list,
+      .track-list {
+        overflow-y: auto;
+        border: 1px solid #777777;
+        border-radius: 6px;
+      }
+      .playlist-list {
+        flex: 1;
+        max-height: 570px;
+      }
+      .playlist-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px;
+        border: 0;
+        border-bottom: 1px solid #edf0f2;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        color: #333;
+      }
+      .playlist-item:hover,
+      .playlist-item.active {
+        background: #e9f5fd;
+      }
+      .playlist-item img {
+        width: 52px;
+        height: 52px;
+        flex: 0 0 52px;
+        object-fit: cover;
+        border-radius: 5px;
+        background: #777777;
+      }
+      .playlist-meta,
+      .track-info {
+        min-width: 0;
+      }
+      .playlist-meta {
+        flex: 1;
+      }
+      .playlist-name,
+      .track-name,
+      .track-artists,
+      .playlist-count {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .playlist-name,
+      .track-name {
+        font-weight: 500;
+        color: #2c3e50;
+      }
+      .playlist-count,
+      .track-artists {
+        color: #7f8c8d;
+        font-size: 0.88em;
+      }
+      .detail-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .detail-cover {
+        width: 116px;
+        height: 116px;
+        object-fit: cover;
+        border-radius: 7px;
+        background: #777777;
+      }
+      .detail-title {
+        min-width: 0;
+        flex: 1;
+      }
+      .detail-title h1 {
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin: 0 0 6px;
+        font-size: 1.7em;
+      }
+      .detail-title p {
+        color: #7f8c8d;
+        margin: 0 0 10px;
+      }
+      .back-button {
+        display: none;
+        margin: 0 0 12px;
+      }
+      .track-list {
+        flex: 1;
+      }
+      .track-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-bottom: 1px solid #edf0f2;
+      }
+      .track-row:hover {
+        background: #f7fbfd;
+      }
+      .track-play {
+        margin: 0;
+        min-width: 3.6em;
+        padding: 5px 8px;
+      }
+      .track-index {
+        width: 2em;
+        text-align: right;
+        color: #95a5a6;
+      }
+      .playing-mark {
+        width: 1.1em;
+        color: #3498db;
+        visibility: hidden;
+      }
+      .track-row.playing .playing-mark {
+        visibility: visible;
+      }
+      .track-info {
+        flex: 1;
+      }
+      .empty-state {
+        padding: 35px 18px;
+        text-align: center;
+        color: #7f8c8d;
+      }
+      #message {
+        white-space: pre-line;
+      }
+      @media (max-width: 650px) {
+        .main-container {
+          padding: 10px;
+        }
+        .music-shell {
+          display: block;
+          min-height: 0;
+        }
+        .library-panel,
+        .detail-panel {
+          min-height: calc(100vh - 100px);
+        }
+        .detail-panel {
+          padding: 14px;
+        }
+        .playlist-list,
+        .track-list {
+          max-height: none;
+        }
+        .detail-panel.mobile-hidden,
+        .library-panel.mobile-hidden {
+          display: none;
+        }
+        .back-button {
+          display: inline-block;
+        }
+        .detail-cover {
+          width: 82px;
+          height: 82px;
+        }
+        .detail-title h1 {
+          font-size: 1.35em;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        .account,
+        .detail-panel,
+        .playlist-list,
+        .track-list {
+          background: #2c2c2c;
+        }
+        .account {
+          background: #333;
+        }
+        .playlist-item,
+        .track-row {
+          color: #777777;
+          border-color: #444;
+        }
+        .playlist-item:hover,
+        .playlist-item.active,
+        .track-row:hover {
+          background: #383838;
+        }
+        .panel-heading h2,
+        .track-name,
+        .playlist-name {
+          color: #f0f0f0;
+        }
+      }
+    </style>
+    <style>
+      .main-container {
+        max-width: none;
+        width: 100%;
+        min-height: 100vh;
+      }
+      .music-shell {
+        min-height: 0;
+      }
+      .playlist-list,
+      .track-list {
+        overflow: visible;
+        max-height: none;
+      }
+      .account {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .account > #accountLabel {
+        flex: 1;
+      }
+      .account > #loginButton {
+        margin-left: auto;
+      }
+      .account > #cookieEditor {
+        width: 100%;
+      }
+      .playlist-item {
+        border-radius: 6px;
+        margin: 0 0 2px;
+        border-bottom: 0;
+      }
+      .track-id {
+        display: block;
+        color: #7f8c8d;
+        font-size: 0.8em;
+      }
+      @media (max-width: 650px) {
+        .library-panel,
+        .detail-panel {
+          min-height: 0;
+        }
+      }
+    </style>
+    <style>
+      .main-container {
+        max-width: none;
+        width: 100%;
+        min-height: 100vh;
+      }
+      .main-container > .linemode,
+      #message {
+        display: none !important;
+      }
+      .music-shell {
+        min-height: 0;
+      }
+      .playlist-list,
+      .track-list {
+        overflow: visible;
+        max-height: none;
+      }
+      .track-play {
+        display: none;
+      }
+      .track-row {
+        cursor: pointer;
+      }
+      .track-id {
+        display: none;
+      }
+      .playing-mark {
+        width: 0;
+        margin-right: -10px;
+        overflow: visible;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main-container">
+      <div class="music-shell">
+        <aside class="library-panel" id="libraryPanel">
+          <div class="panel-heading">
+            <img src="/favicon.ico" />
+            <h2>我的歌单</h2>
+            <a href="/">返回</a>
+          </div>
+          <div id="message" role="status">正在读取播放状态……</div>
+          <div class="account">
+            <div id="accountLabel">未登录</div>
+            <div id="cookieEditor" hidden>
+              <input
+                id="cookieInput"
+                type="password"
+                placeholder="粘贴网易云完整 Cookie"
+              />
+              <div class="account-actions">
+                <button type="button" id="saveCookie">保存并登录</button
+                ><button type="button" class="red" id="clearCookie">
+                  清除
+                </button>
+              </div>
+              <div class="muted">Cookie 保存在当前站点浏览器 Cookie 中。</div>
+            </div>
+            <button type="button" id="loginButton">登录</button>
+          </div>
+          <div class="playlist-list" id="playlistList">
+            <div class="empty-state">正在加载歌单……</div>
+          </div>
+        </aside>
+        <main class="detail-panel mobile-hidden" id="detailPanel">
+          <button type="button" class="back-button" id="backButton">
+            返回歌单
+          </button>
+          <div id="detailEmpty" class="empty-state">请选择一个歌单</div>
+          <div id="detailContent" hidden>
+            <div class="detail-header">
+              <img class="detail-cover" id="detailCover" alt="" />
+              <div class="detail-title">
+                <h1 id="detailName"></h1>
+                <p id="detailId"></p>
+                <p id="detailCount"></p>
+                <button type="button" id="playAll">播放全部</button>
+              </div>
+            </div>
+            <div class="track-list" id="trackList"></div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id),
+        state = { playlists: [], currentId: "", nowId: "", selected: null };
+      function msg(t, e) {
+        $("message").textContent = t;
+        $("message").style.color = e ? "#c0392b" : "";
+      }
+      function cv() {
+        return (
+          document.cookie
+            .split("; ")
+            .find((v) => v.startsWith("netease_cookie="))
+            ?.slice(15) || ""
+        );
+      }
+      function setcv(v) {
+        document.cookie =
+          "netease_cookie=" +
+          encodeURIComponent(v) +
+          "; path=/; max-age=2592000; SameSite=Lax";
+      }
+      async function json(u) {
+        let r = await fetch(u);
+        if (!r.ok) throw Error("HTTP " + r.status);
+        return r.json();
+      }
+      function image(i, u) {
+        i.onerror = () => i.removeAttribute("src");
+        if (u) i.src = u;
+      }
+      function account(n) {
+        $("accountLabel").textContent = n || "未登录";
+        $("loginButton").textContent = n ? "更换 Cookie" : "登录";
+      }
+      function editor(v) {
+        $("cookieEditor").hidden = !v;
+        $("loginButton").hidden = v;
+        if (v) $("cookieInput").focus();
+      }
+      function renderLists() {
+        let l = $("playlistList");
+        l.textContent = "";
+        if (!state.playlists.length) {
+          l.innerHTML = '<div class="empty-state">暂无歌单</div>';
+          return;
+        }
+        state.playlists.forEach((p) => {
+          let b = document.createElement("button");
+          b.type = "button";
+          b.className =
+            "playlist-item" +
+            (String(p.id) == state.currentId ? " active" : "");
+          let i = document.createElement("img");
+          image(i, p.coverImgUrl);
+          let m = document.createElement("span");
+          m.className = "playlist-meta";
+          let n = document.createElement("span");
+          n.className = "playlist-name";
+          n.textContent = p.name || "未命名歌单";
+          let c = document.createElement("span");
+          c.className = "playlist-count";
+          c.textContent = (p.trackCount || 0) + " 首歌曲";
+          m.append(n, c);
+          b.append(i, m);
+          b.onclick = () => select(p);
+          l.append(b);
+        });
+      }
+      function updatePlaying(id) {
+        state.nowId = String(id);
+        document
+          .querySelectorAll("#trackList .track-row")
+          .forEach((r) =>
+            r.classList.toggle("playing", r.dataset.id === state.nowId),
+          );
+      }
+      function play(ids) {
+        if (!ids.length || !state.selected) return;
+        updatePlaying(ids[0]);
+        fetch(
+          "/playmusiclist?ids=" +
+            encodeURIComponent(ids.join(",")) +
+            "&id=" +
+            encodeURIComponent(state.selected.id),
+        )
+          .then((r) => {
+            if (!r.ok) throw Error("HTTP " + r.status);
+            msg("已发送 " + ids.length + " 首歌曲，从所选歌曲开始播放。");
+          })
+          .catch((e) => msg("播放请求失败：" + e.message, true));
+      }
+      function tracks(ts) {
+        let l = $("trackList");
+        l.textContent = "";
+        ts.forEach((t, i) => {
+          if (!t || t.id == null) return;
+          let r = document.createElement("div");
+          r.className =
+            "track-row" + (String(t.id) == state.nowId ? " playing" : "");
+          r.dataset.id = t.id;
+          r.onclick = () =>
+            play(
+              ts
+                .slice(i)
+                .filter((x) => x && x.id != null)
+                .map((x) => String(x.id)),
+            );
+          let mark = document.createElement("span");
+          mark.className = "playing-mark";
+          mark.textContent = "▶";
+          let num = document.createElement("span");
+          num.className = "track-index";
+          num.textContent = i + 1;
+          let info = document.createElement("span");
+          info.className = "track-info";
+          let n = document.createElement("span");
+          n.className = "track-name";
+          n.textContent = t.name || "未知歌曲";
+          let a = document.createElement("span");
+          a.className = "track-artists";
+          a.textContent =
+            (t.ar || []).map((x) => x.name).join(" / ") || "未知歌手";
+          info.append(n, a);
+          r.append(mark, num, info);
+          l.append(r);
+        });
+      }
+      async function select(p, showDetail = true) {
+        state.selected = p;
+        state.currentId = String(p.id);
+        renderLists();
+        $("detailEmpty").hidden = true;
+        $("detailContent").hidden = true;
+        msg("正在加载歌单……");
+        try {
+          let d = await json(
+            "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(p.id),
+          );
+          if (d.code !== 200 || !d.playlist)
+            throw Error(d.message || "歌单接口返回错误");
+          image($("detailCover"), d.playlist.coverImgUrl);
+          $("detailName").textContent = d.playlist.name || p.name;
+          $("detailCount").textContent =
+            "共 " + d.playlist.tracks.length + " 首歌曲";
+          tracks(d.playlist.tracks);
+          $("detailContent").hidden = false;
+          msg("歌单加载成功。");
+          if (showDetail) {
+            $("libraryPanel").classList.add("mobile-hidden");
+            $("detailPanel").classList.remove("mobile-hidden");
+          }
+        } catch (e) {
+          $("detailEmpty").hidden = false;
+          msg("歌单加载失败：" + e.message, true);
+        }
+      }
+      async function load() {
+        try {
+          let s = await json("/status?t=" + Date.now());
+          state.currentId = s.playListId || "";
+          state.nowId = s.nowId || "";
+          let u = await json("/neapi/user/info");
+          if (u.code === 301 || !u.userPoint?.userId) {
+            account("");
+            $("playlistList").innerHTML =
+              '<div class="empty-state">请先登录后加载歌单</div>';
+            return;
+          }
+          let d = await json(
+            "/neapi/user/playlist?limit=99999&uid=" + u.userPoint.userId,
+          );
+          state.playlists = d.playlist || [];
+          account(
+            state.playlists.find((p) => p.creator?.nickname)?.creator
+              .nickname || "用户 " + u.userPoint.userId,
+          );
+          renderLists();
+          let p = state.playlists.find((x) => String(x.id) == state.currentId);
+          if (p) select(p, window.matchMedia("(min-width:651px)").matches);
+          else msg("请选择一个歌单开始播放。");
+        } catch (e) {
+          account("登录状态读取失败");
+          $("playlistList").innerHTML =
+            '<div class="empty-state">歌单加载失败</div>';
+          msg("网易云接口请求失败：" + e.message, true);
+        }
+      }
+      $("loginButton").onclick = () => editor(true);
+      $("saveCookie").onclick = () => {
+        let v = $("cookieInput").value.trim();
+        if (!v) {
+          msg("请输入 Cookie。", true);
+          return;
+        }
+        setcv(v);
+        editor(false);
+        load();
+      };
+      $("clearCookie").onclick = () => {
+        document.cookie = "netease_cookie=; path=/; max-age=0";
+        editor(false);
+        account("");
+        $("playlistList").innerHTML =
+          '<div class="empty-state">请先登录后加载歌单</div>';
+      };
+      $("backButton").onclick = () => {
+        $("detailPanel").classList.add("mobile-hidden");
+        $("libraryPanel").classList.remove("mobile-hidden");
+      };
+      $("playAll").onclick = () =>
+        play(
+          [...document.querySelectorAll("#trackList .track-row")].map(
+            (r) => r.dataset.id,
+          ),
+        );
+      if (cv()) $("cookieInput").value = decodeURIComponent(cv());
+      load();
+    </script>
+    <script>
+      document.getElementById("cookieInput").type = "text";
+      document
+        .getElementById("loginButton")
+        .addEventListener("click", function () {
+          const value = cv();
+          if (value)
+            document.getElementById("cookieInput").value =
+              decodeURIComponent(value);
+        });
+      document.getElementById("detailId").textContent = state.selected
+        ? "歌单 ID: " + state.selected.id
+        : "";
+      setInterval(function () {
+        if (state.selected)
+          document.getElementById("detailId").textContent =
+            "歌单 ID: " + state.selected.id;
+      }, 200);
+      let fullIdsFor = "";
+      setInterval(async function () {
+        if (!state.selected || fullIdsFor === String(state.selected.id)) return;
+        fullIdsFor = String(state.selected.id);
+        try {
+          const data = await json(
+            "/neapi/v6/playlist/detail?n=99999&id=" +
+              encodeURIComponent(state.selected.id),
+          );
+          state.trackIds = (data.playlist?.trackIds || [])
+            .map((item) => String(item.id ?? item))
+            .filter(Boolean);
+          document
+            .querySelectorAll("#trackList .track-row")
+            .forEach((row, index, rows) => {
+              row.onclick = () =>
+                play(
+                  state.trackIds.length
+                    ? state.trackIds.slice(index)
+                    : rows.slice(index).map((item) => item.dataset.id),
+                );
+            });
+          document.getElementById("playAll").onclick = () =>
+            play(
+              state.trackIds.length
+                ? state.trackIds
+                : [...document.querySelectorAll("#trackList .track-row")].map(
+                    (row) => row.dataset.id,
+                  ),
+            );
+        } catch (_) {}
+      }, 300);
+    </script>
+  </body>
+</html>
