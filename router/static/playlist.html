@@ -396,6 +396,8 @@
         trackIds: []
       };
       var fullIdsFor = "";
+      var defPlayListId = "";
+      var nePlayListId = "";
 
       function $(id) {
         return document.getElementById(id);
@@ -486,6 +488,31 @@
       function setHidden(element, hidden) {
         element.hidden = hidden;
         element.style.display = hidden ? "none" : "";
+      }
+      function getHistory() {
+        try {
+          var h = localStorage.getItem("playlist_history");
+          return h ? JSON.parse(h) : [];
+        } catch (e) {
+          return [];
+        }
+      }
+      function addHistory(id) {
+        try {
+          var h = getHistory();
+          var index = -1;
+          var i;
+          for (i = 0; i < h.length; i++) {
+            if (h[i] === id) {
+              index = i;
+              break;
+            }
+          }
+          if (index >= 0) h.splice(index, 1);
+          h.unshift(id);
+          if (h.length > 20) h = h.slice(0, 20);
+          localStorage.setItem("playlist_history", JSON.stringify(h));
+        } catch (e) {}
       }
       function addClass(element, name) {
         if ((" " + element.className + " ").indexOf(" " + name + " ") < 0) {
@@ -580,6 +607,7 @@
       function play(ids) {
         if (!ids.length || !state.selected) return;
         updatePlaying(ids[0]);
+        addHistory(String(state.selected.id));
         request(
           "/playmusiclist?ids=" +
             encodeURIComponent(ids.join(",")) +
@@ -720,76 +748,809 @@
           '<div class="empty-state">歌单加载失败</div>';
         msg("网易云接口请求失败：" + e.message, true);
       }
+      function mergePlaylistsUnique(lists) {
+        var seen = {};
+        var result = [];
+        var i;
+        var j;
+        var p;
+        for (i = 0; i < lists.length; i++) {
+          for (j = 0; j < lists[i].length; j++) {
+            p = lists[i][j];
+            if (p && p.id != null && !seen[String(p.id)]) {
+              seen[String(p.id)] = true;
+              result.push(p);
+            }
+          }
+        }
+        return result;
+      }
+      function fetchPlaylistDetail(id, callback) {
+        json(
+          "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(id),
+          function (d) {
+            if (d.code === 200 && d.playlist) {
+              callback({
+                id: String(id),
+                name: d.playlist.name || "未命名歌单",
+                coverImgUrl: d.playlist.coverImgUrl || "",
+                trackCount: d.playlist.trackCount || 0
+              });
+            } else {
+              callback(null);
+            }
+          },
+          function () {
+            callback(null);
+          }
+        );
+      }
       function load() {
         json(
-          "/status?t=" + new Date().getTime(),
-          function (s) {
-            var userId;
-            var user;
-            var d;
-            var nickname = "";
-            var i;
-            var p = null;
-            state.currentId = s.playListId || "";
-            state.nowId = s.nowId || "";
+          "/cfg.json?t=" + new Date().getTime(),
+          function (cfg) {
+            defPlayListId = cfg.defPlayListId || "";
+            nePlayListId = cfg.nePlayListId || "";
             json(
-              "/neapi/user/info",
-              function (u) {
-                if (
-                  u.code === 301 ||
-                  !u.userPoint ||
-                  !u.userPoint.userId
-                ) {
-                  account("");
-                  if (state.currentId) {
-                    // 歌单详情接口无需登录，允许访客查看当前正在播放的歌单
-                    state.playlists = [
-                      {
-                        id: state.currentId,
-                        name: "当前播放歌单",
-                        trackCount:
-                          s.playList && s.playList.length
-                            ? s.playList.length
-                            : 0
-                      }
-                    ];
-                    renderLists();
-                    select(state.playlists[0], isDesktop());
-                  } else {
-                    state.playlists = [];
-                    $("playlistList").innerHTML =
-                      '<div class="empty-state">请先登录后加载歌单</div>';
-                  }
-                  return;
-                }
-                user = u.userPoint;
-                userId = user.userId;
+              "/status?t=" + new Date().getTime(),
+              function (s) {
+                var userId;
+                var user;
+                var d;
+                var nickname = "";
+                var i;
+                var p = null;
+                state.currentId = s.playListId || "";
+                state.nowId = s.nowId || "";
                 json(
-                  "/neapi/user/playlist?limit=99999&uid=" + userId,
-                  function (playlistData) {
-                    d = playlistData;
-                    state.playlists = d.playlist || [];
-                    for (i = 0; i < state.playlists.length; i++) {
-                      if (
-                        state.playlists[i].creator &&
-                        state.playlists[i].creator.nickname
-                      ) {
-                        nickname = state.playlists[i].creator.nickname;
-                        break;
+                  "/neapi/user/info",
+                  function (u) {
+                    var userPlaylists = [];
+                    var currentPlaylist = [];
+                    var defPlaylist = [];
+                    var alarmPlaylist = [];
+                    var historyPlaylists = [];
+                    var historyIds = getHistory();
+                    var pendingHistory = 0;
+                    var j;
+                    if (
+                      u.code === 301 ||
+                      !u.userPoint ||
+                      !u.userPoint.userId
+                    ) {
+                      account("");
+                      if (state.currentId) {
+                        fetchPlaylistDetail(state.currentId, function (pl) {
+                          if (pl) {
+                            currentPlaylist = [pl];
+                          }
+                          if (defPlayListId) {
+                            fetchPlaylistDetail(defPlayListId, function (pl2) {
+                              if (pl2) defPlaylist = [pl2];
+                              if (nePlayListId) {
+                                fetchPlaylistDetail(nePlayListId, function (pl3) {
+                                  if (pl3) alarmPlaylist = [pl3];
+                                  for (j = 0; j < historyIds.length; j++) {
+                                    pendingHistory++;
+                                    (function (hid) {
+                                      fetchPlaylistDetail(hid, function (pl4) {
+                                        if (pl4) historyPlaylists.push(pl4);
+                                        pendingHistory--;
+                                        if (pendingHistory === 0) {
+                                          state.playlists = mergePlaylistsUnique([
+                                            currentPlaylist,
+                                            userPlaylists,
+                                            defPlaylist,
+                                            alarmPlaylist,
+                                            historyPlaylists
+                                          ]);
+                                          renderLists();
+                                          if (state.playlists.length > 0) {
+                                            select(state.playlists[0], isDesktop());
+                                          }
+                                        }
+                                      });
+                                    })(historyIds[j]);
+                                  }
+                                  if (pendingHistory === 0) {
+                                    state.playlists = mergePlaylistsUnique([
+                                      currentPlaylist,
+                                      userPlaylists,
+                                      defPlaylist,
+                                      alarmPlaylist,
+                                      historyPlaylists
+                                    ]);
+                                    renderLists();
+                                    if (state.playlists.length > 0) {
+                                      select(state.playlists[0], isDesktop());
+                                    }
+                                  }
+                                });
+                              } else {
+                                for (j = 0; j < historyIds.length; j++) {
+                                  pendingHistory++;
+                                  (function (hid) {
+                                    fetchPlaylistDetail(hid, function (pl4) {
+                                      if (pl4) historyPlaylists.push(pl4);
+                                      pendingHistory--;
+                                      if (pendingHistory === 0) {
+                                        state.playlists = mergePlaylistsUnique([
+                                          currentPlaylist,
+                                          userPlaylists,
+                                          defPlaylist,
+                                          alarmPlaylist,
+                                          historyPlaylists
+                                        ]);
+                                        renderLists();
+                                        if (state.playlists.length > 0) {
+                                          select(state.playlists[0], isDesktop());
+                                        }
+                                      }
+                                    });
+                                  })(historyIds[j]);
+                                }
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  if (state.playlists.length > 0) {
+                                    select(state.playlists[0], isDesktop());
+                                  }
+                                }
+                              }
+                            });
+                          } else if (nePlayListId) {
+                            fetchPlaylistDetail(nePlayListId, function (pl3) {
+                              if (pl3) alarmPlaylist = [pl3];
+                              for (j = 0; j < historyIds.length; j++) {
+                                pendingHistory++;
+                                (function (hid) {
+                                  fetchPlaylistDetail(hid, function (pl4) {
+                                    if (pl4) historyPlaylists.push(pl4);
+                                    pendingHistory--;
+                                    if (pendingHistory === 0) {
+                                      state.playlists = mergePlaylistsUnique([
+                                        currentPlaylist,
+                                        userPlaylists,
+                                        defPlaylist,
+                                        alarmPlaylist,
+                                        historyPlaylists
+                                      ]);
+                                      renderLists();
+                                      if (state.playlists.length > 0) {
+                                        select(state.playlists[0], isDesktop());
+                                      }
+                                    }
+                                  });
+                                })(historyIds[j]);
+                              }
+                              if (pendingHistory === 0) {
+                                state.playlists = mergePlaylistsUnique([
+                                  currentPlaylist,
+                                  userPlaylists,
+                                  defPlaylist,
+                                  alarmPlaylist,
+                                  historyPlaylists
+                                ]);
+                                renderLists();
+                                if (state.playlists.length > 0) {
+                                  select(state.playlists[0], isDesktop());
+                                }
+                              }
+                            });
+                          } else {
+                            for (j = 0; j < historyIds.length; j++) {
+                              pendingHistory++;
+                              (function (hid) {
+                                fetchPlaylistDetail(hid, function (pl4) {
+                                  if (pl4) historyPlaylists.push(pl4);
+                                  pendingHistory--;
+                                  if (pendingHistory === 0) {
+                                    state.playlists = mergePlaylistsUnique([
+                                      currentPlaylist,
+                                      userPlaylists,
+                                      defPlaylist,
+                                      alarmPlaylist,
+                                      historyPlaylists
+                                    ]);
+                                    renderLists();
+                                    if (state.playlists.length > 0) {
+                                      select(state.playlists[0], isDesktop());
+                                    }
+                                  }
+                                });
+                              })(historyIds[j]);
+                            }
+                            if (pendingHistory === 0) {
+                              state.playlists = mergePlaylistsUnique([
+                                currentPlaylist,
+                                userPlaylists,
+                                defPlaylist,
+                                alarmPlaylist,
+                                historyPlaylists
+                              ]);
+                              renderLists();
+                              if (state.playlists.length > 0) {
+                                select(state.playlists[0], isDesktop());
+                              }
+                            }
+                          }
+                        });
+                      } else {
+                        if (defPlayListId) {
+                          fetchPlaylistDetail(defPlayListId, function (pl2) {
+                            if (pl2) defPlaylist = [pl2];
+                            if (nePlayListId) {
+                              fetchPlaylistDetail(nePlayListId, function (pl3) {
+                                if (pl3) alarmPlaylist = [pl3];
+                                for (j = 0; j < historyIds.length; j++) {
+                                  pendingHistory++;
+                                  (function (hid) {
+                                    fetchPlaylistDetail(hid, function (pl4) {
+                                      if (pl4) historyPlaylists.push(pl4);
+                                      pendingHistory--;
+                                      if (pendingHistory === 0) {
+                                        state.playlists = mergePlaylistsUnique([
+                                          currentPlaylist,
+                                          userPlaylists,
+                                          defPlaylist,
+                                          alarmPlaylist,
+                                          historyPlaylists
+                                        ]);
+                                        renderLists();
+                                        msg("请选择一个歌单开始播放");
+                                      }
+                                    });
+                                  })(historyIds[j]);
+                                }
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  msg("请选择一个歌单开始播放");
+                                }
+                              });
+                            } else {
+                              for (j = 0; j < historyIds.length; j++) {
+                                pendingHistory++;
+                                (function (hid) {
+                                  fetchPlaylistDetail(hid, function (pl4) {
+                                    if (pl4) historyPlaylists.push(pl4);
+                                    pendingHistory--;
+                                    if (pendingHistory === 0) {
+                                      state.playlists = mergePlaylistsUnique([
+                                        currentPlaylist,
+                                        userPlaylists,
+                                        defPlaylist,
+                                        alarmPlaylist,
+                                        historyPlaylists
+                                      ]);
+                                      renderLists();
+                                      msg("请选择一个歌单开始播放");
+                                    }
+                                  });
+                                })(historyIds[j]);
+                              }
+                              if (pendingHistory === 0) {
+                                state.playlists = mergePlaylistsUnique([
+                                  currentPlaylist,
+                                  userPlaylists,
+                                  defPlaylist,
+                                  alarmPlaylist,
+                                  historyPlaylists
+                                ]);
+                                renderLists();
+                                msg("请选择一个歌单开始播放");
+                              }
+                            }
+                          });
+                        } else if (nePlayListId) {
+                          fetchPlaylistDetail(nePlayListId, function (pl3) {
+                            if (pl3) alarmPlaylist = [pl3];
+                            for (j = 0; j < historyIds.length; j++) {
+                              pendingHistory++;
+                              (function (hid) {
+                                fetchPlaylistDetail(hid, function (pl4) {
+                                  if (pl4) historyPlaylists.push(pl4);
+                                  pendingHistory--;
+                                  if (pendingHistory === 0) {
+                                    state.playlists = mergePlaylistsUnique([
+                                      currentPlaylist,
+                                      userPlaylists,
+                                      defPlaylist,
+                                      alarmPlaylist,
+                                      historyPlaylists
+                                    ]);
+                                    renderLists();
+                                    msg("请选择一个歌单开始播放");
+                                  }
+                                });
+                              })(historyIds[j]);
+                            }
+                            if (pendingHistory === 0) {
+                              state.playlists = mergePlaylistsUnique([
+                                currentPlaylist,
+                                userPlaylists,
+                                defPlaylist,
+                                alarmPlaylist,
+                                historyPlaylists
+                              ]);
+                              renderLists();
+                              msg("请选择一个歌单开始播放");
+                            }
+                          });
+                        } else {
+                          for (j = 0; j < historyIds.length; j++) {
+                            pendingHistory++;
+                            (function (hid) {
+                              fetchPlaylistDetail(hid, function (pl4) {
+                                if (pl4) historyPlaylists.push(pl4);
+                                pendingHistory--;
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  msg("请选择一个歌单开始播放");
+                                }
+                              });
+                            })(historyIds[j]);
+                          }
+                          if (pendingHistory === 0) {
+                            state.playlists = mergePlaylistsUnique([
+                              currentPlaylist,
+                              userPlaylists,
+                              defPlaylist,
+                              alarmPlaylist,
+                              historyPlaylists
+                            ]);
+                            renderLists();
+                            msg("请选择一个歌单开始播放");
+                          }
+                        }
                       }
+                      return;
                     }
-                    account(nickname || "用户 " + userId);
-                    renderLists();
-                    for (i = 0; i < state.playlists.length; i++) {
-                      if (
-                        String(state.playlists[i].id) === state.currentId
-                      ) {
-                        p = state.playlists[i];
-                        break;
-                      }
-                    }
-                    if (p) select(p, isDesktop());
-                    else msg("请选择一个歌单开始播放");
+                    user = u.userPoint;
+                    userId = user.userId;
+                    json(
+                      "/neapi/user/playlist?limit=99999&uid=" + userId,
+                      function (playlistData) {
+                        d = playlistData;
+                        userPlaylists = d.playlist || [];
+                        for (i = 0; i < userPlaylists.length; i++) {
+                          if (
+                            userPlaylists[i].creator &&
+                            userPlaylists[i].creator.nickname
+                          ) {
+                            nickname = userPlaylists[i].creator.nickname;
+                            break;
+                          }
+                        }
+                        account(nickname || "用户 " + userId);
+                        if (state.currentId) {
+                          for (i = 0; i < userPlaylists.length; i++) {
+                            if (String(userPlaylists[i].id) === state.currentId) {
+                              currentPlaylist = [userPlaylists[i]];
+                              break;
+                            }
+                          }
+                          if (currentPlaylist.length === 0) {
+                            fetchPlaylistDetail(state.currentId, function (pl) {
+                              if (pl) currentPlaylist = [pl];
+                              if (defPlayListId) {
+                                fetchPlaylistDetail(defPlayListId, function (pl2) {
+                                  if (pl2) defPlaylist = [pl2];
+                                  if (nePlayListId) {
+                                    fetchPlaylistDetail(nePlayListId, function (pl3) {
+                                      if (pl3) alarmPlaylist = [pl3];
+                                      for (j = 0; j < historyIds.length; j++) {
+                                        pendingHistory++;
+                                        (function (hid) {
+                                          fetchPlaylistDetail(hid, function (pl4) {
+                                            if (pl4) historyPlaylists.push(pl4);
+                                            pendingHistory--;
+                                            if (pendingHistory === 0) {
+                                              state.playlists = mergePlaylistsUnique([
+                                                currentPlaylist,
+                                                userPlaylists,
+                                                defPlaylist,
+                                                alarmPlaylist,
+                                                historyPlaylists
+                                              ]);
+                                              renderLists();
+                                              for (i = 0; i < state.playlists.length; i++) {
+                                                if (String(state.playlists[i].id) === state.currentId) {
+                                                  p = state.playlists[i];
+                                                  break;
+                                                }
+                                              }
+                                              if (p) select(p, isDesktop());
+                                              else msg("请选择一个歌单开始播放");
+                                            }
+                                          });
+                                        })(historyIds[j]);
+                                      }
+                                      if (pendingHistory === 0) {
+                                        state.playlists = mergePlaylistsUnique([
+                                          currentPlaylist,
+                                          userPlaylists,
+                                          defPlaylist,
+                                          alarmPlaylist,
+                                          historyPlaylists
+                                        ]);
+                                        renderLists();
+                                        for (i = 0; i < state.playlists.length; i++) {
+                                          if (String(state.playlists[i].id) === state.currentId) {
+                                            p = state.playlists[i];
+                                            break;
+                                          }
+                                        }
+                                        if (p) select(p, isDesktop());
+                                        else msg("请选择一个歌单开始播放");
+                                      }
+                                    });
+                                  } else {
+                                    for (j = 0; j < historyIds.length; j++) {
+                                      pendingHistory++;
+                                      (function (hid) {
+                                        fetchPlaylistDetail(hid, function (pl4) {
+                                          if (pl4) historyPlaylists.push(pl4);
+                                          pendingHistory--;
+                                          if (pendingHistory === 0) {
+                                            state.playlists = mergePlaylistsUnique([
+                                              currentPlaylist,
+                                              userPlaylists,
+                                              defPlaylist,
+                                              alarmPlaylist,
+                                              historyPlaylists
+                                            ]);
+                                            renderLists();
+                                            for (i = 0; i < state.playlists.length; i++) {
+                                              if (String(state.playlists[i].id) === state.currentId) {
+                                                p = state.playlists[i];
+                                                break;
+                                              }
+                                            }
+                                            if (p) select(p, isDesktop());
+                                            else msg("请选择一个歌单开始播放");
+                                          }
+                                        });
+                                      })(historyIds[j]);
+                                    }
+                                    if (pendingHistory === 0) {
+                                      state.playlists = mergePlaylistsUnique([
+                                        currentPlaylist,
+                                        userPlaylists,
+                                        defPlaylist,
+                                        alarmPlaylist,
+                                        historyPlaylists
+                                      ]);
+                                      renderLists();
+                                      for (i = 0; i < state.playlists.length; i++) {
+                                        if (String(state.playlists[i].id) === state.currentId) {
+                                          p = state.playlists[i];
+                                          break;
+                                        }
+                                      }
+                                      if (p) select(p, isDesktop());
+                                      else msg("请选择一个歌单开始播放");
+                                    }
+                                  }
+                                });
+                              } else if (nePlayListId) {
+                                fetchPlaylistDetail(nePlayListId, function (pl3) {
+                                  if (pl3) alarmPlaylist = [pl3];
+                                  for (j = 0; j < historyIds.length; j++) {
+                                    pendingHistory++;
+                                    (function (hid) {
+                                      fetchPlaylistDetail(hid, function (pl4) {
+                                        if (pl4) historyPlaylists.push(pl4);
+                                        pendingHistory--;
+                                        if (pendingHistory === 0) {
+                                          state.playlists = mergePlaylistsUnique([
+                                            currentPlaylist,
+                                            userPlaylists,
+                                            defPlaylist,
+                                            alarmPlaylist,
+                                            historyPlaylists
+                                          ]);
+                                          renderLists();
+                                          for (i = 0; i < state.playlists.length; i++) {
+                                            if (String(state.playlists[i].id) === state.currentId) {
+                                              p = state.playlists[i];
+                                              break;
+                                            }
+                                          }
+                                          if (p) select(p, isDesktop());
+                                          else msg("请选择一个歌单开始播放");
+                                        }
+                                      });
+                                    })(historyIds[j]);
+                                  }
+                                  if (pendingHistory === 0) {
+                                    state.playlists = mergePlaylistsUnique([
+                                      currentPlaylist,
+                                      userPlaylists,
+                                      defPlaylist,
+                                      alarmPlaylist,
+                                      historyPlaylists
+                                    ]);
+                                    renderLists();
+                                    for (i = 0; i < state.playlists.length; i++) {
+                                      if (String(state.playlists[i].id) === state.currentId) {
+                                        p = state.playlists[i];
+                                        break;
+                                      }
+                                    }
+                                    if (p) select(p, isDesktop());
+                                    else msg("请选择一个歌单开始播放");
+                                  }
+                                });
+                              } else {
+                                for (j = 0; j < historyIds.length; j++) {
+                                  pendingHistory++;
+                                  (function (hid) {
+                                    fetchPlaylistDetail(hid, function (pl4) {
+                                      if (pl4) historyPlaylists.push(pl4);
+                                      pendingHistory--;
+                                      if (pendingHistory === 0) {
+                                        state.playlists = mergePlaylistsUnique([
+                                          currentPlaylist,
+                                          userPlaylists,
+                                          defPlaylist,
+                                          alarmPlaylist,
+                                          historyPlaylists
+                                        ]);
+                                        renderLists();
+                                        for (i = 0; i < state.playlists.length; i++) {
+                                          if (String(state.playlists[i].id) === state.currentId) {
+                                            p = state.playlists[i];
+                                            break;
+                                          }
+                                        }
+                                        if (p) select(p, isDesktop());
+                                        else msg("请选择一个歌单开始播放");
+                                      }
+                                    });
+                                  })(historyIds[j]);
+                                }
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  for (i = 0; i < state.playlists.length; i++) {
+                                    if (String(state.playlists[i].id) === state.currentId) {
+                                      p = state.playlists[i];
+                                      break;
+                                    }
+                                  }
+                                  if (p) select(p, isDesktop());
+                                  else msg("请选择一个歌单开始播放");
+                                }
+                              }
+                            });
+                            return;
+                          }
+                        }
+                        if (defPlayListId) {
+                          fetchPlaylistDetail(defPlayListId, function (pl2) {
+                            if (pl2) defPlaylist = [pl2];
+                            if (nePlayListId) {
+                              fetchPlaylistDetail(nePlayListId, function (pl3) {
+                                if (pl3) alarmPlaylist = [pl3];
+                                for (j = 0; j < historyIds.length; j++) {
+                                  pendingHistory++;
+                                  (function (hid) {
+                                    fetchPlaylistDetail(hid, function (pl4) {
+                                      if (pl4) historyPlaylists.push(pl4);
+                                      pendingHistory--;
+                                      if (pendingHistory === 0) {
+                                        state.playlists = mergePlaylistsUnique([
+                                          currentPlaylist,
+                                          userPlaylists,
+                                          defPlaylist,
+                                          alarmPlaylist,
+                                          historyPlaylists
+                                        ]);
+                                        renderLists();
+                                        for (i = 0; i < state.playlists.length; i++) {
+                                          if (String(state.playlists[i].id) === state.currentId) {
+                                            p = state.playlists[i];
+                                            break;
+                                          }
+                                        }
+                                        if (p) select(p, isDesktop());
+                                        else msg("请选择一个歌单开始播放");
+                                      }
+                                    });
+                                  })(historyIds[j]);
+                                }
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  for (i = 0; i < state.playlists.length; i++) {
+                                    if (String(state.playlists[i].id) === state.currentId) {
+                                      p = state.playlists[i];
+                                      break;
+                                    }
+                                  }
+                                  if (p) select(p, isDesktop());
+                                  else msg("请选择一个歌单开始播放");
+                                }
+                              });
+                            } else {
+                              for (j = 0; j < historyIds.length; j++) {
+                                pendingHistory++;
+                                (function (hid) {
+                                  fetchPlaylistDetail(hid, function (pl4) {
+                                    if (pl4) historyPlaylists.push(pl4);
+                                    pendingHistory--;
+                                    if (pendingHistory === 0) {
+                                      state.playlists = mergePlaylistsUnique([
+                                        currentPlaylist,
+                                        userPlaylists,
+                                        defPlaylist,
+                                        alarmPlaylist,
+                                        historyPlaylists
+                                      ]);
+                                      renderLists();
+                                      for (i = 0; i < state.playlists.length; i++) {
+                                        if (String(state.playlists[i].id) === state.currentId) {
+                                          p = state.playlists[i];
+                                          break;
+                                        }
+                                      }
+                                      if (p) select(p, isDesktop());
+                                      else msg("请选择一个歌单开始播放");
+                                    }
+                                  });
+                                })(historyIds[j]);
+                              }
+                              if (pendingHistory === 0) {
+                                state.playlists = mergePlaylistsUnique([
+                                  currentPlaylist,
+                                  userPlaylists,
+                                  defPlaylist,
+                                  alarmPlaylist,
+                                  historyPlaylists
+                                ]);
+                                renderLists();
+                                for (i = 0; i < state.playlists.length; i++) {
+                                  if (String(state.playlists[i].id) === state.currentId) {
+                                    p = state.playlists[i];
+                                    break;
+                                  }
+                                }
+                                if (p) select(p, isDesktop());
+                                else msg("请选择一个歌单开始播放");
+                              }
+                            }
+                          });
+                        } else if (nePlayListId) {
+                          fetchPlaylistDetail(nePlayListId, function (pl3) {
+                            if (pl3) alarmPlaylist = [pl3];
+                            for (j = 0; j < historyIds.length; j++) {
+                              pendingHistory++;
+                              (function (hid) {
+                                fetchPlaylistDetail(hid, function (pl4) {
+                                  if (pl4) historyPlaylists.push(pl4);
+                                  pendingHistory--;
+                                  if (pendingHistory === 0) {
+                                    state.playlists = mergePlaylistsUnique([
+                                      currentPlaylist,
+                                      userPlaylists,
+                                      defPlaylist,
+                                      alarmPlaylist,
+                                      historyPlaylists
+                                    ]);
+                                    renderLists();
+                                    for (i = 0; i < state.playlists.length; i++) {
+                                      if (String(state.playlists[i].id) === state.currentId) {
+                                        p = state.playlists[i];
+                                        break;
+                                      }
+                                    }
+                                    if (p) select(p, isDesktop());
+                                    else msg("请选择一个歌单开始播放");
+                                  }
+                                });
+                              })(historyIds[j]);
+                            }
+                            if (pendingHistory === 0) {
+                              state.playlists = mergePlaylistsUnique([
+                                currentPlaylist,
+                                userPlaylists,
+                                defPlaylist,
+                                alarmPlaylist,
+                                historyPlaylists
+                              ]);
+                              renderLists();
+                              for (i = 0; i < state.playlists.length; i++) {
+                                if (String(state.playlists[i].id) === state.currentId) {
+                                  p = state.playlists[i];
+                                  break;
+                                }
+                              }
+                              if (p) select(p, isDesktop());
+                              else msg("请选择一个歌单开始播放");
+                            }
+                          });
+                        } else {
+                          for (j = 0; j < historyIds.length; j++) {
+                            pendingHistory++;
+                            (function (hid) {
+                              fetchPlaylistDetail(hid, function (pl4) {
+                                if (pl4) historyPlaylists.push(pl4);
+                                pendingHistory--;
+                                if (pendingHistory === 0) {
+                                  state.playlists = mergePlaylistsUnique([
+                                    currentPlaylist,
+                                    userPlaylists,
+                                    defPlaylist,
+                                    alarmPlaylist,
+                                    historyPlaylists
+                                  ]);
+                                  renderLists();
+                                  for (i = 0; i < state.playlists.length; i++) {
+                                    if (String(state.playlists[i].id) === state.currentId) {
+                                      p = state.playlists[i];
+                                      break;
+                                    }
+                                  }
+                                  if (p) select(p, isDesktop());
+                                  else msg("请选择一个歌单开始播放");
+                                }
+                              });
+                            })(historyIds[j]);
+                          }
+                          if (pendingHistory === 0) {
+                            state.playlists = mergePlaylistsUnique([
+                              currentPlaylist,
+                              userPlaylists,
+                              defPlaylist,
+                              alarmPlaylist,
+                              historyPlaylists
+                            ]);
+                            renderLists();
+                            for (i = 0; i < state.playlists.length; i++) {
+                              if (String(state.playlists[i].id) === state.currentId) {
+                                p = state.playlists[i];
+                                break;
+                              }
+                            }
+                            if (p) select(p, isDesktop());
+                            else msg("请选择一个歌单开始播放");
+                          }
+                        }
+                      },
+                      loadError
+                    );
                   },
                   loadError
                 );
