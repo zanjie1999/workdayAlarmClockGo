@@ -398,6 +398,7 @@
       var fullIdsFor = "";
       var defPlayListId = "";
       var nePlayListId = "";
+      var playingListId = "";
 
       function $(id) {
         return document.getElementById(id);
@@ -514,6 +515,27 @@
           localStorage.setItem("playlist_history", JSON.stringify(h));
         } catch (e) {}
       }
+      function getPlaylistCache(id) {
+        try {
+          var c = localStorage.getItem("playlist_cache_" + id);
+          return c ? JSON.parse(c) : null;
+        } catch (e) {
+          return null;
+        }
+      }
+      function setPlaylistCache(p) {
+        try {
+          localStorage.setItem(
+            "playlist_cache_" + p.id,
+            JSON.stringify({
+              id: String(p.id),
+              name: p.name || "未命名歌单",
+              coverImgUrl: p.coverImgUrl || "",
+              trackCount: p.trackCount || 0
+            })
+          );
+        } catch (e) {}
+      }
       function addClass(element, name) {
         if ((" " + element.className + " ").indexOf(" " + name + " ") < 0) {
           element.className += (element.className ? " " : "") + name;
@@ -621,6 +643,18 @@
           }
         );
       }
+      function idsFromTrackIds(rawIds) {
+        var ids = [];
+        var i;
+        var item;
+        if (!rawIds) return ids;
+        for (i = 0; i < rawIds.length; i++) {
+          item = rawIds[i];
+          if (item && item.id != null) ids.push(String(item.id));
+          else if (item != null && item !== "") ids.push(String(item));
+        }
+        return ids;
+      }
       function idsFromTracks(ts, start) {
         var ids = [];
         var i;
@@ -706,7 +740,6 @@
         state.currentId = String(p.id);
         state.trackIds = [];
         fullIdsFor = "";
-        renderLists();
         setHidden($("detailEmpty"), true);
         setHidden($("detailContent"), true);
         $("detailId").textContent = "歌单 ID: " + p.id;
@@ -726,12 +759,17 @@
               detail.trackCount != null
                 ? detail.trackCount
                 : detailTracks.length || p.trackCount;
+            setPlaylistCache(p);
+            if (String(p.id) === playingListId) addHistory(playingListId);
+            state.trackIds = idsFromTrackIds(detail.trackIds);
+            fullIdsFor = String(p.id);
             renderLists();
             image($("detailCover"), detail.coverImgUrl);
             $("detailName").textContent = detail.name || p.name;
             $("detailCount").textContent =
               "共 " + detailTracks.length + " 首歌曲";
             tracks(detailTracks);
+            bindFullTrackClicks();
             setHidden($("detailContent"), false);
             msg("歌单加载成功");
             if (showDetail) {
@@ -766,16 +804,24 @@
         return result;
       }
       function fetchPlaylistDetail(id, callback) {
+        var cached = getPlaylistCache(id);
+        if (cached) {
+          callback(cached);
+          return;
+        }
         json(
           "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(id),
           function (d) {
+            var info;
             if (d.code === 200 && d.playlist) {
-              callback({
+              info = {
                 id: String(id),
                 name: d.playlist.name || "未命名歌单",
                 coverImgUrl: d.playlist.coverImgUrl || "",
                 trackCount: d.playlist.trackCount || 0
-              });
+              };
+              setPlaylistCache(info);
+              callback(info);
             } else {
               callback(null);
             }
@@ -801,6 +847,7 @@
                 var i;
                 var p = null;
                 state.currentId = s.playListId || "";
+                playingListId = state.currentId;
                 state.nowId = s.nowId || "";
                 json(
                   "/neapi/user/info",
@@ -1596,18 +1643,9 @@
           "/neapi/v6/playlist/detail?n=99999&id=" +
             encodeURIComponent(selectedId),
           function (data) {
-            var rawIds =
-              data.playlist && data.playlist.trackIds
-                ? data.playlist.trackIds
-                : [];
-            var ids = [];
-            var i;
-            var item;
-            for (i = 0; i < rawIds.length; i++) {
-              item = rawIds[i];
-              if (item && item.id != null) ids.push(String(item.id));
-              else if (item != null && item !== "") ids.push(String(item));
-            }
+            var ids = idsFromTrackIds(
+              data.playlist ? data.playlist.trackIds : null
+            );
             if (!state.selected || String(state.selected.id) !== selectedId) {
               return;
             }
