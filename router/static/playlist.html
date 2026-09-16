@@ -9,7 +9,6 @@
       .music-shell {
         display: grid;
         grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
-        gap: 18px;
         min-height: 640px;
       }
       .library-panel,
@@ -19,6 +18,7 @@
         flex-direction: column;
       }
       .detail-panel {
+        margin-left: 18px;
         padding: 20px;
         background: #fff;
         border-radius: 8px;
@@ -54,10 +54,12 @@
       }
       .account-actions {
         display: flex;
-        gap: 6px;
       }
       .account-actions button {
         flex: 1;
+      }
+      .account-actions button + button {
+        margin-left: 6px;
       }
       .muted {
         color: #7f8c8d;
@@ -77,7 +79,6 @@
         width: 100%;
         display: flex;
         align-items: center;
-        gap: 10px;
         padding: 9px;
         border: 0;
         border-bottom: 1px solid #edf0f2;
@@ -97,6 +98,7 @@
         object-fit: cover;
         border-radius: 5px;
         background: #777777;
+        margin-right: 10px;
       }
       .playlist-meta,
       .track-info {
@@ -127,7 +129,6 @@
       .detail-header {
         display: flex;
         align-items: center;
-        gap: 16px;
         margin-bottom: 16px;
       }
       .detail-cover {
@@ -136,6 +137,7 @@
         object-fit: cover;
         border-radius: 7px;
         background: #777777;
+        margin-right: 16px;
       }
       .detail-title {
         min-width: 0;
@@ -163,7 +165,6 @@
       .track-row {
         display: flex;
         align-items: center;
-        gap: 10px;
         padding: 9px 12px;
         border-bottom: 1px solid #edf0f2;
       }
@@ -190,6 +191,7 @@
       }
       .track-info {
         flex: 1;
+        margin-left: 10px;
       }
       .empty-state {
         padding: 35px 18px;
@@ -215,6 +217,7 @@
           min-height: calc(100vh - 100px);
         }
         .detail-panel {
+          margin-left: 0;
           padding: 14px;
         }
         .playlist-list,
@@ -278,17 +281,18 @@
       .account {
         display: flex;
         align-items: center;
-        gap: 8px;
         flex-wrap: wrap;
       }
       .account > #accountLabel {
         flex: 1;
+        margin-right: 8px;
       }
       .account > #loginButton {
         margin-left: auto;
       }
       .account > #cookieEditor {
         width: 100%;
+        margin-top: 8px;
       }
       .playlist-item {
         border-radius: 6px;
@@ -330,7 +334,6 @@
       }
       .playing-mark {
         width: 0;
-        margin-right: -10px;
         overflow: visible;
       }
     </style>
