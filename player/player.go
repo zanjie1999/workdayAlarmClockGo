@@ -289,6 +289,8 @@ func Stop() {
 		cancelPlatformPlayback()
 		killUnixCmd()
 	}
+	// 默认 闹钟结束并且天气播放结束时结束闹钟
+	isStopAlarm := !IsAlarm && IsPlayWeather
 	if IsAlarm {
 		IsAlarm = false
 		IsPlayWeather = true
@@ -305,8 +307,14 @@ func Stop() {
 					Stop()
 				}
 			})
+			isStopAlarm = false
+		} else {
+			// 没有天气播报，直接结束闹钟
+			isStopAlarm = true
 		}
-	} else if IsPlayWeather {
+	}
+	// 真正的结束闹钟
+	if isStopAlarm {
 		IsPlayWeather = false
 		if conf.Cfg.MuteWhenStop {
 			SetVol("0")
@@ -490,7 +498,7 @@ func PlayAlarm() {
 // 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
 func downloadFile(url string, filename string) error {
 	var err error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		resp, e := httpme.GetStream(url)
 		if e != nil {
 			err = e
@@ -514,7 +522,7 @@ func downloadFile(url string, filename string) error {
 			os.Remove(filename)
 		}
 		log.Println("下载文件失败，重试中", err)
-		if i < 2 {
+		if i < 4 {
 			time.Sleep(time.Second * 10)
 		}
 	}
