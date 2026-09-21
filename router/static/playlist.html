@@ -402,10 +402,12 @@
         selected: null,
         trackIds: []
       };
-      var fullIdsFor = "";
       var defPlayListId = "";
       var nePlayListId = "";
       var playingListId = "";
+      var statusRefreshing = false;
+      var playlistDetails = {};
+      var playlistDetailWaiters = {};
 
       function $(id) {
         return document.getElementById(id);
@@ -628,10 +630,62 @@
         for (i = 0; i < rows.length; i++) callback(rows[i], i, rows);
       }
       function updatePlaying(id) {
-        state.nowId = String(id);
+        state.nowId = id == null ? "" : String(id);
         eachTrackRow(function (row) {
           toggleClass(row, "playing", row.getAttribute("data-id") === state.nowId);
         });
+      }
+      function refreshPlayingStatus() {
+        if (statusRefreshing) return;
+        statusRefreshing = true;
+        json(
+          "/status?t=" + new Date().getTime(),
+          function (s) {
+            statusRefreshing = false;
+            updatePlaying(s.nowId);
+          },
+          function () {
+            statusRefreshing = false;
+          }
+        );
+      }
+      function fetchPlaylistData(id, done, failed) {
+        var key = String(id);
+        var waiters;
+        failed = failed || function () {};
+        if (playlistDetails[key]) {
+          done(playlistDetails[key]);
+          return;
+        }
+        if (playlistDetailWaiters[key]) {
+          playlistDetailWaiters[key].push({ done: done, failed: failed });
+          return;
+        }
+        playlistDetailWaiters[key] = [{ done: done, failed: failed }];
+        json(
+          "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(key),
+          function (data) {
+            var i;
+            waiters = playlistDetailWaiters[key] || [];
+            delete playlistDetailWaiters[key];
+            if (data.code === 200 && data.playlist) {
+              playlistDetails[key] = data;
+              for (i = 0; i < waiters.length; i++) waiters[i].done(data);
+              return;
+            }
+            for (i = 0; i < waiters.length; i++) {
+              waiters[i].failed(
+                new Error(data.message || "歌单接口返回错误")
+              );
+            }
+          },
+          function (error) {
+            var i;
+            waiters = playlistDetailWaiters[key] || [];
+            delete playlistDetailWaiters[key];
+            for (i = 0; i < waiters.length; i++) waiters[i].failed(error);
+          }
+        );
       }
       function play(ids) {
         if (!ids.length || !state.selected) return;
@@ -746,18 +800,13 @@
         state.selected = p;
         state.currentId = String(p.id);
         state.trackIds = [];
-        fullIdsFor = "";
         setHidden($("detailEmpty"), true);
         setHidden($("detailContent"), true);
         $("detailId").textContent = "歌单 ID: " + p.id;
         msg("正在加载歌单……");
-        json(
-          "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(p.id),
+        fetchPlaylistData(
+          p.id,
           function (d) {
-            if (d.code !== 200 || !d.playlist) {
-              showSelectError(new Error(d.message || "歌单接口返回错误"));
-              return;
-            }
             detail = d.playlist;
             detailTracks = detail.tracks || [];
             p.name = detail.name || p.name;
@@ -769,7 +818,6 @@
             setPlaylistCache(p);
             if (String(p.id) === playingListId) addHistory(playingListId);
             state.trackIds = idsFromTrackIds(detail.trackIds);
-            fullIdsFor = String(p.id);
             renderLists();
             image($("detailCover"), detail.coverImgUrl);
             $("detailName").textContent = detail.name || p.name;
@@ -816,22 +864,18 @@
           callback(cached);
           return;
         }
-        json(
-          "/neapi/v6/playlist/detail?n=99999&id=" + encodeURIComponent(id),
+        fetchPlaylistData(
+          id,
           function (d) {
             var info;
-            if (d.code === 200 && d.playlist) {
-              info = {
-                id: String(id),
-                name: d.playlist.name || "未命名歌单",
-                coverImgUrl: d.playlist.coverImgUrl || "",
-                trackCount: d.playlist.trackCount || 0
-              };
-              setPlaylistCache(info);
-              callback(info);
-            } else {
-              callback(null);
-            }
+            info = {
+              id: String(id),
+              name: d.playlist.name || "未命名歌单",
+              coverImgUrl: d.playlist.coverImgUrl || "",
+              trackCount: d.playlist.trackCount || 0
+            };
+            setPlaylistCache(info);
+            callback(info);
           },
           function () {
             callback(null);
@@ -1640,29 +1684,6 @@
           play(ids);
         };
       }
-      function loadFullTrackIds() {
-        var selectedId;
-        if (!state.selected) return;
-        selectedId = String(state.selected.id);
-        if (fullIdsFor === selectedId) return;
-        fullIdsFor = selectedId;
-        json(
-          "/neapi/v6/playlist/detail?n=99999&id=" +
-            encodeURIComponent(selectedId),
-          function (data) {
-            var ids = idsFromTrackIds(
-              data.playlist ? data.playlist.trackIds : null
-            );
-            if (!state.selected || String(state.selected.id) !== selectedId) {
-              return;
-            }
-            state.trackIds = ids;
-            bindFullTrackClicks();
-          },
-          function () {}
-        );
-      }
-
       $("cookieInput").type = "text";
       $("loginButton").onclick = function () {
         var value = cv();
@@ -1694,7 +1715,7 @@
       };
       if (cv()) $("cookieInput").value = decodeCookie(cv());
       load();
-      setInterval(loadFullTrackIds, 300);
+      setInterval(refreshPlayingStatus, 60000);
     </script>
   </body>
 </html>
