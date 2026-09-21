@@ -531,6 +531,8 @@ printf '%s\n' \
 chmod +x /etc/init.d/S99workdayAlarmClock
 ```
 
+另外顺便提一下，更换 `/etc/alarm_res/res1/background1.png` 可以更换壁纸，因为是TN屏，建议使用亮色图片
+
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   
 Using this project is deemed to indicate that you have read and agreed to abide by [this LICENSE](https://github.com/zanjie1999/LICENSE)   
