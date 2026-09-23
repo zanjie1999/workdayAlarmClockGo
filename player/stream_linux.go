@@ -15,7 +15,7 @@ func playPCMStream(r io.Reader, rate, channels int) error {
 	}
 	cmd := exec.Command(ShellPlayer, "-q", "-t", "raw", "-f", "S16_LE",
 		"-c", strconv.Itoa(channels), "-r", strconv.Itoa(rate),
-		"-B", "100000", "-F", "20000")
+		"-B", "30000", "-F", "10000")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
