@@ -533,11 +533,6 @@ func Init(urlPrefix string) *gin.Engine {
 			self, err := os.Executable()
 			if err == nil {
 				err = syscall.Exec(self, os.Args, os.Environ())
-				if err == nil {
-					log.Println("重启成功")
-					c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>重启成功</h1>"+js2home))
-					return
-				}
 			}
 			log.Println("重启失败", err)
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>重启失败</h1>"+js2home))
