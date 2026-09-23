@@ -8,6 +8,7 @@ package router
 
 import (
 	"embed"
+	"errors"
 	"io"
 	"io/fs"
 	"log"
@@ -198,6 +199,48 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(s+js2home))
 	})
+
+	// 播放实时 PCM 流, 仅在 Linux 上可用
+	aplayStream := func(c *gin.Context) {
+		rate := 44100
+		channels := 2
+		format := c.DefaultQuery("format", "s16le")
+		if value := c.Query("rate"); value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rate"})
+				return
+			}
+			rate = parsed
+		}
+		if value := c.Query("channels"); value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channels"})
+				return
+			}
+			channels = parsed
+		}
+		if format != "s16le" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "only s16le is supported"})
+			return
+		}
+		if rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "rate must be 8000-192000 and channels 1-8"})
+			return
+		}
+		if err := player.PlayPCMStream(c.Request.Body, rate, channels); err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, player.ErrPCMStreamUnsupported) {
+				status = http.StatusNotImplemented
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+	root.POST("/aplay", aplayStream)
+	root.PUT("/aplay", aplayStream)
 
 	// 一键急停按钮 自动控制播放停止
 	root.GET("/1key", func(c *gin.Context) {
@@ -532,6 +575,7 @@ func Init(urlPrefix string) *gin.Engine {
 		} else {
 			self, err := os.Executable()
 			if err == nil {
+				os.Chmod(self, 0755)
 				err = syscall.Exec(self, os.Args, os.Environ())
 			}
 			log.Println("重启失败", err)

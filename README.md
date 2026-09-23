@@ -120,6 +120,14 @@ savepath 路径
 ip
 ```
 
+### Linux端作为电脑的音箱(就像AirPlay那样)
+Linux 上可以向 `/aplay` 发送原始 `s16le` PCM 音频，支持`POST`和`PUT`和`GET`。并用`aplay`播放。默认格式为44100Hz、双声道，也可通过 `rate` 和 `channels` 参数指定
+
+Windows运行（采集设备名按本机情况替换）：
+```cmd
+ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8080/aplay?rate=44100&channels=2"
+```
+
 ### 关于“上一首”按钮的特殊说明
 在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
 在有播放记录时，会播放上一首，再按一次播放设置的默认歌单，再按一次则随机播放  
