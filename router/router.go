@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
@@ -525,8 +526,15 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/restart", func(c *gin.Context) {
 		// 做不到的，因为要运行完这个方法才会返回
 		// c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
-		app.Send("RESTART")
-		os.Exit(0)
+		if conf.IsApp {
+			app.Send("RESTART")
+			os.Exit(0)
+		} else {
+			self, _ := os.Executable()
+			if err == nil {
+				syscall.Exec(self, os.Args, os.Environ())
+			}
+		}
 	})
 
 	// 自动停止

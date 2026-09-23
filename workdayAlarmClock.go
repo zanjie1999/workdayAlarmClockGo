@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "37.1"
+	VERSION  = "37.2"
 	lasthhmm = ""
 )
 
@@ -298,7 +298,7 @@ func main() {
 	timeJob()
 	go checkUpdate()
 	run := router.Init("/")
-	port := 8080
+	port := conf.Cfg.Port
 	ip, _ := app.GetLocalIP()
 	for {
 		conf.Port = fmt.Sprintf(":%d", port)
