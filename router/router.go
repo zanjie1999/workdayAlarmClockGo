@@ -208,6 +208,7 @@ func Init(urlPrefix string) *gin.Engine {
 		if value := c.Query("rate"); value != "" {
 			parsed, err := strconv.Atoi(value)
 			if err != nil {
+				log.Println("aplay: invalid rate")
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rate"})
 				return
 			}
@@ -216,16 +217,19 @@ func Init(urlPrefix string) *gin.Engine {
 		if value := c.Query("channels"); value != "" {
 			parsed, err := strconv.Atoi(value)
 			if err != nil {
+				log.Println("aplay: invalid channels")
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channels"})
 				return
 			}
 			channels = parsed
 		}
 		if format != "s16le" {
+			log.Println("aplay: unsupported format")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "only s16le is supported"})
 			return
 		}
 		if rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
+			log.Println("aplay: invalid rate or channels")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "rate must be 8000-192000 and channels 1-8"})
 			return
 		}
@@ -234,6 +238,7 @@ func Init(urlPrefix string) *gin.Engine {
 			if errors.Is(err, player.ErrPCMStreamUnsupported) {
 				status = http.StatusNotImplemented
 			}
+			log.Println("aplay: error playing PCM stream", err)
 			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
