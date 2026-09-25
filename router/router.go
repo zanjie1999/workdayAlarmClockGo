@@ -202,6 +202,13 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// 播放实时 PCM 流, 仅在 Linux 上可用
 	aplayStream := func(c *gin.Context) {
+		if conf.IsApp {
+			// 现在Android也可以用了,但端口不一样
+			url := "http://" + c.Request.Host + c.Request.URL.RequestURI()
+			url = strings.Replace(url, conf.Port, ":8880", 1)
+			c.Redirect(http.StatusFound, url)
+			return
+		}
 		rate := 44100
 		channels := 2
 		format := c.DefaultQuery("format", "s16le")
