@@ -123,7 +123,10 @@ ip
 ### Linux端作为电脑的音箱(就像AirPlay那样)
 Linux 上可以向 `/aplay` 发送原始 `s16le` PCM 音频，支持`POST`和`PUT`和`GET`。并用`aplay`播放。默认格式为44100Hz、双声道，也可通过 `rate` 和 `channels` 参数指定
 
-Windows运行（采集设备名按本机情况替换）：
+Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackPost)  
+延迟比雷鸟显示器的耳机孔延迟还低  
+
+或者用ffmpeg和curl（采集设备名按本机情况替换）：
 ```cmd
 ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8080/aplay?rate=44100&channels=2"
 ```
