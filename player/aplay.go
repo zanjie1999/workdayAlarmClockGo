@@ -446,6 +446,8 @@ func runTinyMixer(value string) error {
 		"Master",
 		"PCM",
 		"Speaker",
+		"DAC",
+		"Digital",
 	}
 	var lastErr error
 	for _, name := range preferred {
@@ -488,7 +490,7 @@ func commandOutputError(command string, err error, output []byte) error {
 
 func runAmixer(value string) error {
 	var lastErr error
-	for _, control := range []string{"Master", "PCM", "Speaker"} {
+	for _, control := range []string{"Master", "PCM", "Speaker", "DAC", "Digital"} {
 		if err := exec.Command("amixer", "-q", "sset", control, value).Run(); err == nil {
 			return nil
 		} else {
