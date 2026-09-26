@@ -180,6 +180,7 @@ func WorkDayApi() {
 					if smallWeekDate.Before(time.Now()) {
 						continue
 					}
+					yymmdd := smallWeekDate.Format("2006-01-02")
 					resp, err := req.Get("https://timor.tech/api/holiday/info/" + yymmdd)
 					if err == nil {
 						var j map[string]interface{}
