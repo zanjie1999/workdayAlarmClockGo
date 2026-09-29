@@ -21,6 +21,7 @@ import (
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
+	"workdayAlarmClock/display"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/weather"
 
@@ -80,6 +81,9 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// url prefix
 	root := r.Group(urlPrefix)
+
+	// fb0透传 用于Linux驱动显示器
+	display.RegisterFBRoutes(root)
 
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))

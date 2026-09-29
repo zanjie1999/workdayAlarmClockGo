@@ -131,6 +131,14 @@ Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackP
 ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8080/aplay?rate=44100&channels=2"
 ```
 
+### Linux端作为电脑的显示器
+其实就是把画面刷到fb0，简单粗暴，无需任何依赖就能直接显示，缺点是没有硬件加速，比较吃音箱CPU  
+只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
+比如用ffmpeg来捕获当前显示器，并显示到这个480x320的屏上:  
+```
+ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 15 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
+```
+
 ### 关于“上一首”按钮的特殊说明
 在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
 在有播放记录时，会播放上一首，再按一次播放设置的默认歌单，再按一次则随机播放  
