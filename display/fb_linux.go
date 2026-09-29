@@ -99,6 +99,9 @@ func readScreenInfo(file *os.File) (Info, fbVarScreeninfo, fbFixScreeninfo, erro
 }
 
 func detectFBFormat(v *fbVarScreeninfo) string {
+	if v.BitsPerPixel == 24 && v.Red.Offset == 16 && v.Red.Length == 8 && v.Green.Offset == 8 && v.Green.Length == 8 && v.Blue.Offset == 0 && v.Blue.Length == 8 {
+		return "bgr888"
+	}
 	if v.BitsPerPixel == 16 && v.Red.Offset == 11 && v.Red.Length == 5 && v.Green.Offset == 5 && v.Green.Length == 6 && v.Blue.Offset == 0 && v.Blue.Length == 5 {
 		return "rgb565"
 	}
@@ -147,7 +150,7 @@ func Open() (*Framebuffer, error) {
 		file.Close()
 		return nil, fmt.Errorf("unsupported framebuffer format: %s", info.Format)
 	}
-	if info.BitsPerPixel != 16 && info.BitsPerPixel != 32 {
+	if info.BitsPerPixel != 16 && info.BitsPerPixel != 24 && info.BitsPerPixel != 32 {
 		file.Close()
 		return nil, fmt.Errorf("unsupported framebuffer bpp: %d", info.BitsPerPixel)
 	}
@@ -238,21 +241,19 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 	}
 
 	backPage := 1 - fb.frontPage
+	if err := fb.writePage(img, backPage); err != nil {
+		return err
+	}
 
 	v := fb.varInfo
 	v.Yoffset = uint32(backPage) * fb.info.Height
 
-	// 先切到后台页
+	// 先写完后台页，再切换显示页，避免显示未完成的画面。
 	if err := fbIoctl(
 		fb.file.Fd(),
 		fbioPanDisplay,
 		unsafe.Pointer(&v),
 	); err != nil {
-		return err
-	}
-
-	// 写当前页
-	if err := fb.writePage(img, backPage); err != nil {
 		return err
 	}
 
@@ -284,9 +285,17 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 		return err
 	}
 
-	// fbdev 不保证 WriteAt(page offset) 可用
-	// 只写当前 yoffset 对应的窗口
-	return writeFull(fb.file, dst)
+	// Some fb drivers keep write state across frames on one descriptor. The
+	// original shell renderer reopens /dev/fb0 for every frame, so do the same.
+	writer, err := os.OpenFile(DevicePath, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open framebuffer for writing: %w", err)
+	}
+	defer writer.Close()
+	if _, err := writer.Seek(int64(page)*int64(frameSize), io.SeekStart); err != nil {
+		return fmt.Errorf("reset framebuffer write offset: %w", err)
+	}
+	return writeFull(writer, dst)
 }
 
 func writeFullAt(file *os.File, p []byte, offset int64) error {
@@ -331,12 +340,25 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		encode32(img, dst, width, height, stride, false)
 	case bpp == 32 && (format == "bgrx8888" || format == "bgra8888"):
 		encode32(img, dst, width, height, stride, true)
+	case bpp == 24 && format == "bgr888":
+		encode24(img, dst, width, height, stride)
 	case bpp == 16 && format == "rgb565":
 		encode16(img, dst, width, height, stride)
 	default:
 		return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
 	}
 	return nil
+}
+
+func encode24(img image.Image, dst []byte, width, height, stride int) {
+	for y := 0; y < height; y++ {
+		row := dst[y*stride:]
+		for x := 0; x < width; x++ {
+			r, g, b := rgbAt(img, x, y)
+			i := x * 3
+			row[i], row[i+1], row[i+2] = b, g, r
+		}
+	}
 }
 
 func encode32(img image.Image, dst []byte, width, height, stride int, rgbMemory bool) {
@@ -387,14 +409,41 @@ func rgbAt(img image.Image, x, y int) (uint8, uint8, uint8) {
 	}
 }
 
-var fbStreamMu sync.Mutex
+type fbStreamSession struct {
+	body io.ReadCloser
+	done chan struct{}
+}
+
+var (
+	fbStreamMu     sync.Mutex
+	activeFBStream *fbStreamSession
+)
+
+func replaceFBStream(body io.ReadCloser) *fbStreamSession {
+	session := &fbStreamSession{body: body, done: make(chan struct{})}
+	fbStreamMu.Lock()
+	old := activeFBStream
+	activeFBStream = session
+	fbStreamMu.Unlock()
+	if old != nil {
+		_ = old.body.Close()
+		<-old.done
+	}
+	return session
+}
+
+func finishFBStream(session *fbStreamSession) {
+	fbStreamMu.Lock()
+	if activeFBStream == session {
+		activeFBStream = nil
+	}
+	fbStreamMu.Unlock()
+	close(session.done)
+}
 
 func fbStream(c *gin.Context) {
-	if !fbStreamMu.TryLock() {
-		c.JSON(http.StatusConflict, gin.H{"error": "fb stream is already in use"})
-		return
-	}
-	defer fbStreamMu.Unlock()
+	session := replaceFBStream(c.Request.Body)
+	defer finishFBStream(session)
 
 	boundary, err := parseMJPEGBoundary(c.GetHeader("Content-Type"))
 	if err != nil {
