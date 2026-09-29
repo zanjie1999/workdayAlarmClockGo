@@ -136,7 +136,7 @@ ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acod
 只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
 比如用ffmpeg来捕获当前显示器，并显示到这个480x320的屏上:  
 ```
-ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 15 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
+ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 10 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
 ```
 比如AKU的屏128x160转90度
 ```

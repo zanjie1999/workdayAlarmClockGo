@@ -242,6 +242,18 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 
 	backPage := 1 - fb.frontPage
 	if err := fb.writePage(img, backPage); err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			// Some drivers expose two virtual pages but reject writes at the
+			// second page offset. Fall back to the single visible page.
+			fb.doubleBuffer = false
+			fb.info.DoubleBuffer = false
+			v := fb.varInfo
+			v.Yoffset = 0
+			_ = fbIoctl(fb.file.Fd(), fbioPanDisplay, unsafe.Pointer(&v))
+			fb.varInfo = v
+			fb.frontPage = 0
+			return fb.writePage(img, 0)
+		}
 		return err
 	}
 
