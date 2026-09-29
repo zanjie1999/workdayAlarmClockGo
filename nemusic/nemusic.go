@@ -195,8 +195,9 @@ func nextMusicSongURL(req *httpme.Request, id string, level string) (string, err
 		"Sec-Fetch-Site":  "same-site",
 	}
 
+	timestamp := time.Now().UnixMilli()
 	resp, err := req.PostJson("https://nextmusic.toubiec.cn/api/ip", nextMusicIPRequest{
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: timestamp,
 	}, headers)
 	if err != nil {
 		return "", fmt.Errorf("ip请求失败: %w", err)
@@ -219,7 +220,7 @@ func nextMusicSongURL(req *httpme.Request, id string, level string) (string, err
 	resp, err = req.PostJson("https://nextmusic.toubiec.cn/api/getSongUrl", nextMusicSongRequest{
 		ID:        id,
 		Level:     level,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: timestamp,
 		IP:        ipResponse.Data.IP,
 	}, headers)
 	if err != nil {
