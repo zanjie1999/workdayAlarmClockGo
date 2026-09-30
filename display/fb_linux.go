@@ -5,6 +5,7 @@ package display
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -219,6 +220,14 @@ func (fb *Framebuffer) Close() error {
 }
 
 func (fb *Framebuffer) StreamJPEG(body io.Reader, boundary string) (StreamStats, error) {
+	return fb.StreamJPEGContext(context.Background(), body, boundary)
+}
+
+// StreamJPEGContext stops consuming and displaying frames as soon as the
+// owning HTTP request or stream session is cancelled. Multipart readers can
+// still have buffered input after the peer disconnects, so checking only read
+// errors is not sufficient here.
+func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, boundary string) (StreamStats, error) {
 	if boundary == "" {
 		return StreamStats{}, errors.New("missing multipart boundary")
 	}
@@ -226,6 +235,9 @@ func (fb *Framebuffer) StreamJPEG(body io.Reader, boundary string) (StreamStats,
 	var stats StreamStats
 	var jpegBuf bytes.Buffer
 	for {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
 		part, err := reader.NextPart()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -256,10 +268,16 @@ func (fb *Framebuffer) StreamJPEG(body io.Reader, boundary string) (StreamStats,
 		if err != nil {
 			return stats, fmt.Errorf("decode JPEG: %w", err)
 		}
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
 		bounds := img.Bounds()
 		if bounds.Dx() != int(fb.info.Width) ||
 			bounds.Dy() != int(fb.info.Height) {
 			return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
+		}
+		if err := ctx.Err(); err != nil {
+			return stats, err
 		}
 		if err := fb.writeImage(img); err != nil {
 			return stats, fmt.Errorf("write framebuffer: %w", err)
@@ -580,6 +598,15 @@ func finishFBStream(session *fbStreamSession) {
 func fbStream(c *gin.Context) {
 	session := replaceFBStream(c.Request.Body)
 	defer finishFBStream(session)
+	streamCtx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	go func() {
+		select {
+		case <-session.done:
+			cancel()
+		case <-streamCtx.Done():
+		}
+	}()
 
 	boundary, err := parseMJPEGBoundary(c.GetHeader("Content-Type"))
 	if err != nil {
@@ -599,8 +626,11 @@ func fbStream(c *gin.Context) {
 	}
 	defer fb.Close()
 
-	stats, err := fb.StreamJPEG(c.Request.Body, boundary)
+	stats, err := fb.StreamJPEGContext(streamCtx, c.Request.Body, boundary)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		if stats.Frames == 0 {
 			fmt.Println("fbStream Error", err.Error())
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
