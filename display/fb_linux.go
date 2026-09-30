@@ -583,6 +583,7 @@ func fbStream(c *gin.Context) {
 
 	boundary, err := parseMJPEGBoundary(c.GetHeader("Content-Type"))
 	if err != nil {
+		fmt.Println("fbStream Error", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -592,6 +593,7 @@ func fbStream(c *gin.Context) {
 		if errors.Is(err, ErrUnsupported) {
 			status = http.StatusNotImplemented
 		}
+		fmt.Println("fbStream Error", err.Error())
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
@@ -600,8 +602,10 @@ func fbStream(c *gin.Context) {
 	stats, err := fb.StreamJPEG(c.Request.Body, boundary)
 	if err != nil {
 		if stats.Frames == 0 {
+			fmt.Println("fbStream Error", err.Error())
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		} else {
+			fmt.Println("fbStream Error", err.Error(), "frames", stats.Frames, "jpeg_bytes", stats.JPEGBytes)
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "frames": stats.Frames, "jpeg_bytes": stats.JPEGBytes})
 		}
 		return
