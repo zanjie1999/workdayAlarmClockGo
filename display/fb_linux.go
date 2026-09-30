@@ -16,9 +16,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"sync"
 	"syscall"
 	"unsafe"
+	"workdayAlarmClock/player"
 
 	"github.com/gin-gonic/gin"
 )
@@ -319,7 +321,13 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 	if _, err := writer.Seek(int64(page)*int64(frameSize), io.SeekStart); err != nil {
 		return fmt.Errorf("reset framebuffer write offset: %w", err)
 	}
-	return writeFull(writer, dst)
+	if err := writeFull(writer, dst); err != nil {
+		return err
+	}
+	if player.ShellPlayer == "kindle" {
+		return exec.Command("/usr/sbin/eips", "").Run()
+	}
+	return nil
 }
 
 func writeFullAt(file *os.File, p []byte, offset int64) error {

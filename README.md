@@ -142,6 +142,10 @@ ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 10 -fflags nobuffer -i des
 ```
 ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 30 -fflags nobuffer -i desktop -vf "scale=160:128:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=160:128:(ow-iw)/2:(oh-ih)/2:black,transpose=2" -q:v 8 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.144/fb"
 ```
+比如Kindle Voyage等高分屏机器
+```
+ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 1 -fflags nobuffer -i desktop -vf "transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
+```
 
 ### 关于“上一首”按钮的特殊说明
 在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
