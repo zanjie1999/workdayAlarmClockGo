@@ -208,6 +208,20 @@ func (fb *Framebuffer) Close() error {
 	if fb.file == nil {
 		return nil
 	}
+
+	// If we were using page flipping, always leave the framebuffer on page 0.
+	// Some drivers keep the last Yoffset after the writer exits, which makes the
+	// next user of /dev/fb0 appear to start from an empty/old page.
+	if fb.doubleBuffer {
+		v := fb.varInfo
+		v.Yoffset = 0
+		if err := fbIoctl(fb.file.Fd(), fbioPanDisplay, unsafe.Pointer(&v)); err != nil {
+			log.Printf("framebuffer: restore first page on close failed: %v", err)
+		}
+		fb.varInfo = v
+		fb.frontPage = 0
+	}
+
 	if fb.mapped != nil {
 		_ = syscall.Munmap(fb.mapped)
 		fb.mapped = nil
@@ -443,6 +457,16 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 	}
 	if fb.pageMode[page] == pageModeUnknown {
 		fb.pageMode[page] = fb.probePage(page)
+	}
+
+	// A few framebuffer drivers expose enough memory for mmap but do not treat
+	// writes through the mapped pointer as a complete framebuffer update. They
+	// may update small regions or delay dirty tracking for a very long time.
+	// For single-buffer mode prefer the tested write(2) path so the whole frame
+	// is committed in one operation. Double buffering can still use mmap because
+	// it writes a hidden page and flips it atomically.
+	if !fb.doubleBuffer && fb.pageMode[page] == pageModeMmap {
+		fb.pageMode[page] = pageModeWrite
 	}
 
 	var dst []byte
