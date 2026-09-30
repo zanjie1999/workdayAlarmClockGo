@@ -99,6 +99,18 @@ func readScreenInfo(file *os.File) (Info, fbVarScreeninfo, fbFixScreeninfo, erro
 }
 
 func detectFBFormat(v *fbVarScreeninfo) string {
+	// Some grayscale/e-ink framebuffers expose one 8-bit pixel while
+	// reporting identical RGB bitfields. Treat that layout as gray8.
+	if v.BitsPerPixel == 8 &&
+		v.Red.Offset == 0 && v.Red.Length == 8 &&
+		v.Green.Offset == 0 && v.Green.Length == 8 &&
+		v.Blue.Offset == 0 && v.Blue.Length == 8 &&
+		v.Transp.Length == 0 {
+		return "gray8"
+	}
+	if v.BitsPerPixel == 8 && v.Grayscale != 0 {
+		return "gray8"
+	}
 	if v.BitsPerPixel == 24 && v.Red.Offset == 16 && v.Red.Length == 8 && v.Green.Offset == 8 && v.Green.Length == 8 && v.Blue.Offset == 0 && v.Blue.Length == 8 {
 		return "bgr888"
 	}
@@ -150,7 +162,7 @@ func Open() (*Framebuffer, error) {
 		file.Close()
 		return nil, fmt.Errorf("unsupported framebuffer format: %s", info.Format)
 	}
-	if info.BitsPerPixel != 16 && info.BitsPerPixel != 24 && info.BitsPerPixel != 32 {
+	if info.BitsPerPixel != 8 && info.BitsPerPixel != 16 && info.BitsPerPixel != 24 && info.BitsPerPixel != 32 {
 		file.Close()
 		return nil, fmt.Errorf("unsupported framebuffer bpp: %d", info.BitsPerPixel)
 	}
@@ -348,6 +360,8 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		return errors.New("invalid framebuffer dimensions")
 	}
 	switch {
+	case bpp == 8 && format == "gray8":
+		encode8(img, dst, width, height, stride)
 	case bpp == 32 && (format == "xrgb8888" || format == "argb8888"):
 		encode32(img, dst, width, height, stride, false)
 	case bpp == 32 && (format == "bgrx8888" || format == "bgra8888"):
@@ -360,6 +374,44 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
 	}
 	return nil
+}
+
+func encode8(img image.Image, dst []byte, width, height, stride int) {
+	bounds := img.Bounds()
+	minX, minY := bounds.Min.X, bounds.Min.Y
+
+	for y := 0; y < height; y++ {
+		row := dst[y*stride:]
+		for x := 0; x < width; x++ {
+			row[x] = grayAt(img, x+minX, y+minY)
+		}
+	}
+}
+
+func grayAt(img image.Image, x, y int) uint8 {
+	switch src := img.(type) {
+	case *image.YCbCr:
+		// JPEG 解码通常直接得到 YCbCr，Y 平面就是亮度分量，避免 RGB 往返。
+		i := src.YOffset(x, y)
+		return src.Y[i]
+	case *image.Gray:
+		return src.GrayAt(x, y).Y
+	case *image.Gray16:
+		return uint8(src.Gray16At(x, y).Y >> 8)
+	case *image.RGBA:
+		i := src.PixOffset(x, y)
+		return rgbToGray(src.Pix[i], src.Pix[i+1], src.Pix[i+2])
+	case *image.NRGBA:
+		i := src.PixOffset(x, y)
+		return rgbToGray(src.Pix[i], src.Pix[i+1], src.Pix[i+2])
+	default:
+		r, g, b, _ := img.At(x, y).RGBA()
+		return rgbToGray(uint8(r>>8), uint8(g>>8), uint8(b>>8))
+	}
+}
+
+func rgbToGray(r, g, b uint8) uint8 {
+	return uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b) + 500) / 1000)
 }
 
 func encode24(img image.Image, dst []byte, width, height, stride int) {
