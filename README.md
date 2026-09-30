@@ -134,7 +134,14 @@ ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acod
 ### Linux端作为电脑的显示器
 其实就是把画面刷到fb0，简单粗暴，无需任何依赖就能直接显示，缺点是没有硬件加速，比较吃音箱CPU，支持双缓冲，小分辨率下丝滑  
 只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
-比如用ffmpeg来捕获当前显示器，并显示到这个480x320的屏上:  
+
+Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
+无需计算再手动计算分辨率，延迟更低（本来还有虚拟显示器的设计但又懒得写了，你可以自己用lddDisplay虚拟一个）  
+
+<details>
+<summary>或者用ffmpeg和curl</summary>
+    
+比如任你说音箱这个480x320的屏:  
 ```
 ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 10 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
 ```
@@ -147,6 +154,8 @@ ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 30 -fflags nobuffer -i des
 ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 1 -fflags nobuffer -i desktop -vf "transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
 ```
 
+</details>
+    
 ### 关于“上一首”按钮的特殊说明
 在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
 在有播放记录时，会播放上一首，再按一次播放设置的默认歌单，再按一次则随机播放  
