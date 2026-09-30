@@ -61,9 +61,17 @@ type Framebuffer struct {
 	info         Info
 	varInfo      fbVarScreeninfo
 	writeBuffer  []byte
+	mapped       []byte
+	pageMode     [2]uint8 // 0 unknown, 1 stream write, 2 mmap
 	frontPage    int
 	doubleBuffer bool
 }
+
+const (
+	pageModeUnknown = iota
+	pageModeWrite
+	pageModeMmap
+)
 
 func fbIoctl(fd uintptr, cmd uintptr, arg unsafe.Pointer) error {
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, cmd, uintptr(arg))
@@ -170,6 +178,14 @@ func Open() (*Framebuffer, error) {
 	}
 	fb := &Framebuffer{file: file, info: info, varInfo: v}
 	fb.writeBuffer = make([]byte, int(info.FrameSize))
+	if info.MemorySize > 0 {
+		mapped, mapErr := syscall.Mmap(int(file.Fd()), 0, int(info.MemorySize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if mapErr == nil {
+			fb.mapped = mapped
+		} else {
+			log.Printf("framebuffer: mmap unavailable, using stream writes: %v", mapErr)
+		}
+	}
 	if uint64(info.MemorySize) >= info.FrameSize*2 && uint64(info.HeightVirtual) >= uint64(info.Height)*2 {
 		page := 0
 		if info.Height > 0 && v.Yoffset >= info.Height {
@@ -192,6 +208,10 @@ func Open() (*Framebuffer, error) {
 func (fb *Framebuffer) Close() error {
 	if fb.file == nil {
 		return nil
+	}
+	if fb.mapped != nil {
+		_ = syscall.Munmap(fb.mapped)
+		fb.mapped = nil
 	}
 	err := fb.file.Close()
 	fb.file = nil
@@ -291,10 +311,27 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 
 func (fb *Framebuffer) writePage(img image.Image, page int) error {
 	frameSize := int(fb.info.FrameSize)
+	if page < 0 || page >= len(fb.pageMode) {
+		return errors.New("invalid framebuffer page")
+	}
+	if fb.pageMode[page] == pageModeUnknown {
+		fb.pageMode[page] = fb.probePage(page)
+	}
 
-	dst := fb.writeBuffer
-	if len(dst) != frameSize {
-		return errors.New("invalid framebuffer buffer")
+	var dst []byte
+	if fb.pageMode[page] == pageModeMmap {
+		offset := page * frameSize
+		if offset < 0 || offset+frameSize > len(fb.mapped) {
+			fb.pageMode[page] = pageModeWrite
+		} else {
+			dst = fb.mapped[offset : offset+frameSize]
+		}
+	}
+	if dst == nil {
+		dst = fb.writeBuffer
+		if len(dst) != frameSize {
+			return errors.New("invalid framebuffer buffer")
+		}
 	}
 
 	clear(dst)
@@ -309,6 +346,13 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 		fb.info.Format,
 	); err != nil {
 		return err
+	}
+
+	if fb.pageMode[page] == pageModeMmap {
+		if player.ShellPlayer == "kindle" {
+			return exec.Command("/usr/sbin/eips", "").Run()
+		}
+		return nil
 	}
 
 	// Some fb drivers keep write state across frames on one descriptor. The
@@ -328,6 +372,26 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 		return exec.Command("/usr/sbin/eips", "").Run()
 	}
 	return nil
+}
+
+// probePage uses the established write path to verify that this page can be
+// addressed before enabling mmap. Some drivers advertise two virtual pages
+// but reject writes to the second page with ENOSPC.
+func (fb *Framebuffer) probePage(page int) uint8 {
+	if len(fb.mapped) == 0 {
+		return pageModeWrite
+	}
+	offset := int64(page) * int64(fb.info.FrameSize)
+	writer, err := os.OpenFile(DevicePath, os.O_WRONLY, 0)
+	if err != nil {
+		return pageModeWrite
+	}
+	defer writer.Close()
+	if _, err = writer.WriteAt([]byte{0}, offset); err != nil {
+		log.Printf("framebuffer: page %d stream probe failed, keeping stream writes: %v", page, err)
+		return pageModeWrite
+	}
+	return pageModeMmap
 }
 
 func writeFullAt(file *os.File, p []byte, offset int64) error {
