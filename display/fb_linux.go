@@ -3,13 +3,11 @@
 package display
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 	"image/jpeg"
 	"io"
 	"log"
@@ -219,71 +217,182 @@ func (fb *Framebuffer) Close() error {
 	return err
 }
 
-func (fb *Framebuffer) StreamJPEG(body io.Reader, boundary string) (StreamStats, error) {
-	return fb.StreamJPEGContext(context.Background(), body, boundary)
+type jpegFrame struct {
+	buf bytes.Buffer
 }
 
-// StreamJPEGContext stops consuming and displaying frames as soon as the
-// owning HTTP request or stream session is cancelled. Multipart readers can
-// still have buffered input after the peer disconnects, so checking only read
-// errors is not sufficient here.
-func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, boundary string) (StreamStats, error) {
-	if boundary == "" {
-		return StreamStats{}, errors.New("missing multipart boundary")
+var jpegFramePool sync.Pool
+
+const maxPooledJPEGBuffer = 256 << 10
+
+func acquireJPEGFrame() *jpegFrame {
+	if value := jpegFramePool.Get(); value != nil {
+		frame := value.(*jpegFrame)
+		frame.buf.Reset()
+		return frame
 	}
-	reader := multipart.NewReader(bufio.NewReaderSize(body, 32<<10), boundary)
-	var stats StreamStats
-	var jpegBuf bytes.Buffer
+	frame := &jpegFrame{}
+	frame.buf.Grow(16 << 10)
+	return frame
+}
+
+func releaseJPEGFrame(frame *jpegFrame) {
+	if frame == nil {
+		return
+	}
+	// Keep the pool bounded so an occasional large JPEG does not retain an
+	// 8 MiB backing array for the lifetime of the process.
+	if frame.buf.Cap() > maxPooledJPEGBuffer {
+		frame.buf = bytes.Buffer{}
+	} else {
+		frame.buf.Reset()
+	}
+	jpegFramePool.Put(frame)
+}
+
+// publishLatestFrame keeps at most one unread frame. For screen mirroring,
+// stale frames are latency, not useful work.
+func publishLatestFrame(ch chan *jpegFrame, frame *jpegFrame) {
+	select {
+	case ch <- frame:
+		return
+	default:
+	}
+
+	// There is already a frame waiting for the renderer. Replace it with the
+	// newest one instead of blocking the network reader.
+	select {
+	case old := <-ch:
+		releaseJPEGFrame(old)
+	default:
+	}
+
+	select {
+	case ch <- frame:
+	default:
+		releaseJPEGFrame(frame)
+	}
+}
+
+func readJPEGFrames(ctx context.Context, body io.Reader, boundary string, latest chan *jpegFrame) error {
+	if boundary == "" {
+		return errors.New("missing multipart boundary")
+	}
+
+	reader := multipart.NewReader(body, boundary)
 	for {
 		if err := ctx.Err(); err != nil {
-			return stats, err
+			return err
 		}
+
 		part, err := reader.NextPart()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if stats.Frames == 0 {
-					return stats, errors.New("empty MJPEG stream")
-				}
-				return stats, nil
+				return nil
 			}
-			return stats, fmt.Errorf("read MJPEG part: %w", err)
+			return fmt.Errorf("read MJPEG part: %w", err)
 		}
+
 		if part.FormName() != "" {
 			continue
 		}
+
 		contentType := part.Header.Get("Content-Type")
 		if contentType != "" && contentType != "image/jpeg" {
 			_, _ = io.Copy(io.Discard, part)
 			continue
 		}
-		jpegBuf.Reset()
-		n, err := io.Copy(&jpegBuf, io.LimitReader(part, maxJPEGFrameSize+1))
+
+		frame := acquireJPEGFrame()
+		n, err := io.Copy(&frame.buf, io.LimitReader(part, maxJPEGFrameSize+1))
 		if err != nil {
-			return stats, fmt.Errorf("read JPEG frame: %w", err)
+			releaseJPEGFrame(frame)
+			return fmt.Errorf("read JPEG frame: %w", err)
 		}
 		if n > maxJPEGFrameSize {
-			return stats, fmt.Errorf("JPEG frame is too large: %d bytes", n)
+			releaseJPEGFrame(frame)
+			return fmt.Errorf("JPEG frame is too large: %d bytes", n)
 		}
-		img, err := jpeg.Decode(bytes.NewReader(jpegBuf.Bytes()))
-		if err != nil {
-			return stats, fmt.Errorf("decode JPEG: %w", err)
+
+		publishLatestFrame(latest, frame)
+	}
+}
+
+// StreamJPEGContext separates network ingestion from JPEG decode/framebuffer
+// rendering. The reader keeps consuming the MJPEG stream while the renderer
+// works; only the newest unread frame is retained.
+func (fb *Framebuffer) StreamJPEG(body io.Reader, boundary string) (StreamStats, error) {
+	return fb.StreamJPEGContext(context.Background(), body, boundary)
+}
+
+func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, boundary string) (StreamStats, error) {
+	if boundary == "" {
+		return StreamStats{}, errors.New("missing multipart boundary")
+	}
+
+	latest := make(chan *jpegFrame, 1)
+	readerResult := make(chan error, 1)
+
+	go func() {
+		err := readJPEGFrames(ctx, body, boundary, latest)
+		readerResult <- err
+		close(latest)
+	}()
+
+	// Explicitly close the request body on cancellation so replacing an active
+	// stream can unblock the multipart reader promptly.
+	stopCloseWatcher := make(chan struct{})
+	if closer, ok := body.(io.Closer); ok {
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = closer.Close()
+			case <-stopCloseWatcher:
+			}
+		}()
+	}
+	defer close(stopCloseWatcher)
+
+	var stats StreamStats
+	for {
+		select {
+		case <-ctx.Done():
+			return stats, ctx.Err()
+
+		case frame, ok := <-latest:
+			if !ok {
+				if err := <-readerResult; err != nil {
+					return stats, err
+				}
+				if stats.Frames == 0 {
+					return stats, errors.New("empty MJPEG stream")
+				}
+				return stats, nil
+			}
+
+			frameBytes := uint64(frame.buf.Len())
+			img, err := jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))
+			releaseJPEGFrame(frame)
+			if err != nil {
+				return stats, fmt.Errorf("decode JPEG: %w", err)
+			}
+
+			if err := ctx.Err(); err != nil {
+				return stats, err
+			}
+
+			bounds := img.Bounds()
+			if bounds.Dx() != int(fb.info.Width) ||
+				bounds.Dy() != int(fb.info.Height) {
+				return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
+			}
+
+			if err := fb.writeImage(img); err != nil {
+				return stats, fmt.Errorf("write framebuffer: %w", err)
+			}
+			stats.Frames++
+			stats.JPEGBytes += frameBytes
 		}
-		if err := ctx.Err(); err != nil {
-			return stats, err
-		}
-		bounds := img.Bounds()
-		if bounds.Dx() != int(fb.info.Width) ||
-			bounds.Dy() != int(fb.info.Height) {
-			return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
-		}
-		if err := ctx.Err(); err != nil {
-			return stats, err
-		}
-		if err := fb.writeImage(img); err != nil {
-			return stats, fmt.Errorf("write framebuffer: %w", err)
-		}
-		stats.Frames++
-		stats.JPEGBytes += uint64(n)
 	}
 }
 
@@ -351,8 +460,6 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 			return errors.New("invalid framebuffer buffer")
 		}
 	}
-
-	clear(dst)
 
 	if err := encodeImage(
 		img,
@@ -449,6 +556,28 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 	if width <= 0 || height <= 0 || stride <= 0 {
 		return errors.New("invalid framebuffer dimensions")
 	}
+
+	// jpeg.Decode returns *image.YCbCr for JPEG input. Keep this path separate
+	// from the generic image.Image path so the inner pixel loop never performs
+	// an interface type switch or calls img.At.
+	if src, ok := img.(*image.YCbCr); ok {
+		switch {
+		case bpp == 8 && format == "gray8":
+			encodeYCbCr8(src, dst, width, height, stride)
+		case bpp == 32 && (format == "xrgb8888" || format == "argb8888"):
+			encodeYCbCr32(src, dst, width, height, stride, false)
+		case bpp == 32 && (format == "bgrx8888" || format == "bgra8888"):
+			encodeYCbCr32(src, dst, width, height, stride, true)
+		case bpp == 24 && format == "bgr888":
+			encodeYCbCr24(src, dst, width, height, stride)
+		case bpp == 16 && format == "rgb565":
+			encodeYCbCr16(src, dst, width, height, stride)
+		default:
+			return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
+		}
+		return nil
+	}
+
 	switch {
 	case bpp == 8 && format == "gray8":
 		encode8(img, dst, width, height, stride)
@@ -466,6 +595,139 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 	return nil
 }
 
+func encodeYCbCr8(src *image.YCbCr, dst []byte, width, height, stride int) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	for y := 0; y < height; y++ {
+		yi := src.YOffset(minX, y+minY)
+		copy(dst[y*stride:y*stride+width], src.Y[yi:yi+width])
+	}
+}
+
+// ycbcrHorizontalStep returns the number of luma pixels represented by one
+// chroma sample. Vertical subsampling is handled by COffset once per row.
+func ycbcrHorizontalStep(ratio image.YCbCrSubsampleRatio) int {
+	switch ratio {
+	case image.YCbCrSubsampleRatio422, image.YCbCrSubsampleRatio420:
+		return 2
+	case image.YCbCrSubsampleRatio411, image.YCbCrSubsampleRatio410:
+		return 4
+	default:
+		return 1
+	}
+}
+
+// ycbcrToRGBFast is the same integer conversion used by image/color, kept
+// local so the compiler can inline it directly into the framebuffer loops.
+func ycbcrToRGBFast(y, cb, cr uint8) (uint8, uint8, uint8) {
+	yy1 := int32(y) * 0x10101
+	cb1 := int32(cb) - 128
+	cr1 := int32(cr) - 128
+
+	r := yy1 + 91881*cr1
+	if uint32(r)&0xff000000 == 0 {
+		r >>= 16
+	} else {
+		r = ^(r >> 31)
+	}
+
+	g := yy1 - 22554*cb1 - 46802*cr1
+	if uint32(g)&0xff000000 == 0 {
+		g >>= 16
+	} else {
+		g = ^(g >> 31)
+	}
+
+	b := yy1 + 116130*cb1
+	if uint32(b)&0xff000000 == 0 {
+		b >>= 16
+	} else {
+		b = ^(b >> 31)
+	}
+
+	return uint8(r), uint8(g), uint8(b)
+}
+
+func encodeYCbCr24(src *image.YCbCr, dst []byte, width, height, stride int) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
+
+	for y := 0; y < height; y++ {
+		absY := y + minY
+		yi := src.YOffset(minX, absY)
+		ci := src.COffset(minX, absY)
+		yRow := src.Y[yi : yi+width]
+		row := dst[y*stride : y*stride+width*3]
+		chromaIndex := ci
+		absX := minX
+
+		for x := 0; x < width; x, absX = x+1, absX+1 {
+			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
+			i := x * 3
+			row[i], row[i+1], row[i+2] = b, g, r
+
+			if chromaStep == 1 || (absX+1)%chromaStep == 0 {
+				chromaIndex++
+			}
+		}
+	}
+}
+
+func encodeYCbCr32(src *image.YCbCr, dst []byte, width, height, stride int, rgbMemory bool) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
+
+	for y := 0; y < height; y++ {
+		absY := y + minY
+		yi := src.YOffset(minX, absY)
+		ci := src.COffset(minX, absY)
+		yRow := src.Y[yi : yi+width]
+		row := dst[y*stride : y*stride+width*4]
+		chromaIndex := ci
+		absX := minX
+
+		for x := 0; x < width; x, absX = x+1, absX+1 {
+			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
+			i := x * 4
+			if rgbMemory {
+				row[i], row[i+1], row[i+2] = r, g, b
+			} else {
+				row[i], row[i+1], row[i+2] = b, g, r
+			}
+			row[i+3] = 0xff
+
+			if chromaStep == 1 || (absX+1)%chromaStep == 0 {
+				chromaIndex++
+			}
+		}
+	}
+}
+
+func encodeYCbCr16(src *image.YCbCr, dst []byte, width, height, stride int) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
+
+	for y := 0; y < height; y++ {
+		absY := y + minY
+		yi := src.YOffset(minX, absY)
+		ci := src.COffset(minX, absY)
+		yRow := src.Y[yi : yi+width]
+		row := dst[y*stride : y*stride+width*2]
+		chromaIndex := ci
+		absX := minX
+
+		for x := 0; x < width; x, absX = x+1, absX+1 {
+			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
+			v := uint16(r>>3)<<11 | uint16(g>>2)<<5 | uint16(b>>3)
+			i := x * 2
+			row[i], row[i+1] = byte(v), byte(v>>8)
+
+			if chromaStep == 1 || (absX+1)%chromaStep == 0 {
+				chromaIndex++
+			}
+		}
+	}
+}
+
 func encode8(img image.Image, dst []byte, width, height, stride int) {
 	bounds := img.Bounds()
 	minX, minY := bounds.Min.X, bounds.Min.Y
@@ -481,7 +743,6 @@ func encode8(img image.Image, dst []byte, width, height, stride int) {
 func grayAt(img image.Image, x, y int) uint8 {
 	switch src := img.(type) {
 	case *image.YCbCr:
-		// JPEG 解码通常直接得到 YCbCr，Y 平面就是亮度分量，避免 RGB 往返。
 		i := src.YOffset(x, y)
 		return src.Y[i]
 	case *image.Gray:
@@ -530,6 +791,7 @@ func encode32(img image.Image, dst []byte, width, height, stride int, rgbMemory 
 		}
 	}
 }
+
 func encode16(img image.Image, dst []byte, width, height, stride int) {
 	for y := 0; y < height; y++ {
 		row := dst[y*stride:]
@@ -541,13 +803,13 @@ func encode16(img image.Image, dst []byte, width, height, stride int) {
 		}
 	}
 }
+
 func rgbAt(img image.Image, x, y int) (uint8, uint8, uint8) {
 	switch src := img.(type) {
 	case *image.YCbCr:
 		yi := src.YOffset(x+src.Rect.Min.X, y+src.Rect.Min.Y)
 		ci := src.COffset(x+src.Rect.Min.X, y+src.Rect.Min.Y)
-		r, g, b := color.YCbCrToRGB(src.Y[yi], src.Cb[ci], src.Cr[ci])
-		return r, g, b
+		return ycbcrToRGBFast(src.Y[yi], src.Cb[ci], src.Cr[ci])
 	case *image.RGBA:
 		i := src.PixOffset(x+src.Rect.Min.X, y+src.Rect.Min.Y)
 		return src.Pix[i], src.Pix[i+1], src.Pix[i+2]
