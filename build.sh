@@ -8,14 +8,14 @@ if [ "${1:-}" != "1" ]; then
     export GOARCH=arm
     export GOOS=linux
     mkdir -p $AndroidProject/app/libs/armeabi
-    go build -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
+    go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
     export GOARCH=386
     mkdir -p $AndroidProject/app/libs/x86
-    go build -ldflags="-w -s" -o $AndroidProject/app/libs/x86/libWorkdayAlarmClock.so
+    go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/x86/libWorkdayAlarmClock.so
     export GOOS=android
     export GOARCH=arm64
     mkdir -p $AndroidProject/app/libs/arm64-v8a
-    go build -ldflags="-w -s" -o $AndroidProject/app/libs/arm64-v8a/libWorkdayAlarmClock.so
+    go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/arm64-v8a/libWorkdayAlarmClock.so
 fi
 
 export GOARCH=amd64
