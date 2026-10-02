@@ -20,7 +20,9 @@ static wa_alsa_pcm *wa_alsa_open(unsigned int rate, int *err) {
 		*err = -ENOMEM;
 		return NULL;
 	}
-	*err = snd_pcm_open(&ctx->pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
+	const char *device = getenv("ALSA_DEVICE");
+	if (device == NULL || device[0] == '\0') device = "default";
+	*err = snd_pcm_open(&ctx->pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
 	if (*err < 0) {
 		free(ctx);
 		return NULL;
@@ -276,7 +278,7 @@ func alsaPlayURL(url string) error {
 	var openErr C.int
 	pcm := C.wa_alsa_open(C.uint(decoder.SampleRate()), &openErr)
 	if pcm == nil {
-		return fmt.Errorf("alsa open default: %s", C.GoString(C.wa_alsa_error(C.long(openErr))))
+		return fmt.Errorf("alsa open %s: %s", alsaDevice(), C.GoString(C.wa_alsa_error(C.long(openErr))))
 	}
 	alsaPCMmu.Lock()
 	alsaCurrentPCM = pcm

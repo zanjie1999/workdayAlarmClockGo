@@ -197,6 +197,16 @@ func isDirectALSA() bool {
 	return filepath.Base(ShellPlayer) == "alsa"
 }
 
+func alsaDevice() string {
+	if device := strings.TrimSpace(os.Getenv("ALSA_DEVICE")); device != "" {
+		return device
+	}
+	if alsaDeviceName != "" {
+		return alsaDeviceName
+	}
+	return "default"
+}
+
 func pcmURL(url string) error {
 	if isDirectALSA() {
 		return alsaPlayURL(url)
@@ -302,7 +312,7 @@ func pcmCommand(sampleRate int) *exec.Cmd {
 	if isTinyPlay() {
 		return exec.Command(ShellPlayer, "-", "-i", "wav")
 	}
-	return exec.Command(ShellPlayer, "-q", "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", rate)
+	return exec.Command(ShellPlayer, "-q", "-D", alsaDevice(), "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", rate)
 }
 
 func openMP3(url string) (io.ReadCloser, error) {
@@ -449,6 +459,7 @@ func runTinyMixer(value string) error {
 		"DAC",
 		"Digital",
 		"Power Amplifier",
+		"DAC LINEOUT",
 	}
 	var lastErr error
 	for _, name := range preferred {
@@ -491,7 +502,7 @@ func commandOutputError(command string, err error, output []byte) error {
 
 func runAmixer(value string) error {
 	var lastErr error
-	for _, control := range []string{"Master", "PCM", "Speaker", "DAC", "Digital", "Power Amplifier"} {
+	for _, control := range []string{"Master", "PCM", "Speaker", "DAC", "Digital", "Power Amplifier", "DAC LINEOUT"} {
 		if err := exec.Command("amixer", "-q", "sset", control, value).Run(); err == nil {
 			return nil
 		} else {

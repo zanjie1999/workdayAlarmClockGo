@@ -61,6 +61,10 @@ func InitDefaultShellPlayer() {
 	if ShellPlayer == "" {
 		ShellPlayer = defaultShellPlayer()
 	}
+	if alsaDeviceName == "" {
+		alsaDeviceName = detectALSADevice()
+		log.Println("ALSA device:", alsaDeviceName)
+	}
 }
 
 // 上一首 或一键者播放指定歌单

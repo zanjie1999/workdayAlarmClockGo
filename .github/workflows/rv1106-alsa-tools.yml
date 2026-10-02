@@ -1,0 +1,160 @@
+name: Build RV1106 aplay
+
+on:
+  workflow_dispatch:
+
+env:
+  TOOLCHAIN_PREFIX: arm-rockchip830-linux-uclibcgnueabihf
+
+jobs:
+  build:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+
+        sudo apt install -y \
+          git \
+          wget \
+          make \
+          gcc \
+          pkg-config \
+          autoconf \
+          automake \
+          libtool \
+          gettext \
+          autopoint \
+          bison \
+          flex \
+          file
+
+
+    # RV1106/RV1103 uClibc toolchain
+    - name: Download RV1106 toolchain
+      run: |
+        git clone --depth=1 \
+          https://github.com/deerpi/arm-rockchip830-linux-uclibcgnueabihf.git \
+          toolchain
+
+
+    - name: Setup toolchain
+      run: |
+        echo "$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_PATH
+
+
+    - name: Check compiler
+      run: |
+        ${TOOLCHAIN_PREFIX}-gcc --version
+        ${TOOLCHAIN_PREFIX}-gcc -print-sysroot
+
+
+
+    #
+    # Build ALSA library
+    #
+    - name: Build alsa-lib
+      run: |
+
+        wget https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.6.1.tar.bz2
+
+
+        tar xf alsa-lib-1.2.6.1.tar.bz2
+
+
+        cd alsa-lib-1.2.6.1
+
+
+        ./configure \
+          --host=${TOOLCHAIN_PREFIX} \
+          --prefix=/usr \
+          --disable-python
+
+        make -j$(nproc)
+
+
+        make DESTDIR=$GITHUB_WORKSPACE/alsa-root install
+
+    #
+    # Build alsa-utils
+    #
+    - name: Build alsa-utils
+      run: |
+
+        wget https://www.alsa-project.org/files/pub/utils/alsa-utils-1.2.6.tar.bz2
+
+
+        tar xf alsa-utils-1.2.6.tar.bz2
+
+
+        cd alsa-utils-1.2.6
+
+
+        export PKG_CONFIG_ALLOW_CROSS=1
+
+        export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/alsa-root/usr/lib/pkgconfig
+        
+        export CFLAGS="-I$GITHUB_WORKSPACE/alsa-lib-1.2.6.1/include"
+        
+        export LDFLAGS="-L$GITHUB_WORKSPACE/alsa-root/usr/lib"
+
+
+        ./configure \
+          --host=${TOOLCHAIN_PREFIX} \
+          --prefix=/usr \
+          --disable-nls \
+          --disable-xmlto \
+          --disable-alsaconf \
+          --disable-bat \
+          --disable-alsamixer
+
+        make -j$(nproc)
+
+
+    #
+    # Collect binary
+    #
+    - name: Prepare output
+      run: |
+
+        mkdir -p output
+
+        cp alsa-utils-1.2.6/aplay/aplay output/
+        cp alsa-utils-1.2.6/amixer/amixer output/
+
+        ${TOOLCHAIN_PREFIX}-strip output/aplay || true
+
+        ${TOOLCHAIN_PREFIX}-strip output/amixer || true
+
+
+        file output/aplay
+
+        file output/amixer
+
+
+        echo "=== aplay interpreter ==="
+
+        ${TOOLCHAIN_PREFIX}-readelf \
+          -l output/aplay | grep interpreter || true
+
+
+        echo "=== amixer interpreter ==="
+
+        ${TOOLCHAIN_PREFIX}-readelf \
+          -l output/amixer | grep interpreter || true
+
+
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+
+      with:
+        name: rv1106-alsa-tools
+        path: output/

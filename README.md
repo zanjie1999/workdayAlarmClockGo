@@ -31,6 +31,8 @@ Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)
 
 Linux 的 CGO 构建会优先使用直接 ALSA；纯 Go 构建使用 ALSA 的 `aplay`，找不到时自动回退到 TinyALSA 的 `tinyplay`。程序会流式解码 MP3。
 
+如果设备的音频输出设备不对，可通过环境变量指定 ALSA 设备，例如 `ALSA_DEVICE=sysdefault` 或 `ALSA_DEVICE=sysdefault:CARD=rv1106acodec`，可以通过 `aplay -L` 查看可用的设备列表
+
 使用 `CGO_ENABLED=1` 在 Linux 上编译时，如果检测到 `libasound.so.2` 和 `/dev/snd/pcmC*D*p`，程序会默认直接调用 ALSA 播放和调节音量，不需要 `aplay`、`amixer`。编译环境需要 ALSA 开发头文件和库：
 ```
 CGO_ENABLED=1 go build
@@ -568,6 +570,27 @@ chmod +x /etc/init.d/S99workdayAlarmClock
 ```
 
 另外顺便提一下，更换 `/etc/alarm_res/res1/background1.png` 可以更换壁纸，因为是TN屏，建议使用亮色图片
+
+### 有道听力宝和词典笔
+首先adb有密码,需要用winhex打开rootfs,找到 `VERIFIED=`，从V开始的位置改成 `65 78 69 74 0A` 剩下的右键编辑填充用 `20` 填充了,然后刷回去  
+设置 关于 法律监管 里面的字点个十几次能开adb  
+没法开机启动,因为rootfs是只读的  
+下载一个最新的 `workdayAlarmClock-linux-arm` 放到u盘的`MTP\Favorite\workdayAlarmClock` 没有目录就新建  
+再到 https://github.com/zanjie1999/workdayAlarmClockGo/releases/tag/38.4 下载aplay和amixer一起放进去  
+```
+cat << SPARKLE > /userdisk/Favorite/workdayAlarmClock/start.sh
+#!/bin/sh
+cd /userdisk/Favorite/workdayAlarmClock
+./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
+SPARKLE
+chmod +x /userdisk/Favorite/workdayAlarmClock/*
+```
+然后你每次就可以直接运行
+```
+/userdisk/Favorite/workdayAlarmClock/start.sh
+```
+来启动了,启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了
+
 
 ### 协议 咩License
 使用此项目视为您已阅读并同意遵守 [此LICENSE](https://github.com/zanjie1999/LICENSE)   

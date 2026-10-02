@@ -13,7 +13,7 @@ func playPCMStream(r io.Reader, rate, channels int) error {
 	if filepath.Base(ShellPlayer) != "aplay" {
 		return ErrPCMStreamUnsupported
 	}
-	cmd := exec.Command(ShellPlayer, "-q", "-t", "raw", "-f", "S16_LE",
+	cmd := exec.Command(ShellPlayer, "-q", "-D", alsaDevice(), "-t", "raw", "-f", "S16_LE",
 		"-c", strconv.Itoa(channels), "-r", strconv.Itoa(rate),
 		"-B", "60000", "-F", "10000")
 	stdin, err := cmd.StdinPipe()
