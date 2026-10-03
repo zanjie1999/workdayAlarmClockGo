@@ -1014,8 +1014,9 @@ func rgbAt(img image.Image, x, y int) (uint8, uint8, uint8) {
 }
 
 type fbStreamSession struct {
-	body io.ReadCloser
-	done chan struct{}
+	body   io.ReadCloser
+	done   chan struct{}
+	cancel context.CancelFunc
 }
 
 var (
@@ -1025,14 +1026,20 @@ var (
 
 func replaceFBStream(body io.ReadCloser) *fbStreamSession {
 	session := &fbStreamSession{body: body, done: make(chan struct{})}
+
 	fbStreamMu.Lock()
 	old := activeFBStream
 	activeFBStream = session
 	fbStreamMu.Unlock()
+
 	if old != nil {
+		// Do not wait here. The old HTTP connection may be stuck in a network read.
+		if old.cancel != nil {
+			old.cancel()
+		}
 		_ = old.body.Close()
-		<-old.done
 	}
+
 	return session
 }
 
@@ -1049,6 +1056,7 @@ func fbStream(c *gin.Context) {
 	session := replaceFBStream(c.Request.Body)
 	defer finishFBStream(session)
 	streamCtx, cancel := context.WithCancel(c.Request.Context())
+	session.cancel = cancel
 	defer cancel()
 	go func() {
 		select {
