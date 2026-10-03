@@ -16,8 +16,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 	"workdayAlarmClock/player"
 
@@ -246,7 +248,8 @@ func (fb *Framebuffer) Close() error {
 }
 
 type jpegFrame struct {
-	buf bytes.Buffer
+	buf        bytes.Buffer
+	receivedAt time.Time
 }
 
 var jpegFramePool sync.Pool
@@ -332,6 +335,7 @@ func readJPEGFrames(ctx context.Context, body io.Reader, boundary string, latest
 		}
 
 		frame := acquireJPEGFrame()
+		frame.receivedAt = time.Now()
 		n, err := io.Copy(&frame.buf, io.LimitReader(part, maxJPEGFrameSize+1))
 		if err != nil {
 			releaseJPEGFrame(frame)
@@ -382,6 +386,11 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 	defer close(stopCloseWatcher)
 
 	var stats StreamStats
+	var timing struct {
+		frames   uint64
+		decode   time.Duration
+		queueAge time.Duration
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -399,7 +408,10 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			}
 
 			frameBytes := uint64(frame.buf.Len())
+			queueAge := time.Since(frame.receivedAt)
+			decodeStart := time.Now()
 			img, err := jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))
+			decodeElapsed := time.Since(decodeStart)
 			releaseJPEGFrame(frame)
 			if err != nil {
 				return stats, fmt.Errorf("decode JPEG: %w", err)
@@ -415,11 +427,19 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 				return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
 			}
 
+			timing.frames++
+			timing.decode += decodeElapsed
+			timing.queueAge += queueAge
+
 			if err := fb.writeImage(img); err != nil {
 				return stats, fmt.Errorf("write framebuffer: %w", err)
 			}
 			stats.Frames++
 			stats.JPEGBytes += frameBytes
+
+			if timing.frames%30 == 0 {
+				log.Printf("frame timing: frames=%d avg_jpeg_decode=%s avg_queue_age=%s", timing.frames, timing.decode/time.Duration(timing.frames), timing.queueAge/time.Duration(timing.frames))
+			}
 		}
 	}
 }
@@ -609,10 +629,14 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 			encodeYCbCr32(src, dst, width, height, stride, false)
 		case bpp == 32 && (format == "bgrx8888" || format == "bgra8888"):
 			encodeYCbCr32(src, dst, width, height, stride, true)
+		case bpp == 24 && format == "rgb888":
+			encodeYCbCrRGB24(src, dst, width, height, stride)
 		case bpp == 24 && format == "bgr888":
 			encodeYCbCr24(src, dst, width, height, stride)
 		case bpp == 16 && format == "rgb565":
 			encodeYCbCr16(src, dst, width, height, stride)
+		case bpp == 16 && format == "bgr565":
+			encodeYCbCr16BGR(src, dst, width, height, stride)
 		default:
 			return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
 		}
@@ -626,10 +650,14 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		encode32(img, dst, width, height, stride, false)
 	case bpp == 32 && (format == "bgrx8888" || format == "bgra8888"):
 		encode32(img, dst, width, height, stride, true)
+	case bpp == 24 && format == "rgb888":
+		encode24RGB(img, dst, width, height, stride)
 	case bpp == 24 && format == "bgr888":
 		encode24(img, dst, width, height, stride)
 	case bpp == 16 && format == "rgb565":
 		encode16(img, dst, width, height, stride)
+	case bpp == 16 && format == "bgr565":
+		encode16BGR(img, dst, width, height, stride)
 	default:
 		return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
 	}
@@ -713,11 +741,74 @@ func encodeYCbCr24(src *image.YCbCr, dst []byte, width, height, stride int) {
 	}
 }
 
-func encodeYCbCr32(src *image.YCbCr, dst []byte, width, height, stride int, rgbMemory bool) {
+const parallelEncodeMinPixels = 256 * 1024
+
+func encodeYCbCrRGB24(src *image.YCbCr, dst []byte, width, height, stride int) {
 	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
 	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
 
 	for y := 0; y < height; y++ {
+		absY := y + minY
+		yi := src.YOffset(minX, absY)
+		ci := src.COffset(minX, absY)
+		yRow := src.Y[yi : yi+width]
+		row := dst[y*stride : y*stride+width*3]
+		chromaIndex := ci
+		absX := minX
+
+		for x := 0; x < width; x, absX = x+1, absX+1 {
+			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
+			i := x * 3
+			row[i], row[i+1], row[i+2] = r, g, b
+
+			if chromaStep == 1 || (absX+1)%chromaStep == 0 {
+				chromaIndex++
+			}
+		}
+	}
+}
+
+func encodeYCbCr32(src *image.YCbCr, dst []byte, width, height, stride int, rgbMemory bool) {
+	if width <= 0 || height <= 0 {
+		return
+	}
+
+	pixels := width * height
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 || pixels < parallelEncodeMinPixels || height < workers {
+		encodeYCbCr32Rows(src, dst, width, 0, height, stride, rgbMemory)
+		return
+	}
+
+	// Each worker owns a disjoint set of complete output rows. Y/Cb/Cr are read-only,
+	// so the conversion is safe to parallelize without locks. Chunking by rows also
+	// preserves the original chroma addressing for 4:2:0/4:2:2 images.
+	workers = minInt(workers, height)
+	rowsPerWorker := (height + workers - 1) / workers
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for worker := 0; worker < workers; worker++ {
+		startY := worker * rowsPerWorker
+		endY := minInt(startY+rowsPerWorker, height)
+		if startY >= endY {
+			wg.Done()
+			continue
+		}
+
+		go func(startY, endY int) {
+			defer wg.Done()
+			encodeYCbCr32Rows(src, dst, width, startY, endY, stride, rgbMemory)
+		}(startY, endY)
+	}
+	wg.Wait()
+}
+
+func encodeYCbCr32Rows(src *image.YCbCr, dst []byte, width, startY, endY, stride int, rgbMemory bool) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
+
+	for y := startY; y < endY; y++ {
 		absY := y + minY
 		yi := src.YOffset(minX, absY)
 		ci := src.COffset(minX, absY)
@@ -743,6 +834,13 @@ func encodeYCbCr32(src *image.YCbCr, dst []byte, width, height, stride int, rgbM
 	}
 }
 
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func encodeYCbCr16(src *image.YCbCr, dst []byte, width, height, stride int) {
 	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
 	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
@@ -759,6 +857,32 @@ func encodeYCbCr16(src *image.YCbCr, dst []byte, width, height, stride int) {
 		for x := 0; x < width; x, absX = x+1, absX+1 {
 			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
 			v := uint16(r>>3)<<11 | uint16(g>>2)<<5 | uint16(b>>3)
+			i := x * 2
+			row[i], row[i+1] = byte(v), byte(v>>8)
+
+			if chromaStep == 1 || (absX+1)%chromaStep == 0 {
+				chromaIndex++
+			}
+		}
+	}
+}
+
+func encodeYCbCr16BGR(src *image.YCbCr, dst []byte, width, height, stride int) {
+	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
+	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
+
+	for y := 0; y < height; y++ {
+		absY := y + minY
+		yi := src.YOffset(minX, absY)
+		ci := src.COffset(minX, absY)
+		yRow := src.Y[yi : yi+width]
+		row := dst[y*stride : y*stride+width*2]
+		chromaIndex := ci
+		absX := minX
+
+		for x := 0; x < width; x, absX = x+1, absX+1 {
+			r, g, b := ycbcrToRGBFast(yRow[x], src.Cb[chromaIndex], src.Cr[chromaIndex])
+			v := uint16(b>>3)<<11 | uint16(g>>2)<<5 | uint16(r>>3)
 			i := x * 2
 			row[i], row[i+1] = byte(v), byte(v>>8)
 
@@ -817,6 +941,17 @@ func encode24(img image.Image, dst []byte, width, height, stride int) {
 	}
 }
 
+func encode24RGB(img image.Image, dst []byte, width, height, stride int) {
+	for y := 0; y < height; y++ {
+		row := dst[y*stride:]
+		for x := 0; x < width; x++ {
+			r, g, b := rgbAt(img, x, y)
+			i := x * 3
+			row[i], row[i+1], row[i+2] = r, g, b
+		}
+	}
+}
+
 func encode32(img image.Image, dst []byte, width, height, stride int, rgbMemory bool) {
 	for y := 0; y < height; y++ {
 		row := dst[y*stride:]
@@ -839,6 +974,18 @@ func encode16(img image.Image, dst []byte, width, height, stride int) {
 		for x := 0; x < width; x++ {
 			r, g, b := rgbAt(img, x, y)
 			v := uint16(r>>3)<<11 | uint16(g>>2)<<5 | uint16(b>>3)
+			i := x * 2
+			row[i], row[i+1] = byte(v), byte(v>>8)
+		}
+	}
+}
+
+func encode16BGR(img image.Image, dst []byte, width, height, stride int) {
+	for y := 0; y < height; y++ {
+		row := dst[y*stride:]
+		for x := 0; x < width; x++ {
+			r, g, b := rgbAt(img, x, y)
+			v := uint16(b>>3)<<11 | uint16(g>>2)<<5 | uint16(r>>3)
 			i := x * 2
 			row[i], row[i+1] = byte(v), byte(v>>8)
 		}

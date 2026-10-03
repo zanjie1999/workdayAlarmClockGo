@@ -9,21 +9,29 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
 	"unsafe"
 )
 
 const (
-	drmDevicePath = "/dev/dri/card0"
-
 	drmModeConnected     = 1
 	drmModeTypePreferred = 1 << 3
 	drmModePageFlipEvent = 1 << 0
 	drmModeConnectorDPI  = 17
 
-	// DRM_FORMAT_XRGB8888 as defined by drm_fourcc.h.
-	drmFormatXRGB8888 = uint32(0x34325258)
+	// DRM fourcc values, expressed from their printable four-character codes.
+	// Only formats already supported by encodeImage are candidates here.
+	drmFormatXRGB8888 = uint32('X') | uint32('R')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatARGB8888 = uint32('A') | uint32('R')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatXBGR8888 = uint32('X') | uint32('B')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatABGR8888 = uint32('A') | uint32('B')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatRGB888   = uint32('R') | uint32('G')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatBGR888   = uint32('B') | uint32('G')<<8 | uint32('2')<<16 | uint32('4')<<24
+	drmFormatRGB565   = uint32('R') | uint32('G')<<8 | uint32('1')<<16 | uint32('6')<<24
+	drmFormatBGR565   = uint32('B') | uint32('G')<<8 | uint32('1')<<16 | uint32('6')<<24
 
 	// Linux generic ioctl encoding. Rockchip targets use the generic encoding.
 	drmIOCDirNone      = uintptr(0)
@@ -232,6 +240,23 @@ type drmFBBuffer struct {
 	mapped []byte
 }
 
+type drmFormatChoice struct {
+	fourcc uint32
+	name   string
+	bpp    uint32
+}
+
+var drmFormatPreferences = []drmFormatChoice{
+	{fourcc: drmFormatXRGB8888, name: "xrgb8888", bpp: 32},
+	{fourcc: drmFormatARGB8888, name: "argb8888", bpp: 32},
+	{fourcc: drmFormatXBGR8888, name: "bgrx8888", bpp: 32},
+	{fourcc: drmFormatABGR8888, name: "bgra8888", bpp: 32},
+	{fourcc: drmFormatRGB888, name: "rgb888", bpp: 24},
+	{fourcc: drmFormatBGR888, name: "bgr888", bpp: 24},
+	{fourcc: drmFormatRGB565, name: "rgb565", bpp: 16},
+	{fourcc: drmFormatBGR565, name: "bgr565", bpp: 16},
+}
+
 type drmFramebuffer struct {
 	file *os.File
 	info Info
@@ -405,7 +430,43 @@ func readFullFD(fd int, p []byte) (int, error) {
 }
 
 func openDRM() (*drmFramebuffer, error) {
-	file, err := os.OpenFile(drmDevicePath, os.O_RDWR|syscall.O_CLOEXEC, 0)
+	paths := discoverDRMDevices()
+	var lastErr error
+	for _, path := range paths {
+		d, err := openDRMDevice(path)
+		if err == nil {
+			return d, nil
+		}
+		lastErr = err
+		log.Printf("drm: %s unavailable: %v", path, err)
+	}
+	if lastErr == nil {
+		lastErr = errors.New("drm: no DRM card devices found")
+	}
+	return nil, lastErr
+}
+
+func discoverDRMDevices() []string {
+	paths, err := filepath.Glob("/dev/dri/card*")
+	if err != nil || len(paths) == 0 {
+		return []string{"/dev/dri/card0"}
+	}
+	sort.Strings(paths)
+	// Prefer card0 when present, then try every other KMS card. This avoids
+	// binding to a render-only or auxiliary card when the display controller is
+	// exposed under a different card number.
+	for i, path := range paths {
+		if path == "/dev/dri/card0" && i != 0 {
+			copy(paths[1:i+1], paths[0:i])
+			paths[0] = path
+			break
+		}
+	}
+	return paths
+}
+
+func openDRMDevice(devicePath string) (*drmFramebuffer, error) {
+	file, err := os.OpenFile(devicePath, os.O_RDWR|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -419,14 +480,11 @@ func openDRM() (*drmFramebuffer, error) {
 		return closeWithError(fmt.Errorf("set drm master: %w", err))
 	}
 
-	// Ask DRM to expose primary/cursor planes through the universal plane
-	// API. This is required on drivers that hide the primary plane from the
-	// legacy GETPLANE enumeration unless this client capability is enabled.
 	cap := drmSetClientCap{Capability: drmClientCapUniversalPlanes, Value: 1}
 	if err := drmIoctl(file.Fd(), drmIOW(drmIoctlSetClientCap, unsafe.Sizeof(cap)), unsafe.Pointer(&cap)); err != nil {
-		log.Printf("drm: universal planes unavailable, continuing with legacy plane enumeration: %v", err)
+		log.Printf("drm: %s universal planes unavailable, continuing with legacy plane enumeration: %v", devicePath, err)
 	} else {
-		log.Printf("drm: universal planes enabled")
+		log.Printf("drm: %s universal planes enabled", devicePath)
 	}
 
 	resources, connectors, encoders, crtcs, err := drmGetResources(file.Fd())
@@ -434,27 +492,32 @@ func openDRM() (*drmFramebuffer, error) {
 		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
 		return closeWithError(err)
 	}
-	log.Printf("drm: resources connectors=%d encoders=%d crtcs=%d fbs=%d", resources.CountConnectors, resources.CountEncoders, resources.CountCRTCs, resources.CountFBs)
+	log.Printf("drm: %s resources connectors=%d encoders=%d crtcs=%d fbs=%d", devicePath, resources.CountConnectors, resources.CountEncoders, resources.CountCRTCs, resources.CountFBs)
 
-	// Prefer an already-active CRTC. This lets us replace the scanout FB with a
-	// page flip without requiring a complete connector/encoder route. Fixed
-	// embedded panels on vendor DRM drivers may expose incomplete connector
-	// topology even though their CRTC is fully active.
 	crtcID, crtc, active := drmFindActiveCRTC(file.Fd(), crtcs)
 	connectorID := uint32(0)
 	var mode drmModeModeInfo
+	var connectorMode drmModeModeInfo
 	usedActivePlane := false
 	currentPlaneFB := uint32(0)
 
 	if active {
 		mode = crtc.Mode
-		log.Printf("drm: reusing active CRTC %d with FB %d mode=%s", crtcID, crtc.FBID, drmModeName(mode))
+		connectorID = drmFindConnectorForCRTC(file.Fd(), connectors, crtcID)
+		if connectorID != 0 {
+			log.Printf("drm: reusing active CRTC %d with FB %d connector=%d mode=%s", crtcID, crtc.FBID, connectorID, drmModeName(mode))
+		} else {
+			// A few drivers omit the current connector relationship from the
+			// encoder objects even though there is only one active output. Fall
+			// back to the connector/mode with the strongest match.
+			connectorID, connectorMode = drmFindUsableConnectorMode(file.Fd(), connectors)
+			if connectorID != 0 && connectorMode.HDisplay == mode.HDisplay && connectorMode.VDisplay == mode.VDisplay {
+				log.Printf("drm: active CRTC %d connector relationship incomplete, using connector=%d mode=%s", crtcID, connectorID, drmModeName(mode))
+			} else {
+				connectorID = 0
+			}
+		}
 	} else {
-		// Some vendor KMS drivers expose an enabled display through an active
-		// plane but return an incomplete/empty legacy GETCRTC state. RV1106 is
-		// one such case in practice: sysfs can show card0-DPI-1 as enabled
-		// while GETCRTC does not report the current FB/mode. The plane state is
-		// still enough to identify the live CRTC and current scanout FB.
 		planeID, planeCRTC, planeFB, ok := drmFindActivePlane(file.Fd())
 		if ok {
 			crtcID = planeCRTC
@@ -464,59 +527,37 @@ func openDRM() (*drmFramebuffer, error) {
 			if mode.HDisplay != 0 && mode.VDisplay != 0 {
 				usedActivePlane = true
 				log.Printf("drm: reusing active plane %d with CRTC %d FB %d connector=%d mode=%s", planeID, crtcID, planeFB, connectorID, drmModeName(mode))
-
-				// The vendor fbdev path can leave the atomic CRTC state with
-				// active=0/FBID=0 even though the primary plane is scanning out
-				// FB %d. Legacy PAGE_FLIP rejects that state with EBUSY. Keep the
-				// plane FB as our best-known previous scanout and fetch the rest
-				// of the CRTC state for mode information before we re-bind it.
-				crtcQuery := drmModeCRTC{CRTCID: crtcID}
-				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtcQuery)), unsafe.Pointer(&crtcQuery)); err == nil {
-					if crtcQuery.ModeValid != 0 {
-						crtc.Mode = crtcQuery.Mode
-						crtc.ModeValid = crtcQuery.ModeValid
-					}
-					if crtcQuery.FBID != 0 {
-						crtc.FBID = crtcQuery.FBID
-					}
-				}
 			}
 		}
 
 		if !usedActivePlane {
-			// Vendor DRM drivers for fixed embedded panels may expose a live
-			// connector/CRTC state through sysfs/debugfs while the legacy
-			// GETCRTC/GETPLANE bindings are incomplete. RV1106 is one such case:
-			// debugfs showed plane 55 -> CRTC 66 -> DPI-1 -> 240x1020, even when
-			// userspace GETCRTC reported no active FB. Do not require the classic
-			// connector -> encoder -> CRTC route for a fixed DPI panel. Instead,
-			// pick the best panel connector/mode and pair it with a compatible
-			// CRTC (prefer one whose reported mode matches).
 			if cid, m, candidateCRTC, ok := drmFindEmbeddedPanel(file.Fd(), connectors, crtcs); ok {
 				crtcID = candidateCRTC
 				connectorID = cid
 				mode = m
 				crtc = drmModeCRTC{CRTCID: crtcID}
 				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
-					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-					return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
+					// Some vendor drivers return an incomplete CRTC state. We already
+					// have a valid mode and selected CRTC, so preserve the zero/partial
+					// state instead of rejecting an otherwise usable embedded panel.
+					log.Printf("drm: CRTC %d query after embedded-panel selection failed: %v", crtcID, err)
 				}
 				usedActivePlane = true
 				log.Printf("drm: embedded-panel fallback: connector=%d crtc=%d mode=%s reported_fb=%d mode_valid=%d", connectorID, crtcID, drmModeName(mode), crtc.FBID, crtc.ModeValid)
 			}
+		}
 
-			if !usedActivePlane {
-				var err error
-				connectorID, mode, crtcID, err = drmSelectDisplay(file.Fd(), connectors, encoders, crtcs)
-				if err != nil {
-					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-					return closeWithError(err)
-				}
-				crtc = drmModeCRTC{CRTCID: crtcID}
-				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
-					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-					return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
-				}
+		if !usedActivePlane {
+			var err error
+			connectorID, mode, crtcID, err = drmSelectDisplay(file.Fd(), connectors, encoders, crtcs)
+			if err != nil {
+				_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+				return closeWithError(err)
+			}
+			crtc = drmModeCRTC{CRTCID: crtcID}
+			if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
+				_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+				return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
 			}
 		}
 	}
@@ -525,28 +566,32 @@ func openDRM() (*drmFramebuffer, error) {
 		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
 		return closeWithError(fmt.Errorf("drm: no usable display mode on CRTC %d", crtcID))
 	}
-	if crtc.FBID == 0 && !usedActivePlane {
-		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-		return closeWithError(fmt.Errorf("drm: no active scanout FB on CRTC %d", crtcID))
-	}
 
-	// Bind our first framebuffer with SETCRTC before the first legacy PAGE_FLIP.
-	// On RV1106 the vendor fbdev/atomic path can report CRTC active=0 even while
-	// the primary plane is scanning out an FB. PAGE_FLIP then fails with EBUSY
-	// until a normal KMS CRTC framebuffer is installed.
-	// We keep the original scanout FB separately so Close() can restore it.
-	storedConnectorID := connectorID
+	// Query plane formats for the selected CRTC instead of assuming every DRM
+	// device accepts XR24/XRGB8888. Prefer the formats already supported by our
+	// image encoder, with XRGB8888 first for widest compatibility.
+	_, planeFormats, ok := drmFindPlaneForCRTC(file.Fd(), crtcs, crtcID)
+	if !ok {
+		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+		return closeWithError(fmt.Errorf("drm: no plane compatible with CRTC %d", crtcID))
+	}
+	format, ok := drmChooseFormat(planeFormats)
+	if !ok {
+		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+		return closeWithError(fmt.Errorf("drm: CRTC %d has no supported scanout format", crtcID))
+	}
+	log.Printf("drm: selected format=%s bpp=%d fourcc=0x%08x for CRTC %d", format.name, format.bpp, format.fourcc, crtcID)
 
 	previousFB := crtc.FBID
-	if usedActivePlane && previousFB == 0 && currentPlaneFB != 0 {
+	if previousFB == 0 && currentPlaneFB != 0 {
 		previousFB = currentPlaneFB
 	}
 
 	d := &drmFramebuffer{
 		file:        file,
-		info:        Info{Device: drmDevicePath, Width: uint32(mode.HDisplay), Height: uint32(mode.VDisplay), WidthVirtual: uint32(mode.HDisplay), HeightVirtual: uint32(mode.VDisplay), BitsPerPixel: 32, Format: "xrgb8888", DoubleBuffer: true},
+		info:        Info{Device: devicePath, Width: uint32(mode.HDisplay), Height: uint32(mode.VDisplay), WidthVirtual: uint32(mode.HDisplay), HeightVirtual: uint32(mode.VDisplay), BitsPerPixel: format.bpp, Format: format.name, DoubleBuffer: true},
 		crtcID:      crtcID,
-		connectorID: storedConnectorID,
+		connectorID: connectorID,
 		mode:        mode,
 		oldCRTC:     crtc,
 		oldFB:       previousFB,
@@ -554,7 +599,7 @@ func openDRM() (*drmFramebuffer, error) {
 	}
 
 	for i := range d.buffers {
-		if err := drmCreateBuffer(file.Fd(), uint32(mode.HDisplay), uint32(mode.VDisplay), &d.buffers[i]); err != nil {
+		if err := drmCreateBuffer(file.Fd(), uint32(mode.HDisplay), uint32(mode.VDisplay), format, &d.buffers[i]); err != nil {
 			_ = d.Close()
 			return nil, err
 		}
@@ -566,7 +611,11 @@ func openDRM() (*drmFramebuffer, error) {
 	}
 	d.info.Stride = d.buffers[0].pitch
 	d.info.FrameSize = frameSize
-	d.info.MemorySize = uint32(d.buffers[0].size)
+	if d.buffers[0].size > uint64(^uint32(0)) {
+		d.info.MemorySize = ^uint32(0)
+	} else {
+		d.info.MemorySize = uint32(d.buffers[0].size)
+	}
 
 	if connectorID == 0 {
 		_ = d.Close()
@@ -588,9 +637,77 @@ func openDRM() (*drmFramebuffer, error) {
 		_ = d.Close()
 		return nil, fmt.Errorf("set drm CRTC %d framebuffer %d: %w", crtcID, d.buffers[0].fbID, err)
 	}
-	log.Printf("drm: initial SETCRTC connector=%d crtc=%d fb=%d mode=%s", connectorID, crtcID, d.buffers[0].fbID, drmModeName(mode))
+	log.Printf("drm: initial SETCRTC device=%s connector=%d crtc=%d fb=%d mode=%s format=%s", devicePath, connectorID, crtcID, d.buffers[0].fbID, drmModeName(mode), format.name)
 
 	return d, nil
+}
+
+func drmFindPlaneForCRTC(fd uintptr, crtcIDs []uint32, targetCRTC uint32) (uint32, []uint32, bool) {
+	var res drmModeGetPlaneRes
+	if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlaneRes, unsafe.Sizeof(res)), unsafe.Pointer(&res)); err != nil || res.CountPlanes == 0 {
+		return 0, nil, false
+	}
+	planeIDs := make([]uint32, res.CountPlanes)
+	res.PlaneIDPtr = uint64(uintptr(unsafe.Pointer(&planeIDs[0])))
+	if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlaneRes, unsafe.Sizeof(res)), unsafe.Pointer(&res)); err != nil {
+		return 0, nil, false
+	}
+
+	crtcIndex := -1
+	for i, id := range crtcIDs {
+		if id == targetCRTC {
+			crtcIndex = i
+			break
+		}
+	}
+
+	var fallbackID uint32
+	var fallbackFormats []uint32
+	for _, planeID := range planeIDs {
+		plane := drmModeGetPlane{PlaneID: planeID}
+		if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlane, unsafe.Sizeof(plane)), unsafe.Pointer(&plane)); err != nil {
+			continue
+		}
+		formats := make([]uint32, plane.CountFormatTypes)
+		if len(formats) > 0 {
+			plane.FormatTypePtr = uint64(uintptr(unsafe.Pointer(&formats[0])))
+			if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlane, unsafe.Sizeof(plane)), unsafe.Pointer(&plane)); err != nil {
+				continue
+			}
+		}
+
+		compatible := plane.CRTCID == targetCRTC
+		if !compatible && crtcIndex >= 0 && crtcIndex < 32 {
+			compatible = plane.PossibleCRTCS&(1<<uint(crtcIndex)) != 0
+		}
+		if !compatible {
+			continue
+		}
+		log.Printf("drm: format probe plane=%d crtc=%d current_fb=%d possible_crtcs=0x%x formats=%d", planeID, plane.CRTCID, plane.FBID, plane.PossibleCRTCS, len(formats))
+
+		if plane.CRTCID == targetCRTC && plane.FBID != 0 {
+			return planeID, formats, true
+		}
+		if fallbackID == 0 {
+			fallbackID = planeID
+			fallbackFormats = formats
+		}
+	}
+	if fallbackID != 0 {
+		return fallbackID, fallbackFormats, true
+	}
+	return 0, nil, false
+}
+
+func drmChooseFormat(formats []uint32) (drmFormatChoice, bool) {
+	for _, preferred := range drmFormatPreferences {
+		for _, supported := range formats {
+			if supported == preferred.fourcc {
+				return preferred, true
+			}
+		}
+	}
+	return drmFormatChoice{}, false
 }
 
 func drmFindActivePlane(fd uintptr) (uint32, uint32, uint32, bool) {
@@ -616,6 +733,17 @@ func drmFindActivePlane(fd uintptr) (uint32, uint32, uint32, bool) {
 		if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlane, unsafe.Sizeof(plane)), unsafe.Pointer(&plane)); err != nil {
 			log.Printf("drm: get plane %d failed: %v", planeID, err)
 			continue
+		}
+		// Complete the query with a valid format array. Some vendor drivers are
+		// stricter than mainline DRM about the pointer being non-NULL whenever
+		// CountFormatTypes is non-zero.
+		formats := make([]uint32, plane.CountFormatTypes)
+		if len(formats) > 0 {
+			plane.FormatTypePtr = uint64(uintptr(unsafe.Pointer(&formats[0])))
+			if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlane, unsafe.Sizeof(plane)), unsafe.Pointer(&plane)); err != nil {
+				log.Printf("drm: get plane %d formats failed: %v", planeID, err)
+				continue
+			}
 		}
 		log.Printf("drm: plane %d crtc=%d fb=%d possible_crtcs=0x%x formats=%d", planeID, plane.CRTCID, plane.FBID, plane.PossibleCRTCS, plane.CountFormatTypes)
 		if plane.CRTCID != 0 && plane.FBID != 0 {
@@ -777,6 +905,40 @@ func drmFindUsableConnectorMode(fd uintptr, connectorIDs []uint32) (uint32, drmM
 		return 0, drmModeModeInfo{}
 	}
 	return best.id, best.mode
+}
+
+func drmFindConnectorForCRTC(fd uintptr, connectorIDs []uint32, targetCRTC uint32) uint32 {
+	for _, connectorID := range connectorIDs {
+		conn, encoderIDs, _, err := drmGetConnector(fd, connectorID)
+		if err != nil {
+			continue
+		}
+
+		encoderSet := append([]uint32(nil), encoderIDs...)
+		if conn.EncoderID != 0 {
+			found := false
+			for _, id := range encoderSet {
+				if id == conn.EncoderID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				encoderSet = append(encoderSet, conn.EncoderID)
+			}
+		}
+
+		for _, encoderID := range encoderSet {
+			enc := drmModeGetEncoder{EncoderID: encoderID}
+			if err := drmIoctl(fd, drmIOWR(drmIoctlGetEncoder, unsafe.Sizeof(enc)), unsafe.Pointer(&enc)); err != nil {
+				continue
+			}
+			if enc.CRTCID == targetCRTC {
+				return connectorID
+			}
+		}
+	}
+	return 0
 }
 
 func drmFindActiveCRTC(fd uintptr, crtcIDs []uint32) (uint32, drmModeCRTC, bool) {
@@ -970,10 +1132,10 @@ func drmGetConnector(fd uintptr, connectorID uint32) (drmModeGetConnector, []uin
 	return conn, encoders, modes, nil
 }
 
-func drmCreateBuffer(fd uintptr, width, height uint32, buf *drmFBBuffer) error {
-	create := drmModeCreateDumb{Width: width, Height: height, BPP: 32}
+func drmCreateBuffer(fd uintptr, width, height uint32, format drmFormatChoice, buf *drmFBBuffer) error {
+	create := drmModeCreateDumb{Width: width, Height: height, BPP: format.bpp}
 	if err := drmIoctl(fd, drmIOWR(drmIoctlCreateDumb, unsafe.Sizeof(create)), unsafe.Pointer(&create)); err != nil {
-		return fmt.Errorf("drm create dumb buffer: %w", err)
+		return fmt.Errorf("drm create dumb buffer (%s): %w", format.name, err)
 	}
 	buf.handle = create.Handle
 	buf.pitch = create.Pitch
@@ -983,18 +1145,18 @@ func drmCreateBuffer(fd uintptr, width, height uint32, buf *drmFBBuffer) error {
 	if err := drmIoctl(fd, drmIOWR(drmIoctlMapDumb, unsafe.Sizeof(mapReq)), unsafe.Pointer(&mapReq)); err != nil {
 		_ = drmIoctl(fd, drmIOWR(drmIoctlDestroyDumb, unsafe.Sizeof(create.Handle)), unsafe.Pointer(&create.Handle))
 		buf.handle = 0
-		return fmt.Errorf("drm map dumb buffer: %w", err)
+		return fmt.Errorf("drm map dumb buffer (%s): %w", format.name, err)
 	}
 
 	mapped, err := syscall.Mmap(int(fd), int64(mapReq.Offset), int(create.Size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		_ = drmIoctl(fd, drmIOWR(drmIoctlDestroyDumb, unsafe.Sizeof(create.Handle)), unsafe.Pointer(&create.Handle))
 		buf.handle = 0
-		return fmt.Errorf("drm mmap dumb buffer: %w", err)
+		return fmt.Errorf("drm mmap dumb buffer (%s): %w", format.name, err)
 	}
 	buf.mapped = mapped
 
-	fb := drmModeFB2{Width: width, Height: height, PixelFormat: drmFormatXRGB8888}
+	fb := drmModeFB2{Width: width, Height: height, PixelFormat: format.fourcc}
 	fb.Handles[0] = create.Handle
 	fb.Pitches[0] = create.Pitch
 	if err := drmIoctl(fd, drmIOWR(0xB8, unsafe.Sizeof(fb)), unsafe.Pointer(&fb)); err != nil {
@@ -1002,7 +1164,7 @@ func drmCreateBuffer(fd uintptr, width, height uint32, buf *drmFBBuffer) error {
 		buf.mapped = nil
 		_ = drmIoctl(fd, drmIOWR(drmIoctlDestroyDumb, unsafe.Sizeof(create.Handle)), unsafe.Pointer(&create.Handle))
 		buf.handle = 0
-		return fmt.Errorf("drm add framebuffer: %w", err)
+		return fmt.Errorf("drm add framebuffer (%s): %w", format.name, err)
 	}
 	buf.fbID = fb.FBID
 	return nil

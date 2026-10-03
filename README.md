@@ -236,6 +236,13 @@ ln -s /etc/init.d/workdayAlarmClock /etc/rcS.d/S90workdayAlarmClock
 # 然后就可以用 /etc/init.d/workdayAlarmClock start 来启动了
 ```
 
+### 作业帮辅导机B010
+注意屏幕分辨率是1280x480,fb的大小比屏幕会大一点  
+方法跟上方一样,如果需要当显示器,还需要关掉weston释放drm显示通道（我真的懒得写wayland实现了)  
+```
+/etc/init.d/weston stop
+```
+
 ### Kindle
 下载方式同上，运行命令不一样
 ```
@@ -572,6 +579,7 @@ chmod +x /etc/init.d/S99workdayAlarmClock
 另外顺便提一下，更换 `/etc/alarm_res/res1/background1.png` 可以更换壁纸，因为是TN屏，建议使用亮色图片
 
 ### 有道听力宝和词典笔
+在E6Pro和A7Pro上测试通过
 首先adb有密码,需要用winhex打开rootfs,找到 `VERIFIED=`，从V开始的位置改成 `65 78 69 74 0A` 剩下的右键编辑填充用 `20` 填充了,然后刷回去  
 设置 关于 法律监管 里面的字点个十几次能开adb  
 没法开机启动,因为rootfs是只读的  
@@ -589,7 +597,15 @@ chmod +x /userdisk/Favorite/workdayAlarmClock/*
 ```
 /userdisk/Favorite/workdayAlarmClock/start.sh
 ```
-来启动了,启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了
+如果你想当显示器,在词典笔上还需要关掉他的miniapp,释放drm显示通道  
+```
+ps | grep runDictPen
+# 找到guardian_run那条
+kill -9 最前面数字
+killall -9 runDictPen
+killall -9 miniapp
+```
+启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了
 
 
 ### 协议 咩License
