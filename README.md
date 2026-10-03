@@ -211,8 +211,17 @@ mkdir /home/root/workdayAlarmClock
 cd /home/root/workdayAlarmClock
 curl -L -o workdayAlarmClock-linux-arm https://github.com/zanjie1999/workdayAlarmClockGo/releases/latest/download/workdayAlarmClock-linux-arm
 chmod +x workdayAlarmClock-linux-arm
-./workdayAlarmClock-linux-arm
-# 输入exit可以退出
+
+cat << SPARKLE > /home/root/workdayAlarmClock/start.sh
+#!/bin/sh
+cd /home/root/workdayAlarmClock
+./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
+SPARKLE
+
+chmod +x /home/root/workdayAlarmClock/start.sh
+
+# 直接启动
+/home/root/workdayAlarmClock/start.sh
 ```
 增加开机启动
 ```
