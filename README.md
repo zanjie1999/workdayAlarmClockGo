@@ -599,11 +599,7 @@ chmod +x /userdisk/Favorite/workdayAlarmClock/*
 ```
 如果你想当显示器,在词典笔上还需要关掉他的miniapp,释放drm显示通道  
 ```
-ps | grep runDictPen
-# 找到guardian_run那条
-kill -9 最前面数字
-killall -9 runDictPen
-killall -9 miniapp
+ps|grep -E 'runDictPen|miniapp'|awk '{system("kill -9 "$1)}'
 ```
 启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了
 
