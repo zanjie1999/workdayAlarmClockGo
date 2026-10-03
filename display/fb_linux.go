@@ -16,10 +16,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
 	"sync"
 	"syscall"
-	"time"
 	"unsafe"
 	"workdayAlarmClock/player"
 
@@ -248,8 +246,7 @@ func (fb *Framebuffer) Close() error {
 }
 
 type jpegFrame struct {
-	buf        bytes.Buffer
-	receivedAt time.Time
+	buf bytes.Buffer
 }
 
 var jpegFramePool sync.Pool
@@ -335,7 +332,6 @@ func readJPEGFrames(ctx context.Context, body io.Reader, boundary string, latest
 		}
 
 		frame := acquireJPEGFrame()
-		frame.receivedAt = time.Now()
 		n, err := io.Copy(&frame.buf, io.LimitReader(part, maxJPEGFrameSize+1))
 		if err != nil {
 			releaseJPEGFrame(frame)
@@ -386,11 +382,6 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 	defer close(stopCloseWatcher)
 
 	var stats StreamStats
-	var timing struct {
-		frames   uint64
-		decode   time.Duration
-		queueAge time.Duration
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -408,10 +399,7 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			}
 
 			frameBytes := uint64(frame.buf.Len())
-			queueAge := time.Since(frame.receivedAt)
-			decodeStart := time.Now()
 			img, err := jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))
-			decodeElapsed := time.Since(decodeStart)
 			releaseJPEGFrame(frame)
 			if err != nil {
 				return stats, fmt.Errorf("decode JPEG: %w", err)
@@ -427,19 +415,11 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 				return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
 			}
 
-			timing.frames++
-			timing.decode += decodeElapsed
-			timing.queueAge += queueAge
-
 			if err := fb.writeImage(img); err != nil {
 				return stats, fmt.Errorf("write framebuffer: %w", err)
 			}
 			stats.Frames++
 			stats.JPEGBytes += frameBytes
-
-			if timing.frames%30 == 0 {
-				log.Printf("frame timing: frames=%d avg_jpeg_decode=%s avg_queue_age=%s", timing.frames, timing.decode/time.Duration(timing.frames), timing.queueAge/time.Duration(timing.frames))
-			}
 		}
 	}
 }
@@ -733,49 +713,11 @@ func encodeYCbCr24(src *image.YCbCr, dst []byte, width, height, stride int) {
 	}
 }
 
-const parallelEncodeMinPixels = 256 * 1024
-
 func encodeYCbCr32(src *image.YCbCr, dst []byte, width, height, stride int, rgbMemory bool) {
-	if width <= 0 || height <= 0 {
-		return
-	}
-
-	pixels := width * height
-	workers := runtime.GOMAXPROCS(0)
-	if workers < 2 || pixels < parallelEncodeMinPixels || height < workers {
-		encodeYCbCr32Rows(src, dst, width, 0, height, stride, rgbMemory)
-		return
-	}
-
-	// Each worker owns a disjoint set of complete output rows. Y/Cb/Cr are read-only,
-	// so the conversion is safe to parallelize without locks. Chunking by rows also
-	// preserves the original chroma addressing for 4:2:0/4:2:2 images.
-	workers = minInt(workers, height)
-	rowsPerWorker := (height + workers - 1) / workers
-
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for worker := 0; worker < workers; worker++ {
-		startY := worker * rowsPerWorker
-		endY := minInt(startY+rowsPerWorker, height)
-		if startY >= endY {
-			wg.Done()
-			continue
-		}
-
-		go func(startY, endY int) {
-			defer wg.Done()
-			encodeYCbCr32Rows(src, dst, width, startY, endY, stride, rgbMemory)
-		}(startY, endY)
-	}
-	wg.Wait()
-}
-
-func encodeYCbCr32Rows(src *image.YCbCr, dst []byte, width, startY, endY, stride int, rgbMemory bool) {
 	minX, minY := src.Rect.Min.X, src.Rect.Min.Y
 	chromaStep := ycbcrHorizontalStep(src.SubsampleRatio)
 
-	for y := startY; y < endY; y++ {
+	for y := 0; y < height; y++ {
 		absY := y + minY
 		yi := src.YOffset(minX, absY)
 		ci := src.COffset(minX, absY)
@@ -799,13 +741,6 @@ func encodeYCbCr32Rows(src *image.YCbCr, dst []byte, width, startY, endY, stride
 			}
 		}
 	}
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func encodeYCbCr16(src *image.YCbCr, dst []byte, width, height, stride int) {

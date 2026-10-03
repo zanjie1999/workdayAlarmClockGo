@@ -20,6 +20,7 @@ const (
 	drmModeConnected     = 1
 	drmModeTypePreferred = 1 << 3
 	drmModePageFlipEvent = 1 << 0
+	drmModeConnectorDPI  = 17
 
 	// DRM_FORMAT_XRGB8888 as defined by drm_fourcc.h.
 	drmFormatXRGB8888 = uint32(0x34325258)
@@ -41,6 +42,7 @@ const (
 )
 
 const (
+	drmIoctlSetClientCap = 0x0D
 	drmIoctlGetResources = 0xA0
 	drmIoctlGetCRTC      = 0xA1
 	drmIoctlSetCRTC      = 0xA2
@@ -51,10 +53,22 @@ const (
 	drmIoctlCreateDumb   = 0xB2
 	drmIoctlMapDumb      = 0xB3
 	drmIoctlDestroyDumb  = 0xB4
+	drmIoctlGetPlaneRes  = 0xB5
+	drmIoctlGetPlane     = 0xB6
 
 	drmIoctlSetMaster  = 0x1E
 	drmIoctlDropMaster = 0x1F
+
+	// DRM_CLIENT_CAP_UNIVERSAL_PLANES. Without this capability, legacy
+	// GETPLANERESOURCES/GETPLANE may hide the primary plane. RV1106's active
+	// scanout is exactly such a primary plane (VOP0-win1-0 / plane 55).
+	drmClientCapUniversalPlanes = uint64(2)
 )
+
+type drmSetClientCap struct {
+	Capability uint64
+	Value      uint64
+}
 
 func drmIOC(dir, nr, size uintptr) uintptr {
 	return (dir << drmIOCDirShift) |
@@ -65,6 +79,10 @@ func drmIOC(dir, nr, size uintptr) uintptr {
 
 func drmIO(nr uintptr) uintptr {
 	return drmIOC(drmIOCDirNone, nr, 0)
+}
+
+func drmIOW(nr, size uintptr) uintptr {
+	return drmIOC(drmIOCDirWrite, nr, size)
 }
 
 func drmIOWR(nr, size uintptr) uintptr {
@@ -169,6 +187,21 @@ type drmModeMapDumb struct {
 
 type drmModeDestroyDumb struct {
 	Handle uint32
+}
+
+type drmModeGetPlaneRes struct {
+	PlaneIDPtr  uint64
+	CountPlanes uint32
+}
+
+type drmModeGetPlane struct {
+	PlaneID          uint32
+	CRTCID           uint32
+	FBID             uint32
+	PossibleCRTCS    uint32
+	GammaSize        uint32
+	CountFormatTypes uint32
+	FormatTypePtr    uint64
 }
 
 type drmModeFB2 struct {
@@ -386,12 +419,22 @@ func openDRM() (*drmFramebuffer, error) {
 		return closeWithError(fmt.Errorf("set drm master: %w", err))
 	}
 
+	// Ask DRM to expose primary/cursor planes through the universal plane
+	// API. This is required on drivers that hide the primary plane from the
+	// legacy GETPLANE enumeration unless this client capability is enabled.
+	cap := drmSetClientCap{Capability: drmClientCapUniversalPlanes, Value: 1}
+	if err := drmIoctl(file.Fd(), drmIOW(drmIoctlSetClientCap, unsafe.Sizeof(cap)), unsafe.Pointer(&cap)); err != nil {
+		log.Printf("drm: universal planes unavailable, continuing with legacy plane enumeration: %v", err)
+	} else {
+		log.Printf("drm: universal planes enabled")
+	}
+
 	resources, connectors, encoders, crtcs, err := drmGetResources(file.Fd())
 	if err != nil {
 		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
 		return closeWithError(err)
 	}
-	_ = resources // retained for clarity; the helper owns the arrays.
+	log.Printf("drm: resources connectors=%d encoders=%d crtcs=%d fbs=%d", resources.CountConnectors, resources.CountEncoders, resources.CountCRTCs, resources.CountFBs)
 
 	// Prefer an already-active CRTC. This lets us replace the scanout FB with a
 	// page flip without requiring a complete connector/encoder route. Fixed
@@ -400,37 +443,114 @@ func openDRM() (*drmFramebuffer, error) {
 	crtcID, crtc, active := drmFindActiveCRTC(file.Fd(), crtcs)
 	connectorID := uint32(0)
 	var mode drmModeModeInfo
+	usedActivePlane := false
+	currentPlaneFB := uint32(0)
+
 	if active {
 		mode = crtc.Mode
 		log.Printf("drm: reusing active CRTC %d with FB %d mode=%s", crtcID, crtc.FBID, drmModeName(mode))
 	} else {
-		var err error
-		connectorID, mode, crtcID, err = drmSelectDisplay(file.Fd(), connectors, encoders, crtcs)
-		if err != nil {
-			_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-			return closeWithError(err)
+		// Some vendor KMS drivers expose an enabled display through an active
+		// plane but return an incomplete/empty legacy GETCRTC state. RV1106 is
+		// one such case in practice: sysfs can show card0-DPI-1 as enabled
+		// while GETCRTC does not report the current FB/mode. The plane state is
+		// still enough to identify the live CRTC and current scanout FB.
+		planeID, planeCRTC, planeFB, ok := drmFindActivePlane(file.Fd())
+		if ok {
+			crtcID = planeCRTC
+			currentPlaneFB = planeFB
+			crtc = drmModeCRTC{CRTCID: crtcID, FBID: planeFB}
+			connectorID, mode = drmFindUsableConnectorMode(file.Fd(), connectors)
+			if mode.HDisplay != 0 && mode.VDisplay != 0 {
+				usedActivePlane = true
+				log.Printf("drm: reusing active plane %d with CRTC %d FB %d connector=%d mode=%s", planeID, crtcID, planeFB, connectorID, drmModeName(mode))
+
+				// The vendor fbdev path can leave the atomic CRTC state with
+				// active=0/FBID=0 even though the primary plane is scanning out
+				// FB %d. Legacy PAGE_FLIP rejects that state with EBUSY. Keep the
+				// plane FB as our best-known previous scanout and fetch the rest
+				// of the CRTC state for mode information before we re-bind it.
+				crtcQuery := drmModeCRTC{CRTCID: crtcID}
+				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtcQuery)), unsafe.Pointer(&crtcQuery)); err == nil {
+					if crtcQuery.ModeValid != 0 {
+						crtc.Mode = crtcQuery.Mode
+						crtc.ModeValid = crtcQuery.ModeValid
+					}
+					if crtcQuery.FBID != 0 {
+						crtc.FBID = crtcQuery.FBID
+					}
+				}
+			}
 		}
-		crtc = drmModeCRTC{CRTCID: crtcID}
-		if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
-			_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-			return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
+
+		if !usedActivePlane {
+			// Vendor DRM drivers for fixed embedded panels may expose a live
+			// connector/CRTC state through sysfs/debugfs while the legacy
+			// GETCRTC/GETPLANE bindings are incomplete. RV1106 is one such case:
+			// debugfs showed plane 55 -> CRTC 66 -> DPI-1 -> 240x1020, even when
+			// userspace GETCRTC reported no active FB. Do not require the classic
+			// connector -> encoder -> CRTC route for a fixed DPI panel. Instead,
+			// pick the best panel connector/mode and pair it with a compatible
+			// CRTC (prefer one whose reported mode matches).
+			if cid, m, candidateCRTC, ok := drmFindEmbeddedPanel(file.Fd(), connectors, crtcs); ok {
+				crtcID = candidateCRTC
+				connectorID = cid
+				mode = m
+				crtc = drmModeCRTC{CRTCID: crtcID}
+				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
+					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+					return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
+				}
+				usedActivePlane = true
+				log.Printf("drm: embedded-panel fallback: connector=%d crtc=%d mode=%s reported_fb=%d mode_valid=%d", connectorID, crtcID, drmModeName(mode), crtc.FBID, crtc.ModeValid)
+			}
+
+			if !usedActivePlane {
+				var err error
+				connectorID, mode, crtcID, err = drmSelectDisplay(file.Fd(), connectors, encoders, crtcs)
+				if err != nil {
+					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+					return closeWithError(err)
+				}
+				crtc = drmModeCRTC{CRTCID: crtcID}
+				if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err != nil {
+					_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+					return closeWithError(fmt.Errorf("get current CRTC %d: %w", crtcID, err))
+				}
+			}
 		}
 	}
 
-	if crtc.ModeValid == 0 || crtc.FBID == 0 || mode.HDisplay == 0 || mode.VDisplay == 0 {
+	if mode.HDisplay == 0 || mode.VDisplay == 0 {
 		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
-		return closeWithError(fmt.Errorf("drm: no active display mode/FB on CRTC %d", crtcID))
+		return closeWithError(fmt.Errorf("drm: no usable display mode on CRTC %d", crtcID))
+	}
+	if crtc.FBID == 0 && !usedActivePlane {
+		_ = drmIoctl(file.Fd(), drmIO(drmIoctlDropMaster), nil)
+		return closeWithError(fmt.Errorf("drm: no active scanout FB on CRTC %d", crtcID))
+	}
+
+	// Bind our first framebuffer with SETCRTC before the first legacy PAGE_FLIP.
+	// On RV1106 the vendor fbdev/atomic path can report CRTC active=0 even while
+	// the primary plane is scanning out an FB. PAGE_FLIP then fails with EBUSY
+	// until a normal KMS CRTC framebuffer is installed.
+	// We keep the original scanout FB separately so Close() can restore it.
+	storedConnectorID := connectorID
+
+	previousFB := crtc.FBID
+	if usedActivePlane && previousFB == 0 && currentPlaneFB != 0 {
+		previousFB = currentPlaneFB
 	}
 
 	d := &drmFramebuffer{
 		file:        file,
 		info:        Info{Device: drmDevicePath, Width: uint32(mode.HDisplay), Height: uint32(mode.VDisplay), WidthVirtual: uint32(mode.HDisplay), HeightVirtual: uint32(mode.VDisplay), BitsPerPixel: 32, Format: "xrgb8888", DoubleBuffer: true},
 		crtcID:      crtcID,
-		connectorID: connectorID,
+		connectorID: storedConnectorID,
 		mode:        mode,
 		oldCRTC:     crtc,
-		oldFB:       crtc.FBID,
-		oldValid:    crtc.ModeValid != 0 && crtc.FBID != 0,
+		oldFB:       previousFB,
+		oldValid:    previousFB != 0,
 	}
 
 	for i := range d.buffers {
@@ -448,25 +568,215 @@ func openDRM() (*drmFramebuffer, error) {
 	d.info.FrameSize = frameSize
 	d.info.MemorySize = uint32(d.buffers[0].size)
 
-	if connectorID != 0 {
-		connector := connectorID
-		set := drmModeCRTC{
-			SetConnectorsPtr: uint64(uintptr(unsafe.Pointer(&connector))),
-			CountConnectors:  1,
-			CRTCID:           crtcID,
-			FBID:             d.buffers[0].fbID,
-			X:                0,
-			Y:                0,
-			ModeValid:        1,
-			Mode:             mode,
+	if connectorID == 0 {
+		_ = d.Close()
+		return nil, fmt.Errorf("drm: connector required to activate CRTC %d", crtcID)
+	}
+
+	connector := connectorID
+	set := drmModeCRTC{
+		SetConnectorsPtr: uint64(uintptr(unsafe.Pointer(&connector))),
+		CountConnectors:  1,
+		CRTCID:           crtcID,
+		FBID:             d.buffers[0].fbID,
+		X:                0,
+		Y:                0,
+		ModeValid:        1,
+		Mode:             mode,
+	}
+	if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlSetCRTC, unsafe.Sizeof(set)), unsafe.Pointer(&set)); err != nil {
+		_ = d.Close()
+		return nil, fmt.Errorf("set drm CRTC %d framebuffer %d: %w", crtcID, d.buffers[0].fbID, err)
+	}
+	log.Printf("drm: initial SETCRTC connector=%d crtc=%d fb=%d mode=%s", connectorID, crtcID, d.buffers[0].fbID, drmModeName(mode))
+
+	return d, nil
+}
+
+func drmFindActivePlane(fd uintptr) (uint32, uint32, uint32, bool) {
+	var res drmModeGetPlaneRes
+	if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlaneRes, unsafe.Sizeof(res)), unsafe.Pointer(&res)); err != nil {
+		log.Printf("drm: get plane resources failed: %v", err)
+		return 0, 0, 0, false
+	}
+	if res.CountPlanes == 0 {
+		log.Printf("drm: no planes reported")
+		return 0, 0, 0, false
+	}
+
+	planes := make([]uint32, res.CountPlanes)
+	res.PlaneIDPtr = uint64(uintptr(unsafe.Pointer(&planes[0])))
+	if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlaneRes, unsafe.Sizeof(res)), unsafe.Pointer(&res)); err != nil {
+		log.Printf("drm: get plane resource ids failed: %v", err)
+		return 0, 0, 0, false
+	}
+
+	for _, planeID := range planes {
+		plane := drmModeGetPlane{PlaneID: planeID}
+		if err := drmIoctl(fd, drmIOWR(drmIoctlGetPlane, unsafe.Sizeof(plane)), unsafe.Pointer(&plane)); err != nil {
+			log.Printf("drm: get plane %d failed: %v", planeID, err)
+			continue
 		}
-		if err := drmIoctl(file.Fd(), drmIOWR(drmIoctlSetCRTC, unsafe.Sizeof(set)), unsafe.Pointer(&set)); err != nil {
-			_ = d.Close()
-			return nil, fmt.Errorf("set drm CRTC %d: %w", crtcID, err)
+		log.Printf("drm: plane %d crtc=%d fb=%d possible_crtcs=0x%x formats=%d", planeID, plane.CRTCID, plane.FBID, plane.PossibleCRTCS, plane.CountFormatTypes)
+		if plane.CRTCID != 0 && plane.FBID != 0 {
+			return planeID, plane.CRTCID, plane.FBID, true
+		}
+	}
+	return 0, 0, 0, false
+}
+
+func drmFindEmbeddedPanel(fd uintptr, connectorIDs, crtcIDs []uint32) (uint32, drmModeModeInfo, uint32, bool) {
+	if len(connectorIDs) == 0 || len(crtcIDs) == 0 {
+		return 0, drmModeModeInfo{}, 0, false
+	}
+
+	type candidate struct {
+		connectorID uint32
+		mode        drmModeModeInfo
+		crtcID      uint32
+		score       int
+	}
+	var best *candidate
+
+	for _, connectorID := range connectorIDs {
+		conn, encoderIDs, modes, err := drmGetConnector(fd, connectorID)
+		if err != nil || len(modes) == 0 {
+			if err != nil {
+				log.Printf("drm: embedded-panel connector %d query failed: %v", connectorID, err)
+			}
+			continue
+		}
+
+		mode := modes[0]
+		for _, m := range modes {
+			if m.Type&drmModeTypePreferred != 0 {
+				mode = m
+				break
+			}
+		}
+
+		base := 0
+		if conn.ConnectorType == drmModeConnectorDPI {
+			base += 1000
+		}
+		if conn.Connection == drmModeConnected {
+			base += 100
+		}
+		if conn.EncoderID != 0 {
+			base += 50
+		}
+		log.Printf("drm: embedded-panel candidate connector=%d type=%d connection=%d encoder=%d modes=%d mode=%s", connectorID, conn.ConnectorType, conn.Connection, conn.EncoderID, len(modes), drmModeName(mode))
+
+		// First try an encoder's current CRTC or possible CRTCs. This is only
+		// a preference; failure to find one must not reject a fixed DPI panel.
+		preferredCRTCS := make(map[uint32]int)
+		encoderSet := append([]uint32(nil), encoderIDs...)
+		if conn.EncoderID != 0 {
+			seen := false
+			for _, id := range encoderSet {
+				if id == conn.EncoderID {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				encoderSet = append(encoderSet, conn.EncoderID)
+			}
+		}
+		for _, encoderID := range encoderSet {
+			enc := drmModeGetEncoder{EncoderID: encoderID}
+			if err := drmIoctl(fd, drmIOWR(drmIoctlGetEncoder, unsafe.Sizeof(enc)), unsafe.Pointer(&enc)); err != nil {
+				continue
+			}
+			for index, crtcID := range crtcIDs {
+				if crtcID == enc.CRTCID && enc.CRTCID != 0 {
+					preferredCRTCS[crtcID] = 300
+				}
+				if index < 32 && enc.PossibleCRTCS&(1<<uint(index)) != 0 {
+					if preferredCRTCS[crtcID] < 200 {
+						preferredCRTCS[crtcID] = 200
+					}
+				}
+			}
+		}
+
+		// A current CRTC whose reported mode matches the connector mode is an
+		// especially strong signal for embedded panels, even when FBID/active
+		// are reported as zero by the vendor driver.
+		for _, crtcID := range crtcIDs {
+			crtc := drmModeCRTC{CRTCID: crtcID}
+			if err := drmIoctl(fd, drmIOWR(drmIoctlGetCRTC, unsafe.Sizeof(crtc)), unsafe.Pointer(&crtc)); err == nil {
+				if crtc.ModeValid != 0 && crtc.Mode.HDisplay == mode.HDisplay && crtc.Mode.VDisplay == mode.VDisplay {
+					if preferredCRTCS[crtcID] < 500 {
+						preferredCRTCS[crtcID] = 500
+					}
+				}
+				log.Printf("drm: embedded-panel CRTC %d fb=%d mode_valid=%d mode=%s preference=%d", crtcID, crtc.FBID, crtc.ModeValid, drmModeName(crtc.Mode), preferredCRTCS[crtcID])
+			}
+		}
+
+		// If this looks like the fixed DPI connector exposed by RV1106, a
+		// single available CRTC is unambiguous. With multiple CRTCs, prefer the
+		// one with the best encoder/mode match instead.
+		for _, crtcID := range crtcIDs {
+			score := base + preferredCRTCS[crtcID]
+			if len(crtcIDs) == 1 {
+				score += 100
+			}
+			if conn.ConnectorType == drmModeConnectorDPI {
+				score += 100
+			}
+			if best == nil || score > best.score {
+				c := candidate{connectorID: connectorID, mode: mode, crtcID: crtcID, score: score}
+				best = &c
+			}
 		}
 	}
 
-	return d, nil
+	if best == nil {
+		return 0, drmModeModeInfo{}, 0, false
+	}
+	log.Printf("drm: embedded-panel selected connector=%d crtc=%d mode=%s score=%d", best.connectorID, best.crtcID, drmModeName(best.mode), best.score)
+	return best.connectorID, best.mode, best.crtcID, true
+}
+
+func drmFindUsableConnectorMode(fd uintptr, connectorIDs []uint32) (uint32, drmModeModeInfo) {
+	type candidate struct {
+		id    uint32
+		mode  drmModeModeInfo
+		score int
+	}
+	var best *candidate
+	for _, connectorID := range connectorIDs {
+		conn, _, modes, err := drmGetConnector(fd, connectorID)
+		if err != nil {
+			log.Printf("drm: get connector %d failed while finding mode: %v", connectorID, err)
+			continue
+		}
+		if len(modes) == 0 {
+			continue
+		}
+		mode := modes[0]
+		score := 0
+		if conn.Connection == drmModeConnected {
+			score += 100
+		}
+		for _, m := range modes {
+			if m.Type&drmModeTypePreferred != 0 {
+				mode = m
+				score += 10
+				break
+			}
+		}
+		log.Printf("drm: connector %d connection=%d modes=%d encoder=%d candidate_mode=%s", connectorID, conn.Connection, len(modes), conn.EncoderID, drmModeName(mode))
+		if best == nil || score > best.score {
+			best = &candidate{id: connectorID, mode: mode, score: score}
+		}
+	}
+	if best == nil {
+		return 0, drmModeModeInfo{}
+	}
+	return best.id, best.mode
 }
 
 func drmFindActiveCRTC(fd uintptr, crtcIDs []uint32) (uint32, drmModeCRTC, bool) {
@@ -635,13 +945,24 @@ func drmGetConnector(fd uintptr, connectorID uint32) (drmModeGetConnector, []uin
 	if err := drmIoctl(fd, drmIOWR(drmIoctlGetConnector, unsafe.Sizeof(conn)), unsafe.Pointer(&conn)); err != nil {
 		return conn, nil, nil, err
 	}
+
+	// The first GETCONNECTOR is a size query, but the kernel may still expect
+	// valid userspace arrays for properties on the second call. Leaving
+	// props_ptr/prop_values_ptr as NULL can make vendor DRM drivers return
+	// EFAULT ("bad address") even when modes and encoders are available.
 	encoders := make([]uint32, conn.CountEncoders)
 	modes := make([]drmModeModeInfo, conn.CountModes)
+	props := make([]uint32, conn.CountProps)
+	propValues := make([]uint32, conn.CountProps)
 	if len(encoders) > 0 {
 		conn.EncodersPtr = uint64(uintptr(unsafe.Pointer(&encoders[0])))
 	}
 	if len(modes) > 0 {
 		conn.ModesPtr = uint64(uintptr(unsafe.Pointer(&modes[0])))
+	}
+	if len(props) > 0 {
+		conn.PropsPtr = uint64(uintptr(unsafe.Pointer(&props[0])))
+		conn.PropValuesPtr = uint64(uintptr(unsafe.Pointer(&propValues[0])))
 	}
 	if err := drmIoctl(fd, drmIOWR(drmIoctlGetConnector, unsafe.Sizeof(conn)), unsafe.Pointer(&conn)); err != nil {
 		return conn, nil, nil, err
