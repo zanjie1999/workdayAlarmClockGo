@@ -16,6 +16,41 @@ typedef struct {
 	unsigned int frame_bytes;
 } wa_alsa_pcm;
 
+static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int channels) {
+	snd_pcm_hw_params_t *hw;
+	snd_pcm_hw_params_alloca(&hw);
+	int err = snd_pcm_hw_params_any(pcm, hw);
+	if (err < 0) return err;
+	if ((err = snd_pcm_hw_params_set_access(pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) return err;
+	if ((err = snd_pcm_hw_params_set_format(pcm, hw, SND_PCM_FORMAT_S16_LE)) < 0) return err;
+	if ((err = snd_pcm_hw_params_set_channels(pcm, hw, channels)) < 0) return err;
+
+	unsigned int actual_rate = rate;
+	int dir = 0;
+	if ((err = snd_pcm_hw_params_set_rate_near(pcm, hw, &actual_rate, &dir)) < 0) return err;
+
+	unsigned int period_time = 10000;
+	dir = 0;
+	if ((err = snd_pcm_hw_params_set_period_time_near(pcm, hw, &period_time, &dir)) < 0) return err;
+	unsigned int buffer_time = 60000;
+	dir = 0;
+	if ((err = snd_pcm_hw_params_set_buffer_time_near(pcm, hw, &buffer_time, &dir)) < 0) return err;
+	if ((err = snd_pcm_hw_params(pcm, hw)) < 0) return err;
+
+	snd_pcm_uframes_t period_size = 0;
+	snd_pcm_uframes_t buffer_size = 0;
+	if ((err = snd_pcm_hw_params_get_period_size(hw, &period_size, &dir)) < 0) return err;
+	if ((err = snd_pcm_hw_params_get_buffer_size(hw, &buffer_size)) < 0) return err;
+
+	snd_pcm_sw_params_t *sw;
+	snd_pcm_sw_params_alloca(&sw);
+	if ((err = snd_pcm_sw_params_current(pcm, sw)) < 0) return err;
+	if ((err = snd_pcm_sw_params_set_avail_min(pcm, sw, period_size)) < 0) return err;
+	if ((err = snd_pcm_sw_params_set_start_threshold(pcm, sw, 1)) < 0) return err;
+	if ((err = snd_pcm_sw_params_set_stop_threshold(pcm, sw, buffer_size)) < 0) return err;
+	return snd_pcm_sw_params(pcm, sw);
+}
+
 static wa_alsa_pcm *wa_alsa_open(unsigned int rate, unsigned int channels, const char *device, int *err) {
 	wa_alsa_pcm *ctx = (wa_alsa_pcm *)calloc(1, sizeof(*ctx));
 	if (ctx == NULL) {
@@ -27,15 +62,7 @@ static wa_alsa_pcm *wa_alsa_open(unsigned int rate, unsigned int channels, const
 		free(ctx);
 		return NULL;
 	}
-	*err = snd_pcm_set_params(
-		ctx->pcm,
-		SND_PCM_FORMAT_S16_LE,
-		SND_PCM_ACCESS_RW_INTERLEAVED,
-		channels,
-		rate,
-		1,
-		500000
-	);
+	*err = wa_alsa_configure(ctx->pcm, rate, channels);
 	if (*err < 0) {
 		snd_pcm_close(ctx->pcm);
 		free(ctx);
