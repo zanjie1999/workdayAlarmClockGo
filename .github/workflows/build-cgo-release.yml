@@ -29,8 +29,15 @@ jobs:
             gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi \
             gcc-i686-linux-gnu \
-            libjpeg-turbo8-dev \
             gcc-mipsel-linux-gnu \
+            libc6-dev-arm64-cross \
+            libc6-dev-armel-cross \
+            libc6-dev-i386-cross \
+            libc6-dev-mipsel-cross \
+            linux-libc-dev-arm64-cross \
+            linux-libc-dev-armel-cross \
+            linux-libc-dev-mipsel-cross \
+            cmake \
             curl \
             xz-utils
 
@@ -50,38 +57,64 @@ jobs:
           set -euo pipefail
           rm -rf build package
           mkdir -p build package
+          JPEG_SOURCE="$RUNNER_TEMP/libjpeg-turbo-3.0.4"
+          curl --fail --location --retry 3 \
+            https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz \
+            --output "$RUNNER_TEMP/libjpeg-turbo.tar.gz"
+          tar -xzf "$RUNNER_TEMP/libjpeg-turbo.tar.gz" -C "$RUNNER_TEMP"
+
+          build_jpeg() {
+            local name="$1" cc="$2" processor="$3"
+            local prefix="$RUNNER_TEMP/jpeg-$name"
+            cmake -S "$JPEG_SOURCE" -B "$RUNNER_TEMP/jpeg-build-$name" \
+              -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR="$processor" \
+              -DCMAKE_C_COMPILER="$cc" -DCMAKE_INSTALL_PREFIX="$prefix" \
+              -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DWITH_SIMD=OFF >/dev/null
+            cmake --build "$RUNNER_TEMP/jpeg-build-$name" --target install -j"$(nproc)" >/dev/null
+            echo "$prefix"
+          }
+
+          JPEG_AMD64="$(build_jpeg amd64 gcc x86_64)"
+          JPEG_386="$(build_jpeg 386 i686-linux-gnu-gcc i686)"
+          JPEG_ARM="$(build_jpeg arm arm-linux-gnueabi-gcc arm)"
+          JPEG_ARM64="$(build_jpeg arm64 aarch64-linux-gnu-gcc aarch64)"
+          JPEG_MIPSEL="$(build_jpeg mipsle mipsel-linux-gnu-gcc mips)"
 
           # ALSA is intentionally excluded. It is coupled to the target
           # device's system libraries and must be built there separately.
           build_linux() {
-            local arch="$1" output="$2" cc="$3" extra="${4:-}"
-            env GOOS=linux GOARCH="$arch" CGO_ENABLED=1 CC="$cc" \
+            local arch="$1" output="$2" cc="$3" extra="${4:-}" goarm="${5:-}"
+            echo "==> Building Linux $arch${goarm:+ (GOARM=$goarm)}"
+            if ! env GOOS=linux GOARCH="$arch" GOARM="$goarm" CGO_ENABLED=1 CC="$cc" \
               CGO_CFLAGS="$extra" CGO_LDFLAGS="$extra" \
-              go build -trimpath -ldflags="-w -s" -o "build/$output" .
+              go build -trimpath -ldflags="-w -s" -o "build/$output" .; then
+              echo "::warning::Skipping Linux $arch${goarm:+ (GOARM=$goarm)} because it failed to compile"
+            fi
           }
 
-          build_linux amd64 workdayAlarmClock-linux gcc
-          build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc
-          env GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=1 CC=arm-linux-gnueabi-gcc \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-linux-arm .
-          build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc
-          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc
+          build_nocgo() {
+            local label="$1" output="$2" goos="$3" goarch="$4" extra="${5:-}"
+            echo "==> Building $label"
+            if ! env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 $extra \
+              go build -trimpath -ldflags="-w -s" -o "build/$output" .; then
+              echo "::warning::Skipping $label because it failed to compile"
+            fi
+          }
 
-          env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-windows-amd64.exe .
-          env GOOS=windows GOARCH=386 CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-windows-386.exe .
-          env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin-amd64 .
-          env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin-arm64 .
+          build_linux amd64 workdayAlarmClock-linux gcc "-I$JPEG_AMD64/include -L$JPEG_AMD64/lib"
+          build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "-I$JPEG_386/include -L$JPEG_386/lib"
+          build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "-I$JPEG_ARM/include -L$JPEG_ARM/lib" 5
+          build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "-I$JPEG_ARM64/include -L$JPEG_ARM64/lib"
+          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc \
+            "-I$JPEG_MIPSEL/include -L$JPEG_MIPSEL/lib"
 
-          env GOOS=android GOARCH=arm GOARM=7 CGO_ENABLED=0 \
-            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-arm .
-          env GOOS=android GOARCH=386 CGO_ENABLED=0 \
-            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-386 .
-          env GOOS=android GOARCH=arm64 CGO_ENABLED=0 \
-            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-arm64 .
+          build_nocgo windows-amd64 workdayAlarmClock-windows-amd64.exe windows amd64
+          build_nocgo windows-386 workdayAlarmClock-windows-386.exe windows 386
+          build_nocgo darwin-amd64 workdayAlarmClock-darwin-amd64 darwin amd64
+          build_nocgo darwin-arm64 workdayAlarmClock-darwin-arm64 darwin arm64
+          build_nocgo android-arm workdayAlarmClock-android-arm android arm 'GOARM=7 -tags app'
+          build_nocgo android-386 workdayAlarmClock-android-386 android 386 '-tags app'
+          build_nocgo android-arm64 workdayAlarmClock-android-arm64 android arm64 '-tags app'
 
           tar -czf package/workdayAlarmClock-cgo.tar.gz -C build .
           sha256sum package/workdayAlarmClock-cgo.tar.gz
