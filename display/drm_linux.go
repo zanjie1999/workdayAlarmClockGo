@@ -367,6 +367,10 @@ func (d *drmFramebuffer) restoreCRTC() bool {
 }
 
 func (d *drmFramebuffer) writeImage(img image.Image) error {
+	return d.writeImageAt(img, 0, 0, false)
+}
+
+func (d *drmFramebuffer) writeImageAt(img image.Image, x, y int, clearFrame bool) error {
 	// Double-buffer the scanout and deliberately overlap the next JPEG decode
 	// with the previous page flip. The timing counters below help distinguish
 	// CPU-side conversion from vblank pacing when tuning the renderer.
@@ -383,7 +387,14 @@ func (d *drmFramebuffer) writeImage(img image.Image) error {
 	backPage := 1 - d.frontPage
 	buf := &d.buffers[backPage]
 	encodeStart := time.Now()
-	if err := encodeImage(img, buf.mapped, int(d.info.Width), int(d.info.Height), int(d.info.Stride), int(d.info.BitsPerPixel), d.info.Format); err != nil {
+	dst := buf.mapped
+	width, height := int(d.info.Width), int(d.info.Height)
+	if clearFrame {
+		clear(dst)
+		width, height = img.Bounds().Dx(), img.Bounds().Dy()
+	}
+	offset := y*int(d.info.Stride) + x*int(d.info.BitsPerPixel/8)
+	if err := encodeImage(img, dst[offset:], width, height, int(d.info.Stride), int(d.info.BitsPerPixel), d.info.Format); err != nil {
 		return err
 	}
 	d.statsEncode += time.Since(encodeStart)

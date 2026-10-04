@@ -157,7 +157,7 @@ func ReadInfo() (Info, error) {
 	if info.Format == "custom" {
 		return info, fmt.Errorf("unsupported framebuffer format: %s", info.Format)
 	}
-	return info, nil
+	return applyResolutionOverride(info)
 }
 
 func Open() (*Framebuffer, error) {
@@ -187,7 +187,6 @@ func Open() (*Framebuffer, error) {
 		return nil, fmt.Errorf("unsupported framebuffer bpp: %d", info.BitsPerPixel)
 	}
 	fb := &Framebuffer{file: file, info: info, varInfo: v}
-	fb.writeBuffer = make([]byte, int(info.FrameSize))
 	if info.MemorySize > 0 {
 		mapped, mapErr := syscall.Mmap(int(file.Fd()), 0, int(info.MemorySize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 		if mapErr == nil {
@@ -391,6 +390,7 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 		decode   time.Duration
 		queueAge time.Duration
 	}
+	var resolutionKnown, matchesPhysicalSize bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -422,17 +422,26 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			}
 
 			bounds := img.Bounds()
-			if bounds.Dx() != int(fb.info.Width) ||
-				bounds.Dy() != int(fb.info.Height) {
-				return stats, fmt.Errorf("jpeg size mismatch %dx%d", bounds.Dx(), bounds.Dy())
+			if !resolutionKnown {
+				matchesPhysicalSize = bounds.Dx() == int(fb.info.Width) &&
+					bounds.Dy() == int(fb.info.Height)
+				resolutionKnown = true
 			}
 
 			timing.frames++
 			timing.decode += decodeElapsed
 			timing.queueAge += queueAge
 
-			if err := fb.writeImage(img); err != nil {
-				return stats, fmt.Errorf("write framebuffer: %w", err)
+			var writeErr error
+			if matchesPhysicalSize {
+				// 尺寸匹配直接写入
+				writeErr = fb.writeImage(img)
+			} else {
+				// 尺寸不匹配居中处理
+				writeErr = fb.writeCenteredImage(img)
+			}
+			if writeErr != nil {
+				return stats, fmt.Errorf("write framebuffer: %w", writeErr)
 			}
 			stats.Frames++
 			stats.JPEGBytes += frameBytes
@@ -448,12 +457,27 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 	if fb.drm != nil {
 		return fb.drm.writeImage(img)
 	}
+	return fb.writeImageAt(img, 0, 0, false)
+}
+
+func (fb *Framebuffer) writeCenteredImage(img image.Image) error {
+	centered, x, y, err := centerImage(img, int(fb.info.Width), int(fb.info.Height))
+	if err != nil {
+		return err
+	}
+	if fb.drm != nil {
+		return fb.drm.writeImageAt(centered, x, y, true)
+	}
+	return fb.writeImageAt(centered, x, y, true)
+}
+
+func (fb *Framebuffer) writeImageAt(img image.Image, x, y int, clearFrame bool) error {
 	if !fb.doubleBuffer {
-		return fb.writePage(img, 0)
+		return fb.writePageAt(img, 0, x, y, clearFrame)
 	}
 
 	backPage := 1 - fb.frontPage
-	if err := fb.writePage(img, backPage); err != nil {
+	if err := fb.writePageAt(img, backPage, x, y, clearFrame); err != nil {
 		if errors.Is(err, syscall.ENOSPC) {
 			// Some drivers expose two virtual pages but reject writes at the
 			// second page offset. Fall back to the single visible page.
@@ -464,7 +488,7 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 			_ = fbIoctl(fb.file.Fd(), fbioPanDisplay, unsafe.Pointer(&v))
 			fb.varInfo = v
 			fb.frontPage = 0
-			return fb.writePage(img, 0)
+			return fb.writePageAt(img, 0, x, y, clearFrame)
 		}
 		return err
 	}
@@ -487,7 +511,7 @@ func (fb *Framebuffer) writeImage(img image.Image) error {
 	return nil
 }
 
-func (fb *Framebuffer) writePage(img image.Image, page int) error {
+func (fb *Framebuffer) writePageAt(img image.Image, page, x, y int, clearFrame bool) error {
 	frameSize := int(fb.info.FrameSize)
 	if page < 0 || page >= len(fb.pageMode) {
 		return errors.New("invalid framebuffer page")
@@ -518,15 +542,26 @@ func (fb *Framebuffer) writePage(img image.Image, page int) error {
 	if dst == nil {
 		dst = fb.writeBuffer
 		if len(dst) != frameSize {
-			return errors.New("invalid framebuffer buffer")
+			fb.writeBuffer = make([]byte, frameSize)
+			dst = fb.writeBuffer
 		}
 	}
+	if clearFrame {
+		clear(dst)
+	}
+
+	width, height := int(fb.info.Width), int(fb.info.Height)
+	if clearFrame {
+		width, height = img.Bounds().Dx(), img.Bounds().Dy()
+	}
+	bytesPerPixel := int(fb.info.BitsPerPixel / 8)
+	offset := y*int(fb.info.Stride) + x*bytesPerPixel
 
 	if err := encodeImage(
 		img,
-		dst,
-		int(fb.info.Width),
-		int(fb.info.Height),
+		dst[offset:],
+		width,
+		height,
 		int(fb.info.Stride),
 		int(fb.info.BitsPerPixel),
 		fb.info.Format,

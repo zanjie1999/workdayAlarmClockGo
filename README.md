@@ -137,6 +137,12 @@ ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acod
 其实就是把画面刷到fb0，简单粗暴，无需任何依赖就能直接显示，缺点是没有硬件加速，比较吃音箱CPU，支持双缓冲，小分辨率下丝滑  
 只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
 
+如果设备的fb尺寸大于屏幕尺寸，可以用 `FB_WIDTH` 和 `FB_HEIGHT` 覆盖分辨率。例如fb0为1280x600但屏幕为1280x480时，可设置：  
+```sh
+FB_WIDTH=1280 FB_HEIGHT=480 ./workdayAlarmClock-linux-arm
+```
+显示端mjpg与fb尺寸相同将直接显示，否则将居中显示  
+
 Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
 无需计算再手动计算分辨率，延迟更低（本来还有虚拟显示器的设计但又懒得写了，你可以自己用lddDisplay虚拟一个）  
 

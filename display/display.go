@@ -1,6 +1,13 @@
 package display
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"image"
+	"os"
+	"strconv"
+	"strings"
+)
 
 const DevicePath = "/dev/fb0"
 
@@ -34,4 +41,58 @@ type Info struct {
 type StreamStats struct {
 	Frames    uint64 `json:"frames"`
 	JPEGBytes uint64 `json:"jpeg_bytes"`
+}
+
+func applyResolutionOverride(info Info) (Info, error) {
+	widthValue, widthSet := os.LookupEnv("FB_WIDTH")
+	heightValue, heightSet := os.LookupEnv("FB_HEIGHT")
+	if !widthSet && !heightSet {
+		return info, nil
+	}
+	if !widthSet || !heightSet || strings.TrimSpace(widthValue) == "" || strings.TrimSpace(heightValue) == "" {
+		return Info{}, errors.New("FB_WIDTH and FB_HEIGHT must both be set")
+	}
+
+	width, err := strconv.ParseUint(strings.TrimSpace(widthValue), 10, 32)
+	if err != nil || width == 0 {
+		return Info{}, fmt.Errorf("invalid FB_WIDTH %q: must be a positive integer", widthValue)
+	}
+	height, err := strconv.ParseUint(strings.TrimSpace(heightValue), 10, 32)
+	if err != nil || height == 0 {
+		return Info{}, fmt.Errorf("invalid FB_HEIGHT %q: must be a positive integer", heightValue)
+	}
+
+	info.Width = uint32(width)
+	info.Height = uint32(height)
+	return info, nil
+}
+
+func centerImage(img image.Image, targetWidth, targetHeight int) (image.Image, int, int, error) {
+	if img == nil || targetWidth <= 0 || targetHeight <= 0 {
+		return nil, 0, 0, errors.New("invalid image dimensions")
+	}
+	subImager, ok := img.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if !ok {
+		return nil, 0, 0, errors.New("image does not support centered cropping")
+	}
+
+	bounds := img.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		return nil, 0, 0, errors.New("invalid image dimensions")
+	}
+	width := minDimension(bounds.Dx(), targetWidth)
+	height := minDimension(bounds.Dy(), targetHeight)
+	cropX := bounds.Min.X + (bounds.Dx()-width)/2
+	cropY := bounds.Min.Y + (bounds.Dy()-height)/2
+	cropped := subImager.SubImage(image.Rect(cropX, cropY, cropX+width, cropY+height))
+	return cropped, (targetWidth - width) / 2, (targetHeight - height) / 2, nil
+}
+
+func minDimension(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
