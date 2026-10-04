@@ -1,0 +1,153 @@
+name: Build MIPS little-endian CGO binary (libjpeg)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install MIPS cross-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            binutils-mipsel-linux-gnu \
+            cmake \
+            curl \
+            gcc-mipsel-linux-gnu \
+            make \
+            xz-utils
+
+      - name: Build MIPS binary with libjpeg and ALSA
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod download
+
+          WORK="$RUNNER_TEMP/mipsel-cgo"
+          SYSROOT="$WORK/sysroot"
+          ALSA_STAGE="$WORK/alsa-stage"
+          JPEG_SOURCE="$RUNNER_TEMP/libjpeg-turbo-3.0.4"
+          JPEG_PREFIX="$WORK/jpeg"
+          mkdir -p "$WORK" "$SYSROOT" "$ALSA_STAGE" build
+
+          # Use the glibc 2.23 sysroot supported by older MIPS devices.
+          MIPSEL_BASE_URL="https://archive.ubuntu.com/ubuntu/pool/universe/c/cross-toolchain-base-ports"
+          for package in \
+            libc6-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            libc6-dev-mipsel-cross_2.23-0ubuntu3cross1_all.deb \
+            linux-libc-dev-mipsel-cross_4.4.0-18.34cross1_all.deb; do
+            curl --fail --location --retry 3 \
+              "$MIPSEL_BASE_URL/$package" \
+              --output "$WORK/$package"
+            dpkg-deb -x "$WORK/$package" "$SYSROOT"
+          done
+          test -r "$SYSROOT/usr/mipsel-linux-gnu/include/gnu/stubs-o32_hard.h"
+          test -r "$SYSROOT/usr/mipsel-linux-gnu/lib/crt1.o"
+          if [[ ! -e "$SYSROOT/usr/include" ]]; then
+            ln -s mipsel-linux-gnu/include "$SYSROOT/usr/include"
+          fi
+          if [[ ! -e "$SYSROOT/lib" ]]; then
+            ln -s usr/mipsel-linux-gnu/lib "$SYSROOT/lib"
+          fi
+          MIPSEL_LIB="$SYSROOT/usr/mipsel-linux-gnu/lib"
+          MIPSEL_INCLUDE="$SYSROOT/usr/mipsel-linux-gnu/include"
+          MIPSEL_CC="mipsel-linux-gnu-gcc --sysroot=$SYSROOT -B$MIPSEL_LIB/ -isystem $MIPSEL_INCLUDE -L$MIPSEL_LIB"
+
+          # The executable relies on the target's existing libasound.so.2.
+          ALSA_VERSION=1.2.11
+          ALSA_SOURCE="$WORK/alsa-lib-$ALSA_VERSION"
+          curl --fail --location --retry 3 \
+            "https://www.alsa-project.org/files/pub/lib/alsa-lib-$ALSA_VERSION.tar.bz2" \
+            --output "$WORK/alsa-lib.tar.bz2"
+          tar -xjf "$WORK/alsa-lib.tar.bz2" -C "$WORK"
+          (
+            cd "$ALSA_SOURCE"
+            CC="$MIPSEL_CC" \
+            CFLAGS="-O2 -fPIC" \
+            PKG_CONFIG=false \
+            ./configure \
+              --host=mipsel-linux-gnu \
+              --prefix=/usr \
+              --disable-static \
+              --enable-shared \
+              --disable-python \
+              --without-versioned
+            make -j"$(nproc)"
+            make DESTDIR="$ALSA_STAGE" install
+          )
+
+          # Build libjpeg-turbo as a target static library and use the same
+          # JPEG backend replacement as the multi-architecture CGO workflow.
+          curl --fail --location --retry 3 \
+            https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz \
+            --output "$WORK/libjpeg-turbo.tar.gz"
+          tar -xzf "$WORK/libjpeg-turbo.tar.gz" -C "$RUNNER_TEMP"
+          cmake -S "$JPEG_SOURCE" -B "$WORK/jpeg-build" \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=mips \
+            -DCMAKE_SYSROOT="$SYSROOT" \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_C_FLAGS="-B$MIPSEL_LIB/ -isystem $MIPSEL_INCLUDE" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$MIPSEL_LIB" \
+            -DCMAKE_INSTALL_PREFIX="$JPEG_PREFIX" \
+            -DENABLE_SHARED=OFF \
+            -DENABLE_STATIC=ON \
+            -DWITH_SIMD=OFF
+          cmake --build "$WORK/jpeg-build" --target install -j"$(nproc)"
+          test -r "$JPEG_PREFIX/include/jpeglib.h"
+          test -r "$JPEG_PREFIX/lib/libjpeg.a"
+
+          sed -i 's|^[[:space:]]*"image/jpeg"[[:space:]]*$|\t"github.com/pixiv/go-libjpeg/jpeg"|' display/fb_linux.go
+          sed -i 's|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()), \&jpeg.DecoderOptions{})|' display/fb_linux.go
+          grep -Fq '"github.com/pixiv/go-libjpeg/jpeg"' display/fb_linux.go
+          grep -Fq 'jpeg.Decode(bytes.NewReader(frame.buf.Bytes()), &jpeg.DecoderOptions{})' display/fb_linux.go
+
+          env \
+            GOOS=linux \
+            GOARCH=mipsle \
+            GOMIPS=hardfloat \
+            CGO_ENABLED=1 \
+            CC="$MIPSEL_CC" \
+            CGO_CFLAGS="-I$ALSA_STAGE/usr/include -I$JPEG_PREFIX/include" \
+            CGO_LDFLAGS="-L$ALSA_STAGE/usr/lib -L$JPEG_PREFIX/lib" \
+            go build -trimpath -tags alsa -ldflags="-w -s" \
+              -o build/workdayAlarmClock-linux-mipsle .
+
+          file build/workdayAlarmClock-linux-mipsle
+          mipsel-linux-gnu-readelf -h build/workdayAlarmClock-linux-mipsle | grep -E 'Class:|Data:|Machine:'
+          NEEDED_LIBRARIES="$(mipsel-linux-gnu-readelf -d build/workdayAlarmClock-linux-mipsle)"
+          printf '%s\n' "$NEEDED_LIBRARIES" | grep NEEDED
+          if ! grep -q 'Shared library: \[libasound.so.2\]' <<< "$NEEDED_LIBRARIES"; then
+            echo "MIPS binary is missing its expected libasound.so.2 dependency" >&2
+            exit 1
+          fi
+          if mipsel-linux-gnu-readelf --version-info build/workdayAlarmClock-linux-mipsle | grep -Eq 'GLIBC_2\.(2[4-9]|[3-9][0-9])'; then
+            echo "MIPS binary requires glibc newer than the target-compatible 2.23 sysroot" >&2
+            exit 1
+          fi
+          if grep -q 'Shared library: \[libjpeg' <<< "$NEEDED_LIBRARIES"; then
+            echo "MIPS binary unexpectedly has a dynamic libjpeg dependency" >&2
+            exit 1
+          fi
+          sha256sum build/workdayAlarmClock-linux-mipsle
+
+      - name: Upload MIPS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: workdayAlarmClock-linux-mipsle
+          path: build/workdayAlarmClock-linux-mipsle
+          if-no-files-found: error
