@@ -10,7 +10,11 @@ import (
 )
 
 func playPCMStream(r io.Reader, rate, channels int) error {
-	if filepath.Base(ShellPlayer) != "aplay" {
+	switch filepath.Base(ShellPlayer) {
+	case "alsa":
+		return alsaPlayPCMStream(r, rate, channels)
+	case "aplay":
+	default:
 		return ErrPCMStreamUnsupported
 	}
 	cmd := exec.Command(ShellPlayer, "-q", "-D", alsaDevice(), "-t", "raw", "-f", "S16_LE",

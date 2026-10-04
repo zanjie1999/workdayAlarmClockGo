@@ -8,20 +8,20 @@ package player
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <strings.h>
 
 typedef struct {
 	snd_pcm_t *pcm;
+	unsigned int frame_bytes;
 } wa_alsa_pcm;
 
-static wa_alsa_pcm *wa_alsa_open(unsigned int rate, int *err) {
+static wa_alsa_pcm *wa_alsa_open(unsigned int rate, unsigned int channels, const char *device, int *err) {
 	wa_alsa_pcm *ctx = (wa_alsa_pcm *)calloc(1, sizeof(*ctx));
 	if (ctx == NULL) {
 		*err = -ENOMEM;
 		return NULL;
 	}
-	const char *device = getenv("ALSA_DEVICE");
-	if (device == NULL || device[0] == '\0') device = "default";
 	*err = snd_pcm_open(&ctx->pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
 	if (*err < 0) {
 		free(ctx);
@@ -31,7 +31,7 @@ static wa_alsa_pcm *wa_alsa_open(unsigned int rate, int *err) {
 		ctx->pcm,
 		SND_PCM_FORMAT_S16_LE,
 		SND_PCM_ACCESS_RW_INTERLEAVED,
-		2,
+		channels,
 		rate,
 		1,
 		500000
@@ -41,6 +41,7 @@ static wa_alsa_pcm *wa_alsa_open(unsigned int rate, int *err) {
 		free(ctx);
 		return NULL;
 	}
+	ctx->frame_bytes = channels * sizeof(int16_t);
 	return ctx;
 }
 
@@ -48,7 +49,7 @@ static long wa_alsa_write(wa_alsa_pcm *ctx, void *data, unsigned long frames) {
 	unsigned long written = 0;
 	char *ptr = (char *)data;
 	while (written < frames) {
-		snd_pcm_sframes_t n = snd_pcm_writei(ctx->pcm, ptr + written * 4, frames - written);
+		snd_pcm_sframes_t n = snd_pcm_writei(ctx->pcm, ptr + written * ctx->frame_bytes, frames - written);
 		if (n < 0) {
 			n = snd_pcm_recover(ctx->pcm, (int)n, 1);
 			if (n < 0) {
@@ -276,7 +277,9 @@ func alsaPlayURL(url string) error {
 	}
 
 	var openErr C.int
-	pcm := C.wa_alsa_open(C.uint(decoder.SampleRate()), &openErr)
+	device := C.CString(alsaDevice())
+	defer C.free(unsafe.Pointer(device))
+	pcm := C.wa_alsa_open(C.uint(decoder.SampleRate()), 2, device, &openErr)
 	if pcm == nil {
 		return fmt.Errorf("alsa open %s: %s", alsaDevice(), C.GoString(C.wa_alsa_error(C.long(openErr))))
 	}
@@ -322,6 +325,67 @@ func alsaPlayURL(url string) error {
 		}
 		if readErr != nil {
 			return fmt.Errorf("read decoded pcm: %w", readErr)
+		}
+	}
+}
+
+func alsaPlayPCMStream(r io.Reader, rate, channels int) error {
+	ensureALSAConfig()
+	var openErr C.int
+	device := C.CString(alsaDevice())
+	defer C.free(unsafe.Pointer(device))
+	pcm := C.wa_alsa_open(C.uint(rate), C.uint(channels), device, &openErr)
+	if pcm == nil {
+		return fmt.Errorf("alsa open %s: %s", alsaDevice(), C.GoString(C.wa_alsa_error(C.long(openErr))))
+	}
+	alsaPCMmu.Lock()
+	alsaCurrentPCM = pcm
+	alsaPCMmu.Unlock()
+
+	completed := false
+	defer func() {
+		alsaPCMmu.Lock()
+		if alsaCurrentPCM == pcm {
+			alsaCurrentPCM = nil
+		}
+		alsaPCMmu.Unlock()
+		C.wa_alsa_close(pcm, C.int(boolInt(completed)))
+	}()
+
+	frameBytes := channels * 2
+	readBuffer := make([]byte, 64*1024)
+	pending := make([]byte, 0, frameBytes)
+	emptyReads := 0
+	for {
+		n, readErr := r.Read(readBuffer)
+		if n > 0 {
+			emptyReads = 0
+			pending = append(pending, readBuffer[:n]...)
+			aligned := len(pending) / frameBytes * frameBytes
+			if aligned > 0 {
+				frames := C.ulong(aligned / frameBytes)
+				written := C.wa_alsa_write(pcm, unsafe.Pointer(&pending[0]), frames)
+				if written < 0 {
+					return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
+				}
+				pending = append(pending[:0], pending[aligned:]...)
+			}
+		}
+		if n == 0 && readErr == nil {
+			emptyReads++
+			if emptyReads >= 100 {
+				return io.ErrNoProgress
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				if len(pending) != 0 {
+					return fmt.Errorf("incomplete PCM frame: received %d trailing bytes, expected a multiple of %d", len(pending), frameBytes)
+				}
+				completed = true
+				return nil
+			}
+			return fmt.Errorf("read PCM stream: %w", readErr)
 		}
 	}
 }

@@ -2,7 +2,10 @@
 
 package player
 
-import "errors"
+import (
+	"errors"
+	"io"
+)
 
 func alsaBackendAvailable() bool {
 	return false
@@ -10,6 +13,10 @@ func alsaBackendAvailable() bool {
 
 func alsaPlayURL(string) error {
 	return errors.New("direct ALSA backend is unavailable in this build")
+}
+
+func alsaPlayPCMStream(io.Reader, int, int) error {
+	return ErrPCMStreamUnsupported
 }
 
 func alsaCancelPlayback() {}
