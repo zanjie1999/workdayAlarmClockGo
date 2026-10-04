@@ -1,4 +1,4 @@
-//go:build linux && cgo && !app
+//go:build linux && cgo && alsa && !app
 
 package player
 

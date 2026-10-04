@@ -1,0 +1,94 @@
+name: Build CGO release (libjpeg)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out latest source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            gcc-i686-linux-gnu \
+            libjpeg-turbo8-dev \
+            gcc-mipsel-linux-gnu \
+            curl \
+            xz-utils
+
+      - name: Apply Linux JPEG backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The checked-in source may use the standard library JPEG decoder.
+          # Keep this replacement limited to the fb_linux import.
+          sed -i 's|^[[:space:]]*"image/jpeg"[[:space:]]*$|\t"github.com/pixiv/go-libjpeg/jpeg"|' display/fb_linux.go
+          sed -i 's|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()), \&jpeg.DecoderOptions{})|' display/fb_linux.go
+          go mod download
+
+      - name: Build and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build package
+          mkdir -p build package
+
+          # ALSA is intentionally excluded. It is coupled to the target
+          # device's system libraries and must be built there separately.
+          build_linux() {
+            local arch="$1" output="$2" cc="$3" extra="${4:-}"
+            env GOOS=linux GOARCH="$arch" CGO_ENABLED=1 CC="$cc" \
+              CGO_CFLAGS="$extra" CGO_LDFLAGS="$extra" \
+              go build -trimpath -ldflags="-w -s" -o "build/$output" .
+          }
+
+          build_linux amd64 workdayAlarmClock-linux gcc
+          build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc
+          env GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=1 CC=arm-linux-gnueabi-gcc \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-linux-arm .
+          build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc
+          build_linux mipsle workdayAlarmClock-linux-mipsle mipsel-linux-gnu-gcc
+
+          env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-windows-amd64.exe .
+          env GOOS=windows GOARCH=386 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-windows-386.exe .
+          env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin-amd64 .
+          env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-darwin-arm64 .
+
+          env GOOS=android GOARCH=arm GOARM=7 CGO_ENABLED=0 \
+            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-arm .
+          env GOOS=android GOARCH=386 CGO_ENABLED=0 \
+            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-386 .
+          env GOOS=android GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -tags app -ldflags="-w -s" -o build/workdayAlarmClock-android-arm64 .
+
+          tar -czf package/workdayAlarmClock-cgo.tar.gz -C build .
+          sha256sum package/workdayAlarmClock-cgo.tar.gz
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workdayAlarmClock-cgo
+          path: package/workdayAlarmClock-cgo.tar.gz
+          if-no-files-found: error

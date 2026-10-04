@@ -1038,6 +1038,8 @@ func replaceFBStream(body io.ReadCloser) *fbStreamSession {
 			old.cancel()
 		}
 		_ = old.body.Close()
+		// 关的有点慢
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	return session

@@ -144,7 +144,7 @@ jobs:
               CC="$compiler" \
               CGO_CFLAGS="-I$alsa_prefix/include $c_flags" \
               CGO_LDFLAGS="-L$alsa_prefix/lib $c_flags" \
-              go build -trimpath -ldflags="-w -s" -o "build/$output" .
+              go build -trimpath -tags alsa -ldflags="-w -s" -o "build/$output" .
           }
 
           build_alsa i386 i686-linux-gnu i686-linux-gnu-gcc
@@ -158,7 +158,7 @@ jobs:
             go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-i386.exe .
 
           env GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=gcc \
-            go build -trimpath -ldflags="-w -s" -o build/workdayAlarmClock-linux .
+            go build -trimpath -tags alsa -ldflags="-w -s" -o build/workdayAlarmClock-linux .
           build_linux 386 workdayAlarmClock-linux-i386 i686-linux-gnu-gcc "$RUNNER_TEMP/alsa-i386"
           build_linux arm workdayAlarmClock-linux-arm arm-linux-gnueabi-gcc "$RUNNER_TEMP/alsa-arm" 5
           build_linux arm64 workdayAlarmClock-linux-arm64 aarch64-linux-gnu-gcc "$RUNNER_TEMP/alsa-arm64"
