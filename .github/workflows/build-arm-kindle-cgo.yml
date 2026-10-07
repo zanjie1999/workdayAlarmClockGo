@@ -1,0 +1,166 @@
+name: Build ARM (Kindle libjpeg) CGO binary
+
+# Target device:
+#   - ARMv7l, soft-float EABI (ld-linux.so.3)
+#   - GNU libc 2.20
+#   - No ALSA PCM device (only /dev/snd/timer), so the ALSA backend is disabled
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install ARM cross-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-linux-gnueabi \
+            build-essential \
+            cmake \
+            curl \
+            gcc-arm-linux-gnueabi \
+            linux-libc-dev-armel-cross \
+            make \
+            xz-utils
+
+      - name: Build Kindle ARM binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod download
+
+          WORK="$RUNNER_TEMP/kindle-arm-cgo"
+          SYSROOT="$WORK/sysroot"
+          JPEG_SOURCE="$RUNNER_TEMP/libjpeg-turbo-3.0.4"
+          JPEG_PREFIX="$WORK/jpeg"
+          mkdir -p "$WORK" "$SYSROOT" build
+
+          # Debian Jessie armel packages provide glibc 2.19, which is
+          # compatible with the Kindle's glibc 2.20 runtime. These are the
+          # target libc packages (rather than the host's newer cross sysroot).
+          ARMEL_BASE_URL="https://archive.debian.org/debian/pool/main/g/glibc"
+          for package in \
+            libc6_2.19-18+deb8u10_armel.deb \
+            libc6-dev_2.19-18+deb8u10_armel.deb; do
+            curl --fail --location --retry 3 \
+              "$ARMEL_BASE_URL/$package" \
+              --output "$WORK/$package"
+            dpkg-deb -x "$WORK/$package" "$SYSROOT"
+          done
+          # Debian multiarch packages extract under either /usr/include and
+          # /usr/lib or /usr/arm-linux-gnueabi; normalize both layouts.
+          mkdir -p "$SYSROOT/usr/arm-linux-gnueabi"
+          if [[ ! -e "$SYSROOT/usr/arm-linux-gnueabi/include" ]]; then
+            if [[ -d "$SYSROOT/usr/include/arm-linux-gnueabi" ]]; then
+              ln -s ../include/arm-linux-gnueabi "$SYSROOT/usr/arm-linux-gnueabi/include"
+            elif [[ -d "$SYSROOT/usr/include" ]]; then
+              ln -s ../include "$SYSROOT/usr/arm-linux-gnueabi/include"
+            fi
+          fi
+          if [[ ! -e "$SYSROOT/usr/arm-linux-gnueabi/lib" ]]; then
+            if [[ -d "$SYSROOT/usr/lib/arm-linux-gnueabi" ]]; then
+              ln -s ../lib/arm-linux-gnueabi "$SYSROOT/usr/arm-linux-gnueabi/lib"
+            elif [[ -d "$SYSROOT/lib/arm-linux-gnueabi" ]]; then
+              ln -s ../../lib/arm-linux-gnueabi "$SYSROOT/usr/arm-linux-gnueabi/lib"
+            fi
+          fi
+          test -r "$SYSROOT/usr/arm-linux-gnueabi/include/gnu/stubs-soft.h"
+          test -r "$SYSROOT/usr/arm-linux-gnueabi/lib/crt1.o"
+          if [[ ! -e "$SYSROOT/usr/include" ]]; then
+            ln -s arm-linux-gnueabi/include "$SYSROOT/usr/include"
+          fi
+          if [[ ! -e "$SYSROOT/lib" ]]; then
+            ln -s usr/arm-linux-gnueabi/lib "$SYSROOT/lib"
+          fi
+          # libc headers include Linux UAPI headers (linux/*.h and asm/*.h).
+          # Supply them from the matching ARMEL cross package.
+          CROSS_INCLUDE="/usr/arm-linux-gnueabi/include"
+          test -r "$CROSS_INCLUDE/linux/errno.h"
+          cp -a "$CROSS_INCLUDE/linux" "$SYSROOT/usr/arm-linux-gnueabi/include/"
+          cp -a "$CROSS_INCLUDE/asm" "$SYSROOT/usr/arm-linux-gnueabi/include/"
+          ARMEL_LIB="$SYSROOT/usr/arm-linux-gnueabi/lib"
+          ARMEL_INCLUDE="$SYSROOT/usr/arm-linux-gnueabi/include"
+          ARMEL_CC="arm-linux-gnueabi-gcc --sysroot=$SYSROOT -B$ARMEL_LIB/ -isystem $ARMEL_INCLUDE -L$ARMEL_LIB"
+
+          # libjpeg is linked statically; Kindle supplies no libjpeg ABI
+          # requirement for this executable.
+          curl --fail --location --retry 3 \
+            https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz \
+            --output "$WORK/libjpeg-turbo.tar.gz"
+          tar -xzf "$WORK/libjpeg-turbo.tar.gz" -C "$RUNNER_TEMP"
+          cmake -S "$JPEG_SOURCE" -B "$WORK/jpeg-build" \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=arm \
+            -DCMAKE_SYSROOT="$SYSROOT" \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabi-gcc \
+            -DCMAKE_C_FLAGS="-B$ARMEL_LIB/ -isystem $ARMEL_INCLUDE" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$ARMEL_LIB" \
+            -DCMAKE_INSTALL_PREFIX="$JPEG_PREFIX" \
+            -DENABLE_SHARED=OFF \
+            -DENABLE_STATIC=ON \
+            -DWITH_SIMD=OFF
+          # Build only the library target. Building libjpeg-turbo's benchmark
+          # and utility executables links the old target libm.a and fails on
+          # glibc 2.19 with an unresolved _dl_hwcap symbol.
+          cmake --build "$WORK/jpeg-build" --target jpeg-static -j"$(nproc)"
+          mkdir -p "$JPEG_PREFIX/include" "$JPEG_PREFIX/lib"
+          cp "$WORK/jpeg-build/libjpeg.a" "$JPEG_PREFIX/lib/libjpeg.a"
+          cp "$JPEG_SOURCE"/*.h "$JPEG_PREFIX/include/"
+          # jconfig.h is generated by CMake and is not part of the source tree.
+          cp "$WORK/jpeg-build/jconfig.h" "$JPEG_PREFIX/include/jconfig.h"
+          test -r "$JPEG_PREFIX/include/jpeglib.h"
+          test -r "$JPEG_PREFIX/include/jconfig.h"
+          test -r "$JPEG_PREFIX/lib/libjpeg.a"
+
+          sed -i 's|^[[:space:]]*"image/jpeg"[[:space:]]*$|\t"github.com/pixiv/go-libjpeg/jpeg"|' display/fb_linux.go
+          sed -i 's|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()))|jpeg.Decode(bytes.NewReader(frame.buf.Bytes()), \&jpeg.DecoderOptions{})|' display/fb_linux.go
+
+          env \
+            GOOS=linux \
+            GOARCH=arm \
+            GOARM=7 \
+            CGO_ENABLED=1 \
+            CC="$ARMEL_CC" \
+            CGO_CFLAGS="-I$JPEG_PREFIX/include" \
+            CGO_LDFLAGS="-L$JPEG_PREFIX/lib" \
+            go build -trimpath -ldflags="-w -s" \
+              -o build/workdayAlarmClock-linux-kindle-armv7 ./
+
+          file build/workdayAlarmClock-linux-kindle-armv7
+          arm-linux-gnueabi-readelf -h build/workdayAlarmClock-linux-kindle-armv7 | grep -E 'Class:|Data:|Machine:|Flags:'
+          NEEDED_LIBRARIES="$(arm-linux-gnueabi-readelf -d build/workdayAlarmClock-linux-kindle-armv7)"
+          printf '%s\n' "$NEEDED_LIBRARIES" | grep NEEDED || true
+          if arm-linux-gnueabi-readelf --version-info build/workdayAlarmClock-linux-kindle-armv7 | grep -Eq 'GLIBC_2\.(2[1-9]|[3-9][0-9])'; then
+            echo "Kindle binary requires glibc newer than 2.20" >&2
+            exit 1
+          fi
+          if grep -q 'Shared library: \[libasound' <<< "$NEEDED_LIBRARIES"; then
+            echo "Kindle binary unexpectedly has an ALSA dependency" >&2
+            exit 1
+          fi
+          if grep -q 'Shared library: \[libjpeg' <<< "$NEEDED_LIBRARIES"; then
+            echo "Kindle binary unexpectedly has a dynamic libjpeg dependency" >&2
+            exit 1
+          fi
+          sha256sum build/workdayAlarmClock-linux-kindle-armv7
+
+      - name: Upload Kindle ARM binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: workdayAlarmClock-linux-kindle-armv7
+          path: build/workdayAlarmClock-linux-kindle-armv7
+          if-no-files-found: error
