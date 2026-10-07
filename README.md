@@ -257,11 +257,12 @@ ln -s /etc/init.d/workdayAlarmClock /etc/rcS.d/S90workdayAlarmClock
 ```
 /etc/init.d/weston stop
 ```
-那启动脚本可以这样写
+那启动脚本可以这样写  
+其中control_engine掌管按键和熄屏  
 ```
-cat << SPARKLE > /home/root/workdayAlarmClock/start.sh
+cat << 'SPARKLE' > /home/root/workdayAlarmClock/start.sh
 #!/bin/sh
-ps|grep -E 'z03|Z03'|awk '{system("kill -9 "$1)}'
+sh -c 'sleep 20; ps|grep -E "z03|Z03|control_engine"|awk "{system(\"kill -9 \"\$1)}"' &
 /etc/init.d/weston stop
 cd /home/root/workdayAlarmClock
 killall workdayAlarmClock-linux-arm
