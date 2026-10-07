@@ -221,7 +221,7 @@ chmod +x workdayAlarmClock-linux-arm
 cat << SPARKLE > /home/root/workdayAlarmClock/start.sh
 #!/bin/sh
 cd /home/root/workdayAlarmClock
-./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
+./workdayAlarmClock-linux-arm aplay </dev/null >/dev/null 2>&1 &
 SPARKLE
 
 chmod +x /home/root/workdayAlarmClock/start.sh
@@ -237,7 +237,7 @@ printf '%s\n' \
 'case "$1" in' \
 '  start)' \
 '    cd /home/root/workdayAlarmClock || exit 1' \
-'    start-stop-daemon --start --background --exec /home/root/workdayAlarmClock/workdayAlarmClock-linux-arm' \
+'    start-stop-daemon --start --background --exec /usr/bin/env /home/root/workdayAlarmClock/start.sh' \
 '    ;;' \
 '  stop)' \
 '    start-stop-daemon --stop --exec /home/root/workdayAlarmClock/workdayAlarmClock-linux-arm' \
@@ -257,6 +257,33 @@ ln -s /etc/init.d/workdayAlarmClock /etc/rcS.d/S90workdayAlarmClock
 ```
 /etc/init.d/weston stop
 ```
+那启动脚本可以这样写
+```
+cat << SPARKLE > /home/root/workdayAlarmClock/start.sh
+#!/bin/sh
+ps|grep -E 'z03|Z03'|awk '{system("kill -9 "$1)}'
+/etc/init.d/weston stop
+cd /home/root/workdayAlarmClock
+killall workdayAlarmClock-linux-arm
+FB_WIDTH=480 FB_HEIGHT=1280 ./workdayAlarmClock-linux-arm aplay </dev/null >/dev/null 2>&1 &
+SPARKLE
+
+chmod +x /home/root/workdayAlarmClock/start.sh
+
+# 这样直接运行就能关掉作业帮的ui,当个屏用
+/home/root/workdayAlarmClock/start.sh
+```
+如果你想开机就不启动作业帮的ui
+```
+rm /etc/rc5.d/S96zybz03qt-init /etc/rc5.d/S09weston
+```
+还原也很简单
+```
+cd /etc/rc5.d
+ln -s ../init.d/zybz03qt-init S96zybz03qt-init
+ln -s ../init.d/weston S09weston
+```
+
 
 ### Kindle
 下载方式同上，运行命令不一样
