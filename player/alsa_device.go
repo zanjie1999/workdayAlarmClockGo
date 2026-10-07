@@ -1,11 +1,26 @@
 package player
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 )
 
 var alsaDeviceName string
+
+func resolveALSADevice(configured, detected string) string {
+	if device := strings.TrimSpace(configured); device != "" {
+		return device
+	}
+	if detected != "" {
+		return detected
+	}
+	return "default"
+}
+
+func alsaDevice() string {
+	return resolveALSADevice(os.Getenv("ALSA_DEVICE"), alsaDeviceName)
+}
 
 func detectALSADevice() string {
 	path, err := exec.LookPath("aplay")

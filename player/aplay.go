@@ -197,16 +197,6 @@ func isDirectALSA() bool {
 	return filepath.Base(ShellPlayer) == "alsa"
 }
 
-func alsaDevice() string {
-	if device := strings.TrimSpace(os.Getenv("ALSA_DEVICE")); device != "" {
-		return device
-	}
-	if alsaDeviceName != "" {
-		return alsaDeviceName
-	}
-	return "default"
-}
-
 func pcmURL(url string) error {
 	if isDirectALSA() {
 		return alsaPlayURL(url)

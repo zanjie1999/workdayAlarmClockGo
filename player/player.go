@@ -61,10 +61,10 @@ func InitDefaultShellPlayer() {
 	if ShellPlayer == "" {
 		ShellPlayer = defaultShellPlayer()
 	}
-	if alsaDeviceName == "" {
+	if alsaDeviceName == "" && strings.TrimSpace(os.Getenv("ALSA_DEVICE")) == "" {
 		alsaDeviceName = detectALSADevice()
-		log.Println("ALSA device:", alsaDeviceName)
 	}
+	log.Println("ALSA device:", alsaDevice())
 }
 
 // 上一首 或一键者播放指定歌单
