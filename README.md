@@ -631,11 +631,13 @@ chmod +x /etc/init.d/S99workdayAlarmClock
 ```
 cat << SPARKLE > /userdisk/Favorite/workdayAlarmClock/start.sh
 #!/bin/sh
+/etc/init.d/S99input-event-daemon stop
 cd /userdisk/Favorite/workdayAlarmClock
 ./workdayAlarmClock-linux-arm </dev/null >/dev/null 2>&1 &
 SPARKLE
 chmod +x /userdisk/Favorite/workdayAlarmClock/*
 ```
+其中S99input-event-daemon是控制屏幕超时和自动关机的  
 然后你每次就可以直接运行
 ```
 /userdisk/Favorite/workdayAlarmClock/start.sh
