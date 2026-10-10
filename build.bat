@@ -1,5 +1,6 @@
 @echo off
 
+set AndroidProject=D:\AndroidProject\workdayAlarmClockAndroid
 
 rd /s /q build
 mkdir build
