@@ -198,29 +198,44 @@ func GetWeather(code string) string {
 
 func shortAlarm(s string) string {
 	// 【咩咩区雷雨大风黄色预警信号】受北方向移近的雷雨云团影响，预计未来2-3小时我区有雷雨，并伴有6到8级阵风和短时强降水，咩咩区气象台于1月30日23时15分发布雷雨大风黄色预警信号，请注意防御局地雷击、短时大风、短时强降水及其导致的次生灾害。（预警信息来源：国家预警信息发布中心）
+	// 【咩咩区森林火险黄色预警信号升级为橙色】近期天气干燥，森林火险气象等级高，森林火灾易发生，咩咩区气象台于1月2日12时34分将森林火险黄色预警信号升级为森林火险橙色预警信号，请注意森林防火和用火用电安全。（预警信息来源：国家预警信息发布中心）
 	if s == "" {
 		return ""
 	}
 	// 标题
 	a, b := strings.Index(s, "【"), strings.Index(s, "】")
-	title := s[a : b+3] // 】是3个字节
+	if a == -1 || b == -1 || b < a+len("【") {
+		return s
+	}
+	title := s[a : b+len("】")]
 
 	// 区前2字
-	key := string([]rune(s[a+3 : b])[:2])
+	area := []rune(s[a+len("【") : b])
+	if len(area) < 2 {
+		return s
+	}
+	key := string(area[:2])
 
 	// 发布时间
 	dayIdx := strings.Index(s, "日")
 	pubIdx := strings.Index(s, "分发布")
 	timePart := ""
-	if dayIdx != -1 && pubIdx != -1 {
-		timePart = s[dayIdx+3 : pubIdx]
+	if dayIdx != -1 && pubIdx >= dayIdx+len("日") {
+		timePart = s[dayIdx+len("日") : pubIdx]
 		timePart = strings.ReplaceAll(timePart, "时", ":")
 	}
 
 	// 描述：从“预计”到“，key”之前
 	p := strings.Index(s, "预计")
-	k := strings.Index(s[p:], "，"+key)
-	desc := s[p+6 : p+k]
+	if p == -1 {
+		return s
+	}
+	descStart := p + len("预计")
+	k := strings.Index(s[descStart:], "，"+key)
+	if k == -1 {
+		return s
+	}
+	desc := s[p : descStart+k]
 
 	return timePart + title + desc
 }
