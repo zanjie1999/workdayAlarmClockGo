@@ -273,10 +273,15 @@ type drmFramebuffer struct {
 	pendingPage int
 	flipPending bool
 
-	statsFrames uint64
-	statsWait   time.Duration
-	statsEncode time.Duration
-	statsFlip   time.Duration
+	statsFrames       uint64
+	statsWait         time.Duration
+	statsEncode       time.Duration
+	statsFlip         time.Duration
+	statsWindowStart  time.Time
+	statsWindowFrames uint64
+	statsWindowWait   time.Duration
+	statsWindowEncode time.Duration
+	statsWindowFlip   time.Duration
 }
 
 func (d *drmFramebuffer) Close() error {
@@ -374,12 +379,14 @@ func (d *drmFramebuffer) writeImageAt(img image.Image, x, y int, clearFrame bool
 	// Double-buffer the scanout and deliberately overlap the next JPEG decode
 	// with the previous page flip. The timing counters below help distinguish
 	// CPU-side conversion from vblank pacing when tuning the renderer.
+	var waitElapsed time.Duration
 	if d.flipPending {
 		waitStart := time.Now()
 		if err := d.waitForFlip(); err != nil {
 			return fmt.Errorf("wait for drm page flip: %w", err)
 		}
-		d.statsWait += time.Since(waitStart)
+		waitElapsed = time.Since(waitStart)
+		d.statsWait += waitElapsed
 		d.frontPage = d.pendingPage
 		d.flipPending = false
 	}
@@ -397,19 +404,33 @@ func (d *drmFramebuffer) writeImageAt(img image.Image, x, y int, clearFrame bool
 	if err := encodeImage(img, dst[offset:], width, height, int(d.info.Stride), int(d.info.BitsPerPixel), d.info.Format); err != nil {
 		return err
 	}
-	d.statsEncode += time.Since(encodeStart)
+	encodeElapsed := time.Since(encodeStart)
+	d.statsEncode += encodeElapsed
 
 	flipStart := time.Now()
 	flip := drmModePageFlip{CRTCID: d.crtcID, FBID: buf.fbID, Flags: drmModePageFlipEvent}
 	if err := drmIoctl(d.file.Fd(), drmIOWR(drmIoctlPageFlip, unsafe.Sizeof(flip)), unsafe.Pointer(&flip)); err != nil {
 		return fmt.Errorf("drm page flip: %w", err)
 	}
-	d.statsFlip += time.Since(flipStart)
+	flipElapsed := time.Since(flipStart)
+	d.statsFlip += flipElapsed
 	d.pendingPage = backPage
 	d.flipPending = true
 	d.statsFrames++
-	if d.statsFrames%30 == 0 {
-		log.Printf("drm frame timing: frames=%d avg_wait=%s avg_encode=%s avg_flip_submit=%s", d.statsFrames, d.statsWait/time.Duration(d.statsFrames), d.statsEncode/time.Duration(d.statsFrames), d.statsFlip/time.Duration(d.statsFrames))
+	d.statsWindowFrames++
+	d.statsWindowWait += waitElapsed
+	d.statsWindowEncode += encodeElapsed
+	d.statsWindowFlip += flipElapsed
+	if d.statsWindowStart.IsZero() {
+		d.statsWindowStart = time.Now()
+	}
+	if elapsed := time.Since(d.statsWindowStart); elapsed >= 10*time.Second {
+		log.Printf("drm frame timing: fps=%.2f frames=%d avg_wait=%s avg_encode=%s avg_flip_submit=%s", float64(d.statsWindowFrames)/elapsed.Seconds(), d.statsWindowFrames, d.statsWindowWait/time.Duration(d.statsWindowFrames), d.statsWindowEncode/time.Duration(d.statsWindowFrames), d.statsWindowFlip/time.Duration(d.statsWindowFrames))
+		d.statsWindowStart = time.Now()
+		d.statsWindowFrames = 0
+		d.statsWindowWait = 0
+		d.statsWindowEncode = 0
+		d.statsWindowFlip = 0
 	}
 	return nil
 }

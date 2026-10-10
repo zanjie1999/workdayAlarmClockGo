@@ -386,10 +386,13 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 
 	var stats StreamStats
 	var timing struct {
-		frames   uint64
-		decode   time.Duration
-		queueAge time.Duration
+		frames       uint64
+		decode       time.Duration
+		queueAge     time.Duration
+		windowFrames uint64
+		windowStart  time.Time
 	}
+	timing.windowStart = time.Now()
 	var resolutionKnown, matchesPhysicalSize bool
 	for {
 		select {
@@ -446,8 +449,12 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			stats.Frames++
 			stats.JPEGBytes += frameBytes
 
-			if timing.frames%30 == 0 {
-				log.Printf("frame timing: frames=%d avg_jpeg_decode=%s avg_queue_age=%s", timing.frames, timing.decode/time.Duration(timing.frames), timing.queueAge/time.Duration(timing.frames))
+			timing.windowFrames++
+			if elapsed := time.Since(timing.windowStart); elapsed >= 10*time.Second {
+				fps := float64(timing.windowFrames) / elapsed.Seconds()
+				log.Printf("frame timing: fps=%.2f frames=%d avg_jpeg_decode=%s avg_queue_age=%s", fps, timing.frames, timing.decode/time.Duration(timing.frames), timing.queueAge/time.Duration(timing.frames))
+				timing.windowFrames = 0
+				timing.windowStart = time.Now()
 			}
 		}
 	}
