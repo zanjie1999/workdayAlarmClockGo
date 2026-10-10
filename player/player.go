@@ -327,7 +327,7 @@ func Stop() {
 		}
 		PrevUrl = ""
 		if conf.IsApp {
-			app.Send("SCREENOFF")
+			app.Send("ALARMSTOP")
 		}
 	} else if conf.Cfg.MuteWhenStop {
 		SetVol("0")
