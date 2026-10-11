@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"workdayAlarmClock/app"
@@ -149,6 +150,14 @@ func MusicUrl(id string) string {
 		}
 	}
 	if conf.Cfg.SavePath != "" && url != "" {
+		removed, err := removeOldestMp3IfFull(conf.Cfg.SavePath, conf.Cfg.CacheLimit)
+		if err != nil {
+			log.Println("清理缓存失败，跳过缓存下载", err)
+			return url
+		}
+		if removed != "" {
+			log.Println("缓存达到上限，删除最旧文件", removed)
+		}
 		// 下载用时较长，先暂停
 		if conf.IsApp {
 			app.SendLocal("PAUSE")
@@ -168,6 +177,50 @@ func MusicUrl(id string) string {
 		}
 	}
 	return url
+}
+
+func removeOldestMp3IfFull(savePath string, limitMB int64) (string, error) {
+	const bytesPerMB int64 = 1024 * 1024
+	if limitMB <= 0 || limitMB > (1<<63-1)/bytesPerMB {
+		return "", fmt.Errorf("缓存上限无效: %d MB", limitMB)
+	}
+
+	entries, err := os.ReadDir(savePath)
+	if err != nil {
+		return "", fmt.Errorf("读取缓存目录失败: %w", err)
+	}
+
+	var totalSize int64
+	var oldestPath string
+	var oldestTime time.Time
+	for _, entry := range entries {
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".mp3") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return "", fmt.Errorf("读取缓存文件信息失败 %s: %w", entry.Name(), err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		totalSize += info.Size()
+		if oldestPath == "" || info.ModTime().Before(oldestTime) {
+			oldestPath = filepath.Join(savePath, entry.Name())
+			oldestTime = info.ModTime()
+		}
+	}
+
+	if totalSize < limitMB*bytesPerMB {
+		return "", nil
+	}
+	if oldestPath == "" {
+		return "", fmt.Errorf("缓存已达到上限，但没有可清理的MP3文件")
+	}
+	if err := os.Remove(oldestPath); err != nil {
+		return "", fmt.Errorf("删除最旧缓存文件失败 %s: %w", oldestPath, err)
+	}
+	return oldestPath, nil
 }
 
 // 下载歌单缓存

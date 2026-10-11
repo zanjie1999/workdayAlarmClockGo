@@ -431,9 +431,19 @@ func Init(urlPrefix string) *gin.Engine {
 		muteWhenStop := c.Query("muteWhenStop")
 		musicQuality := c.Query("musicQuality")
 		savePath := c.Query("savePath")
+		cacheLimit := c.Query("cacheLimit")
 		defSeek := c.Query("defSeek")
 		broadcastMode := c.Query("broadcastMode")
 		smallWeekDate := c.Query("smallWeekDate")
+		var cacheLimitMB int64
+		if cacheLimit != "" {
+			var err error
+			cacheLimitMB, err = strconv.ParseInt(cacheLimit, 10, 64)
+			if err != nil || cacheLimitMB <= 0 || cacheLimitMB > (1<<63-1)/(1024*1024) {
+				c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte("<h1>缓存上限必须是正整数</h1>"+js2home))
+				return
+			}
+		}
 		if nePlayListId != "" {
 			conf.Cfg.NePlayListId = nePlayListId
 		}
@@ -469,6 +479,9 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}
 		conf.Cfg.MusicQuality = musicQuality
+		if cacheLimit != "" {
+			conf.Cfg.CacheLimit = cacheLimitMB
+		}
 		if savePath == "" {
 			conf.Cfg.SavePath = ""
 		} else if savePath != "/" && savePath != "./" {

@@ -95,6 +95,7 @@ label {
 
 /* 输入框 */
 input[type="text"],
+input[type="number"],
 input[type="file"],
 select,
 textarea {
@@ -111,6 +112,7 @@ textarea {
 }
 
 input[type="text"]:focus,
+input[type="number"]:focus,
 input[type="file"]:focus,
 select:focus,
 textarea:focus {
@@ -359,7 +361,7 @@ img[src="/favicon.ico"] {
         padding: 0;
     }
 
-    input[type="text"], input[type="file"] {
+    input[type="text"], input[type="number"], input[type="file"] {
         width: 12em;
     }
 
@@ -379,7 +381,7 @@ img[src="/favicon.ico"] {
         padding: 10px;
     }
 
-    input[type="text"], input[type="file"] {
+    input[type="text"], input[type="number"], input[type="file"] {
         width: 9em;
     }
 
@@ -430,6 +432,7 @@ img[src="/favicon.ico"] {
     }
 
     input[type="text"],
+    input[type="number"],
     input[type="file"],
     select,
     textarea {
@@ -439,6 +442,7 @@ img[src="/favicon.ico"] {
     }
 
     input[type="text"]:focus,
+    input[type="number"]:focus,
     input[type="file"]:focus,
     select:focus,
     textarea:focus {

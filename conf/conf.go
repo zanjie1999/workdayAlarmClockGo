@@ -36,6 +36,7 @@ type Config struct {
 	MuteWhenStop    bool                `json:"muteWhenStop"`
 	MusicQuality    string              `json:"musicQuality"`
 	SavePath        string              `json:"savePath"`
+	CacheLimit      int64               `json:"cacheLimit"`
 	BroadcastMode   bool                `json:"broadcastMode"`
 	DefSeek         string              `json:"defSeek"`
 	SmallWeekDate   string              `json:"smallWeekDate"`
@@ -80,6 +81,8 @@ var (
 		MusicQuality: "standard",
 		// 保存音乐文件缓存
 		SavePath: "",
+		// 音乐缓存上限（MB）
+		CacheLimit: 1024,
 		// udp广播群控模式
 		BroadcastMode: false,
 		// 全屋同步补偿ms
@@ -110,6 +113,9 @@ func Init() {
 				Save()
 			}
 		}
+	}
+	if Cfg.CacheLimit <= 0 {
+		Cfg.CacheLimit = 1024
 	}
 }
 

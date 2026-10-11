@@ -182,6 +182,7 @@ ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 1 -fflags nobuffer -i desk
 ### 音频缓存
 可以在没有网络的时候播放之前播放过的歌曲  
 设置了缓存目录后，并且重启启动后，可以在 `/music` 对缓存进行浏览  
+可以在闹钟设置中配置缓存上限（默认1024MB），如果缓存达到上限，会先删除最旧的一个mp3
 歌单会优先使用网络的，歌曲则会优先播放缓存的，在切换音质后需要清理缓存才能播放目标音质的音频  
 另外增加了 `/sdcard` 路径，用于访问Android设备的sdcard中的文件  
 
