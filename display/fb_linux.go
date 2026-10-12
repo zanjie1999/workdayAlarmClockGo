@@ -673,6 +673,10 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		return errors.New("invalid framebuffer dimensions")
 	}
 
+	if scaled, ok := img.(*scale2xImage); ok {
+		return encodeScale2x(scaled, dst, width, height, stride, bpp, format)
+	}
+
 	// jpeg.Decode returns *image.YCbCr for JPEG input. Keep this path separate
 	// from the generic image.Image path so the inner pixel loop never performs
 	// an interface type switch or calls img.At.
@@ -713,6 +717,75 @@ func encodeImage(img image.Image, dst []byte, width, height, stride, bpp int, fo
 		encode16(img, dst, width, height, stride)
 	case bpp == 16 && format == "bgr565":
 		encode16BGR(img, dst, width, height, stride)
+	default:
+		return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
+	}
+	return nil
+}
+
+func encodeScale2x(img *scale2xImage, dst []byte, width, height, stride, bpp int, format string) error {
+	sourceBounds := img.source.Bounds()
+	sourceWidth, sourceHeight := sourceBounds.Dx(), sourceBounds.Dy()
+	if sourceWidth <= 0 || sourceHeight <= 0 || width != sourceWidth*2 || height != sourceHeight*2 {
+		return errors.New("invalid 2x image dimensions")
+	}
+
+	bytesPerPixel := bpp / 8
+	switch {
+	case bpp == 8 && format == "gray8":
+		for y := 0; y < sourceHeight; y++ {
+			srcY := sourceBounds.Min.Y + y
+			row0 := dst[(y*2)*stride:]
+			row1 := dst[(y*2+1)*stride:]
+			for x := 0; x < sourceWidth; x++ {
+				value := grayAt(img.source, sourceBounds.Min.X+x, srcY)
+				i := x * 2
+				row0[i], row0[i+1], row1[i], row1[i+1] = value, value, value, value
+			}
+		}
+	case (bpp == 16 && (format == "rgb565" || format == "bgr565")) ||
+		(bpp == 24 && (format == "rgb888" || format == "bgr888")) ||
+		(bpp == 32 && (format == "xrgb8888" || format == "argb8888" || format == "bgrx8888" || format == "bgra8888")):
+		rgbMemory := format == "rgb888" || format == "bgrx8888" || format == "bgra8888"
+		bgr565 := format == "bgr565"
+		for y := 0; y < sourceHeight; y++ {
+			row0 := dst[(y*2)*stride:]
+			row1 := dst[(y*2+1)*stride:]
+			for x := 0; x < sourceWidth; x++ {
+				r, g, b := rgbAt(img.source, x, y)
+				var pixel [4]byte
+				switch bpp {
+				case 16:
+					var value uint16
+					if bgr565 {
+						value = uint16(b>>3)<<11 | uint16(g>>2)<<5 | uint16(r>>3)
+					} else {
+						value = uint16(r>>3)<<11 | uint16(g>>2)<<5 | uint16(b>>3)
+					}
+					pixel[0], pixel[1] = byte(value), byte(value>>8)
+				case 24:
+					if rgbMemory {
+						pixel[0], pixel[1], pixel[2] = r, g, b
+					} else {
+						pixel[0], pixel[1], pixel[2] = b, g, r
+					}
+				case 32:
+					if rgbMemory {
+						pixel[0], pixel[1], pixel[2] = r, g, b
+					} else {
+						pixel[0], pixel[1], pixel[2] = b, g, r
+					}
+					pixel[3] = 0xff
+				}
+
+				i := x * 2 * bytesPerPixel
+				for channel := 0; channel < bytesPerPixel; channel++ {
+					value := pixel[channel]
+					row0[i+channel], row0[i+bytesPerPixel+channel] = value, value
+					row1[i+channel], row1[i+bytesPerPixel+channel] = value, value
+				}
+			}
+		}
 	default:
 		return fmt.Errorf("unsupported framebuffer format %s/%dbpp", format, bpp)
 	}
