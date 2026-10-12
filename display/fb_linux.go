@@ -393,7 +393,7 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 		windowStart  time.Time
 	}
 	timing.windowStart = time.Now()
-	var resolutionKnown, matchesPhysicalSize bool
+	var resolutionKnown, matchesPhysicalSize, scale2x bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -428,6 +428,7 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			if !resolutionKnown {
 				matchesPhysicalSize = bounds.Dx() == int(fb.info.Width) &&
 					bounds.Dy() == int(fb.info.Height)
+				scale2x = shouldScale2x(bounds, int(fb.info.Width), int(fb.info.Height))
 				resolutionKnown = true
 			}
 
@@ -439,6 +440,8 @@ func (fb *Framebuffer) StreamJPEGContext(ctx context.Context, body io.Reader, bo
 			if matchesPhysicalSize {
 				// 尺寸匹配直接写入
 				writeErr = fb.writeImage(img)
+			} else if scale2x {
+				writeErr = fb.writeScaled2xCentered(img)
 			} else {
 				// 尺寸不匹配居中处理
 				writeErr = fb.writeCenteredImage(img)
@@ -476,6 +479,16 @@ func (fb *Framebuffer) writeCenteredImage(img image.Image) error {
 		return fb.drm.writeImageAt(centered, x, y, true)
 	}
 	return fb.writeImageAt(centered, x, y, true)
+}
+
+func (fb *Framebuffer) writeScaled2xCentered(img image.Image) error {
+	scaled := newScale2xImage(img)
+	x := (int(fb.info.Width) - scaled.Bounds().Dx()) / 2
+	y := (int(fb.info.Height) - scaled.Bounds().Dy()) / 2
+	if fb.drm != nil {
+		return fb.drm.writeImageAt(scaled, x, y, true)
+	}
+	return fb.writeImageAt(scaled, x, y, true)
 }
 
 func (fb *Framebuffer) writeImageAt(img image.Image, x, y int, clearFrame bool) error {
@@ -949,6 +962,8 @@ func encode8(img image.Image, dst []byte, width, height, stride int) {
 
 func grayAt(img image.Image, x, y int) uint8 {
 	switch src := img.(type) {
+	case *scale2xImage:
+		return grayAt(src.source, src.source.Bounds().Min.X+x/2, src.source.Bounds().Min.Y+y/2)
 	case *image.YCbCr:
 		i := src.YOffset(x, y)
 		return src.Y[i]
@@ -1036,6 +1051,8 @@ func encode16BGR(img image.Image, dst []byte, width, height, stride int) {
 
 func rgbAt(img image.Image, x, y int) (uint8, uint8, uint8) {
 	switch src := img.(type) {
+	case *scale2xImage:
+		return rgbAt(src.source, x/2, y/2)
 	case *image.YCbCr:
 		yi := src.YOffset(x+src.Rect.Min.X, y+src.Rect.Min.Y)
 		ci := src.COffset(x+src.Rect.Min.X, y+src.Rect.Min.Y)

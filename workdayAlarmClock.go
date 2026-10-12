@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	VERSION  = "40.2"
+	VERSION  = "40.3"
 	lasthhmm = ""
 )
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"strconv"
 	"strings"
@@ -41,6 +42,37 @@ type Info struct {
 type StreamStats struct {
 	Frames    uint64 `json:"frames"`
 	JPEGBytes uint64 `json:"jpeg_bytes"`
+}
+
+type scale2xImage struct {
+	source image.Image
+	bounds image.Rectangle
+}
+
+func newScale2xImage(img image.Image) *scale2xImage {
+	bounds := img.Bounds()
+	return &scale2xImage{
+		source: img,
+		bounds: image.Rect(0, 0, bounds.Dx()*2, bounds.Dy()*2),
+	}
+}
+
+func (img *scale2xImage) ColorModel() color.Model {
+	return img.source.ColorModel()
+}
+
+func (img *scale2xImage) Bounds() image.Rectangle {
+	return img.bounds
+}
+
+func (img *scale2xImage) At(x, y int) color.Color {
+	sourceBounds := img.source.Bounds()
+	return img.source.At(sourceBounds.Min.X+x/2, sourceBounds.Min.Y+y/2)
+}
+
+func shouldScale2x(bounds image.Rectangle, targetWidth, targetHeight int) bool {
+	return bounds.Dx() > 0 && bounds.Dy() > 0 &&
+		bounds.Dx() <= targetWidth/2 && bounds.Dy() <= targetHeight/2
 }
 
 func applyResolutionOverride(info Info) (Info, error) {
