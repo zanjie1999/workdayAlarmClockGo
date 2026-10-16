@@ -408,6 +408,12 @@
       var statusRefreshing = false;
       var playlistDetails = {};
       var playlistDetailWaiters = {};
+      var loggedIn = false;
+      var dailyRecommend = {
+        id: "daily-recommend",
+        name: "每日推荐",
+        coverImgUrl: "/favicon.ico"
+      };
 
       function $(id) {
         return document.getElementById(id);
@@ -583,6 +589,9 @@
       }
       function renderLists() {
         var list = $("playlistList");
+        var playlists = loggedIn
+          ? [dailyRecommend].concat(state.playlists)
+          : state.playlists;
         var i;
         var p;
         var b;
@@ -591,12 +600,12 @@
         var name;
         var count;
         list.textContent = "";
-        if (!state.playlists.length) {
+        if (!playlists.length) {
           list.innerHTML = '<div class="empty-state">暂无歌单</div>';
           return;
         }
-        for (i = 0; i < state.playlists.length; i++) {
-          p = state.playlists[i];
+        for (i = 0; i < playlists.length; i++) {
+          p = playlists[i];
           b = document.createElement("button");
           b.type = "button";
           b.className =
@@ -611,7 +620,9 @@
           name.textContent = p.name || "未命名歌单";
           count = document.createElement("span");
           count.className = "playlist-count";
-          count.textContent = (p.trackCount || 0) + " 首歌曲";
+          count.textContent = p === dailyRecommend && p.trackCount == null
+            ? "33 首歌曲"
+            : (p.trackCount || 0) + " 首歌曲";
           meta.appendChild(name);
           meta.appendChild(count);
           b.appendChild(imageNode);
@@ -653,6 +664,25 @@
         var key = String(id);
         var waiters;
         failed = failed || function () {};
+        if (key === dailyRecommend.id) {
+          json(
+            "/neapi/v2/discovery/recommend/songs?t=" + new Date().getTime(),
+            function (data) {
+              if (data.code !== 200 || !Array.isArray(data.recommend)) {
+                failed(new Error(data.message || data.msg || "每日推荐接口返回错误，请检查登录状态"));
+                return;
+              }
+              done({ playlist: {
+                name: dailyRecommend.name,
+                coverImgUrl: dailyRecommend.coverImgUrl,
+                trackCount: data.recommend.length,
+                tracks: data.recommend
+              } });
+            },
+            failed
+          );
+          return;
+        }
         if (playlistDetails[key]) {
           done(playlistDetails[key]);
           return;
@@ -690,12 +720,12 @@
       function play(ids) {
         if (!ids.length || !state.selected) return;
         updatePlaying(ids[0]);
-        addHistory(String(state.selected.id));
+        if (state.selected !== dailyRecommend) addHistory(String(state.selected.id));
         request(
           "/playmusiclist?ids=" +
             encodeURIComponent(ids.join(",")) +
             "&id=" +
-            encodeURIComponent(state.selected.id),
+            encodeURIComponent(state.selected === dailyRecommend ? "" : state.selected.id),
           function () {
             msg("播放 " + ids.length + " 首歌曲");
           },
@@ -745,6 +775,7 @@
         var name;
         var artists;
         var artistNames;
+        var trackArtists;
         var j;
         list.textContent = "";
         ts = ts || [];
@@ -774,9 +805,10 @@
           artists = document.createElement("span");
           artists.className = "track-artists";
           artistNames = [];
-          if (t.ar) {
-            for (j = 0; j < t.ar.length; j++) {
-              if (t.ar[j] && t.ar[j].name) artistNames.push(t.ar[j].name);
+          trackArtists = t.ar || t.artists;
+          if (trackArtists) {
+            for (j = 0; j < trackArtists.length; j++) {
+              if (trackArtists[j] && trackArtists[j].name) artistNames.push(trackArtists[j].name);
             }
           }
           artists.textContent = artistNames.join(" / ") || "未知歌手";
@@ -802,11 +834,12 @@
         state.trackIds = [];
         setHidden($("detailEmpty"), true);
         setHidden($("detailContent"), true);
-        $("detailId").textContent = "歌单 ID: " + p.id;
+        $("detailId").textContent = p === dailyRecommend ? "" : "歌单 ID: " + p.id;
         msg("正在加载歌单……");
         fetchPlaylistData(
           p.id,
           function (d) {
+            if (state.selected !== p) return;
             detail = d.playlist;
             detailTracks = detail.tracks || [];
             p.name = detail.name || p.name;
@@ -815,8 +848,10 @@
               detail.trackCount != null
                 ? detail.trackCount
                 : detailTracks.length || p.trackCount;
-            setPlaylistCache(p);
-            if (String(p.id) === playingListId) addHistory(playingListId);
+            if (p !== dailyRecommend) {
+              setPlaylistCache(p);
+              if (String(p.id) === playingListId) addHistory(playingListId);
+            }
             state.trackIds = idsFromTrackIds(detail.trackIds);
             renderLists();
             image($("detailCover"), detail.coverImgUrl);
@@ -832,7 +867,9 @@
               removeClass($("detailPanel"), "mobile-hidden");
             }
           },
-          showSelectError
+          function (e) {
+            if (state.selected === p) showSelectError(e);
+          }
         );
       }
       function loadError(e) {
@@ -883,6 +920,13 @@
         );
       }
       function load() {
+        loggedIn = false;
+        dailyRecommend.trackCount = null;
+        state.selected = null;
+        state.trackIds = [];
+        setHidden($("detailContent"), true);
+        setHidden($("detailEmpty"), false);
+        renderLists();
         json(
           "/cfg.json?t=" + new Date().getTime(),
           function (cfg) {
@@ -1225,6 +1269,8 @@
                     }
                     user = u.userPoint;
                     userId = user.userId;
+                    loggedIn = true;
+                    renderLists();
                     json(
                       "/neapi/user/playlist?limit=99999&uid=" + userId,
                       function (playlistData) {

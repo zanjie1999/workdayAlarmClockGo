@@ -93,7 +93,7 @@ func Init(urlPrefix string) *gin.Engine {
 	// 网易云 API 流式代理。仅允许明确列出的 API 路径，避免代理被滥用为通用请求器。
 	root.GET("/neapi/*path", func(c *gin.Context) {
 		path := c.Param("path")
-		allowed := path == "/user/info" || path == "/user/playlist" || path == "/v6/playlist/detail"
+		allowed := path == "/user/info" || path == "/user/playlist" || path == "/v6/playlist/detail" || path == "/v2/discovery/recommend/songs"
 		if !allowed {
 			c.JSON(http.StatusNotFound, gin.H{"error": "unsupported netease api"})
 			return
