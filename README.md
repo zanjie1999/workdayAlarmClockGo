@@ -149,6 +149,16 @@ Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPos
 <details>
 <summary>或者用ffmpeg和curl</summary>
     
+在macOS下，你需要先获取当前要采集设备的列表：  
+```
+ffmpeg -f avfoundation -list_devices true -i ""
+```
+然后找到你要的设备，换掉-i的4，以及改下这里272x272的分辨率和ip：  
+```
+ffmpeg -f avfoundation -thread_queue_size 128 -framerate 10 -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -i "4:none" -vf "scale=272:272:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=272:272:(ow-iw)/2:(oh-ih)/2:black" -vsync passthrough -q:v 8 -flush_packets 1 -avioflags direct -f mpjpeg pipe:1 | curl --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.165:8880/fb"
+```
+
+在Windows下：  
 比如任你说音箱这个480x320的屏:  
 ```
 ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 10 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
