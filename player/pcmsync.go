@@ -33,6 +33,12 @@ const (
 	pcmMaxSkipMs   = 250.0                 // 单次最多丢多久
 	pcmLogGap      = 10 * time.Second      // 跳读日志限流
 
+	// 一次读卡这么久以上，就认为上游被网络堵住了。
+	// 正常情况下上位机每 10ms 左右就有包，40ms 已经很宽松。
+	pcmStarveGap = 40 * time.Millisecond
+	// 追赶时给声卡留的垫底：丢到一点不剩会让下一次抖动直接欠载。
+	pcmKeepMs = 20.0
+
 	// 播放器/声卡侧申请的缓冲时长：aplay 的 -B 60000 和 ALSA 的 buffer_time 都是 60ms。
 	// 进了声卡的排队只能按实时速率放出来，属于这条链路不可能再低下去的底。
 	pcmSinkBufferMs = 60.0
@@ -55,6 +61,10 @@ type pcmQueue struct {
 	writtenBytes int64 // 写进声卡的
 	skippedBytes int64 // 主动丢弃的
 
+	// 饿读追赶：一次读卡住多久，就说明上游攒了多久的旧音频，
+	// 接下来涌来的数据开头那一段就是那么旧，直接丢掉。
+	catchUp int64 // 还要丢多少字节
+
 	lastCheck time.Time
 	lastLog   time.Time
 	buf       []byte
@@ -70,6 +80,52 @@ func newPCMQueue(rate, frameBytes int, sinkBytes int64) *pcmQueue {
 		maxSkip:    msBytes(rate, frameBytes, pcmMaxSkipMs),
 		buf:        make([]byte, 8<<10),
 	}
+}
+
+// read 取代调用点的 r.Read，顺便处理"饿着之后涌来一大坨"的情况。
+//
+// 上位机被网络堵住时不会有数据发过来，这里就会一直卡在 Read 上，
+// 声卡同时把缓冲放空(欠载)。等网络缓过来，上位机一口气把攒下的旧音频推过来，
+// 这一坨的开头就是"卡住的那段时间"，丢掉它，剩下的正好是实时音频。
+//
+// 卡了多久 ≈ 涌来的这坨有多旧，两个数天然相等，所以不用去猜排队量。
+// 丢的都是已经读进内存的字节，永远不会卡在网络上等数据。
+func (q *pcmQueue) read(r io.Reader, buf []byte) (int, error) {
+	start := time.Now()
+	n, err := r.Read(buf)
+	gap := time.Since(start)
+	if n > 0 {
+		q.readBytes += int64(n)
+		// 卡过阈值就欠下"这段时间的音频"，留一点垫底再丢
+		if gap > pcmStarveGap {
+			owed := msBytes(q.rate, q.frameBytes, float64(gap.Milliseconds())-pcmKeepMs)
+			if owed > q.maxSkip {
+				owed = q.maxSkip
+			}
+			if owed > q.catchUp {
+				q.catchUp = owed
+			}
+		}
+		if q.catchUp > 0 {
+			drop := q.catchUp
+			if drop > int64(n) {
+				drop = int64(n)
+			}
+			drop -= drop % int64(q.frameBytes) // 帧对齐，别把采样劈开
+			if drop > 0 {
+				copy(buf, buf[drop:n])
+				n -= int(drop)
+				q.catchUp -= drop
+				q.skippedBytes += drop
+				if time.Since(q.lastLog) >= pcmLogGap {
+					q.lastLog = time.Now()
+					log.Printf("饿读追赶: 卡了 %dms，丢 %dms(累计 %dms)",
+						gap.Milliseconds(), q.ms(drop), q.ms(q.skippedBytes))
+				}
+			}
+		}
+	}
+	return n, err
 }
 
 // fix 结算一次：排队超过目标就从流里跳读丢掉多余的旧音频。

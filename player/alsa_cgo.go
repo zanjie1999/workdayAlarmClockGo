@@ -415,10 +415,9 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 			return fmt.Errorf("skip PCM stream: %w", err)
 		}
 
-		n, readErr := r.Read(readBuffer)
+		n, readErr := queue.read(r, readBuffer)
 		if n > 0 {
 			emptyReads = 0
-			queue.readBytes += int64(n)
 			pending = append(pending, readBuffer[:n]...)
 			aligned := len(pending) / frameBytes * frameBytes
 			if aligned > 0 {

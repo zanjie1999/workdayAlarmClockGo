@@ -82,10 +82,9 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 			return fmt.Errorf("skip PCM stream: %w", err)
 		}
 
-		n, readErr := r.Read(buf)
+		n, readErr := queue.read(r, buf)
 		if n > 0 {
 			emptyReads = 0
-			queue.readBytes += int64(n)
 			pending = append(pending, buf[:n]...)
 			aligned := len(pending) / queue.frameBytes * queue.frameBytes
 			if aligned > 0 {
