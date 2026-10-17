@@ -33,15 +33,19 @@ const (
 	pcmMaxSkipMs   = 250.0                 // 单次最多丢多久
 	pcmLogGap      = 10 * time.Second      // 跳读日志限流
 
-	// 一次读卡这么久以上，就认为上游被网络堵住了。
-	// 正常情况下上位机每 10ms 左右就有包，40ms 已经很宽松。
+	// 一次读卡这么久以上，才可能真的是上游被网络堵住了。
+	// 正常情况上位机每 10ms 左右就有包，缓冲薄的时候一次读等 40-60ms 很正常，
+	// 所以光看卡了多久会误判——还要减掉声卡当时还剩的积压(见 read)。
 	pcmStarveGap = 40 * time.Millisecond
-	// 追赶时给声卡留的垫底：丢到一点不剩会让下一次抖动直接欠载。
+	// 追赶后给声卡留的垫底：丢到一点不剩会让下一次抖动直接欠载。
 	pcmKeepMs = 20.0
+	// 追赶后要等声卡积压回血到这个量，才重新允许触发。
+	// 没有这道迟滞的话，丢完声卡是空的，下一次读必然又"卡很久"，会一直剪。
+	pcmRearmMs = 30.0
 
-	// 播放器/声卡侧申请的缓冲时长：aplay 的 -B 60000 和 ALSA 的 buffer_time 都是 60ms。
+	// 播放器/声卡侧申请的缓冲时长：aplay 的 -B 40000 和 ALSA 的 buffer_time 都是 40ms。
 	// 进了声卡的排队只能按实时速率放出来，属于这条链路不可能再低下去的底。
-	pcmSinkBufferMs = 60.0
+	pcmSinkBufferMs = 40.0
 )
 
 // msBytes 把毫秒换算成字节数(按帧对齐)。
@@ -64,6 +68,8 @@ type pcmQueue struct {
 	// 饿读追赶：一次读卡住多久，就说明上游攒了多久的旧音频，
 	// 接下来涌来的数据开头那一段就是那么旧，直接丢掉。
 	catchUp int64 // 还要丢多少字节
+	// 追赶完要等声卡积压回血才重新允许触发，否则丢完就饿、饿了又丢。
+	armed bool
 
 	lastCheck time.Time
 	lastLog   time.Time
@@ -79,6 +85,7 @@ func newPCMQueue(rate, frameBytes int, sinkBytes int64) *pcmQueue {
 		deadband:   msBytes(rate, frameBytes, pcmDeadbandMs),
 		maxSkip:    msBytes(rate, frameBytes, pcmMaxSkipMs),
 		buf:        make([]byte, 8<<10),
+		armed:      true,
 	}
 }
 
@@ -88,17 +95,27 @@ func newPCMQueue(rate, frameBytes int, sinkBytes int64) *pcmQueue {
 // 声卡同时把缓冲放空(欠载)。等网络缓过来，上位机一口气把攒下的旧音频推过来，
 // 这一坨的开头就是"卡住的那段时间"，丢掉它，剩下的正好是实时音频。
 //
-// 卡了多久 ≈ 涌来的这坨有多旧，两个数天然相等，所以不用去猜排队量。
-// 丢的都是已经读进内存的字节，永远不会卡在网络上等数据。
-func (q *pcmQueue) read(r io.Reader, buf []byte) (int, error) {
+// 关键：卡了多久 != 声卡空了多久。缓冲薄的时候，正常等下一批包也要卡 40-60ms，
+// 这期间声卡一直在放，一点没空。所以要先减掉声卡当时还剩的积压(sinkBytes)，
+// 只把真正"放空了"的那部分算成欠账，否则正常节奏会被误判成饿着，一直剪。
+//
+// sinkBytes 是调用方在这次读之前量到的声卡侧积压。丢的都是已经读进内存的
+// 字节，永远不会卡在网络上等数据。
+func (q *pcmQueue) read(r io.Reader, buf []byte, sinkBytes int64) (int, error) {
 	start := time.Now()
 	n, err := r.Read(buf)
 	gap := time.Since(start)
 	if n > 0 {
 		q.readBytes += int64(n)
-		// 卡过阈值就欠下"这段时间的音频"，留一点垫底再丢
-		if gap > pcmStarveGap {
-			owed := msBytes(q.rate, q.frameBytes, float64(gap.Milliseconds())-pcmKeepMs)
+		if !q.armed {
+			// 上一轮刚丢过，等声卡积压回血再重新武装，避免丢完就饿、饿了又丢
+			if sinkBytes >= msBytes(q.rate, q.frameBytes, pcmRearmMs) {
+				q.armed = true
+			}
+		} else if gap > pcmStarveGap {
+			// 卡住的时间减去声卡当时还能放的时间 = 真正断粮的时长
+			starved := float64(gap.Milliseconds()) - float64(q.ms(sinkBytes)) - pcmKeepMs
+			owed := msBytes(q.rate, q.frameBytes, starved)
 			if owed > q.maxSkip {
 				owed = q.maxSkip
 			}
@@ -117,10 +134,13 @@ func (q *pcmQueue) read(r io.Reader, buf []byte) (int, error) {
 				n -= int(drop)
 				q.catchUp -= drop
 				q.skippedBytes += drop
+				if q.catchUp == 0 {
+					q.armed = false // 丢完了，等声卡回血
+				}
 				if time.Since(q.lastLog) >= pcmLogGap {
 					q.lastLog = time.Now()
-					log.Printf("饿读追赶: 卡了 %dms，丢 %dms(累计 %dms)",
-						gap.Milliseconds(), q.ms(drop), q.ms(q.skippedBytes))
+					log.Printf("饿读追赶: 卡了 %dms 声卡剩 %dms，丢 %dms(累计 %dms)",
+						gap.Milliseconds(), q.ms(sinkBytes), q.ms(drop), q.ms(q.skippedBytes))
 				}
 			}
 		}

@@ -14,8 +14,8 @@ import (
 )
 
 // 播放器子进程 stdin 管道的容量。默认 64KB ≈ 370ms，等于凭空多出一大截延迟，
-// 实时流只需要放下一两块音频(4KB ≈ 23ms @44.1kHz 立体声)。
-const pcmPipeBytes = 4 << 10
+// 实时流只需要放下一块音频(2KB ≈ 11ms @44.1kHz 立体声)。
+const pcmPipeBytes = 2 << 10
 
 func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	switch filepath.Base(ShellPlayer) {
@@ -29,7 +29,7 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	frameBytes := channels * 2
 	cmd := exec.Command(ShellPlayer, "-q", "-D", alsaDevice(), "-t", "raw", "-f", "S16_LE",
 		"-c", strconv.Itoa(channels), "-r", strconv.Itoa(rate),
-		"-B", "60000", "-F", "10000")
+		"-B", "40000", "-F", "10000")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 			return fmt.Errorf("skip PCM stream: %w", err)
 		}
 
-		n, readErr := queue.read(r, buf)
+		n, readErr := queue.read(r, buf, pipeQueuedBytes(pipe, pipeSize, queue))
 		if n > 0 {
 			emptyReads = 0
 			pending = append(pending, buf[:n]...)

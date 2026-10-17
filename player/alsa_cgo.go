@@ -32,7 +32,7 @@ static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int cha
 	unsigned int period_time = 10000;
 	dir = 0;
 	if ((err = snd_pcm_hw_params_set_period_time_near(pcm, hw, &period_time, &dir)) < 0) return err;
-	unsigned int buffer_time = 60000;
+	unsigned int buffer_time = 40000;
 	dir = 0;
 	if ((err = snd_pcm_hw_params_set_buffer_time_near(pcm, hw, &buffer_time, &dir)) < 0) return err;
 	if ((err = snd_pcm_hw_params(pcm, hw)) < 0) return err;
@@ -415,7 +415,7 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 			return fmt.Errorf("skip PCM stream: %w", err)
 		}
 
-		n, readErr := queue.read(r, readBuffer)
+		n, readErr := queue.read(r, readBuffer, alsaQueuedBytes(pcm, frameBytes, rate))
 		if n > 0 {
 			emptyReads = 0
 			pending = append(pending, readBuffer[:n]...)
