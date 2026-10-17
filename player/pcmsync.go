@@ -60,6 +60,9 @@ type pcmQueue struct {
 	target     int64 // 目标排队字节数(含声卡侧固有排队)
 	deadband   int64
 	maxSkip    int64
+	// 声卡缓冲上限。sinkBytes 是推算出来的，欠载/恢复瞬间会算出比缓冲还大的
+	// 假值(ALSA 刚 prepare、Android 播放头停住)，必须夹住，否则欠账会被算小。
+	sinkLimit int64
 
 	readBytes    int64 // 从流里读到的(含被丢弃的)
 	writtenBytes int64 // 写进声卡的
@@ -68,6 +71,9 @@ type pcmQueue struct {
 	// 饿读追赶：一次读卡住多久，就说明上游攒了多久的旧音频，
 	// 接下来涌来的数据开头那一段就是那么旧，直接丢掉。
 	catchUp int64 // 还要丢多少字节
+	// 一次追赶事件里累计丢了多少，只用来打日志：
+	// catchUp 会跨多次读延续，打单轮的量会严重低估。
+	eventBytes int64
 	// 追赶完要等声卡积压回血才重新允许触发，否则丢完就饿、饿了又丢。
 	armed bool
 
@@ -77,6 +83,8 @@ type pcmQueue struct {
 }
 
 // newPCMQueue 的 sinkBytes 是这条链路不可能再低下去的排队(管道 + 声卡缓冲)。
+// sinkBytes 应该是运行时实测到的真实值：ALSA 的 buffer_size 会被驱动向上取整
+// (请求 40ms 实测 78-85ms)，写死的话目标会低于真实地板，跳读会一直触发。
 func newPCMQueue(rate, frameBytes int, sinkBytes int64) *pcmQueue {
 	return &pcmQueue{
 		rate:       rate,
@@ -84,9 +92,21 @@ func newPCMQueue(rate, frameBytes int, sinkBytes int64) *pcmQueue {
 		target:     sinkBytes + msBytes(rate, frameBytes, pcmMarginMs),
 		deadband:   msBytes(rate, frameBytes, pcmDeadbandMs),
 		maxSkip:    msBytes(rate, frameBytes, pcmMaxSkipMs),
+		sinkLimit:  sinkBytes,
 		buf:        make([]byte, 8<<10),
 		armed:      true,
 	}
+}
+
+// clampSink 把推算出来的声卡积压夹到真实缓冲上限。
+func (q *pcmQueue) clampSink(sinkBytes int64) int64 {
+	if sinkBytes < 0 {
+		return 0
+	}
+	if q.sinkLimit > 0 && sinkBytes > q.sinkLimit {
+		return q.sinkLimit
+	}
+	return sinkBytes
 }
 
 // read 取代调用点的 r.Read，顺便处理"饿着之后涌来一大坨"的情况。
@@ -107,6 +127,7 @@ func (q *pcmQueue) read(r io.Reader, buf []byte, sinkBytes int64) (int, error) {
 	gap := time.Since(start)
 	if n > 0 {
 		q.readBytes += int64(n)
+		sinkBytes = q.clampSink(sinkBytes)
 		if !q.armed {
 			// 上一轮刚丢过，等声卡积压回血再重新武装，避免丢完就饿、饿了又丢
 			if sinkBytes >= msBytes(q.rate, q.frameBytes, pcmRearmMs) {
@@ -121,6 +142,7 @@ func (q *pcmQueue) read(r io.Reader, buf []byte, sinkBytes int64) (int, error) {
 			}
 			if owed > q.catchUp {
 				q.catchUp = owed
+				q.eventBytes = 0 // 新一轮事件，重新计总量
 			}
 		}
 		if q.catchUp > 0 {
@@ -134,13 +156,14 @@ func (q *pcmQueue) read(r io.Reader, buf []byte, sinkBytes int64) (int, error) {
 				n -= int(drop)
 				q.catchUp -= drop
 				q.skippedBytes += drop
+				q.eventBytes += drop
 				if q.catchUp == 0 {
 					q.armed = false // 丢完了，等声卡回血
 				}
 				if time.Since(q.lastLog) >= pcmLogGap {
 					q.lastLog = time.Now()
-					log.Printf("饿读追赶: 卡了 %dms 声卡剩 %dms，丢 %dms(累计 %dms)",
-						gap.Milliseconds(), q.ms(sinkBytes), q.ms(drop), q.ms(q.skippedBytes))
+					log.Printf("饿读追赶: 卡了 %dms 声卡剩 %dms，本次共丢 %dms(累计 %dms)",
+						gap.Milliseconds(), q.ms(sinkBytes), q.ms(q.eventBytes), q.ms(q.skippedBytes))
 				}
 			}
 		}
@@ -164,7 +187,7 @@ func (q *pcmQueue) fix(r io.Reader, socketBytes, sinkBytes int64) error {
 		socketBytes = 0
 		available = math.MaxInt64
 	}
-	queued := q.readBytes - q.writtenBytes - q.skippedBytes + socketBytes + sinkBytes
+	queued := q.readBytes - q.writtenBytes - q.skippedBytes + socketBytes + q.clampSink(sinkBytes)
 	excess := queued - q.target
 	if excess < q.deadband {
 		return nil

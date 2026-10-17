@@ -14,9 +14,12 @@ package player
 typedef struct {
 	snd_pcm_t *pcm;
 	unsigned int frame_bytes;
+	// 驱动实际给的缓冲帧数。请求的 40000us 常被向上取整到周期边界
+	// (实测能到 78-85ms)，排队基准必须用它，否则目标会低于真实地板。
+	unsigned long buffer_frames;
 } wa_alsa_pcm;
 
-static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int channels) {
+static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int channels, unsigned long *buffer_frames) {
 	snd_pcm_hw_params_t *hw;
 	snd_pcm_hw_params_alloca(&hw);
 	int err = snd_pcm_hw_params_any(pcm, hw);
@@ -41,6 +44,7 @@ static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int cha
 	snd_pcm_uframes_t buffer_size = 0;
 	if ((err = snd_pcm_hw_params_get_period_size(hw, &period_size, &dir)) < 0) return err;
 	if ((err = snd_pcm_hw_params_get_buffer_size(hw, &buffer_size)) < 0) return err;
+	*buffer_frames = (unsigned long)buffer_size;
 
 	snd_pcm_sw_params_t *sw;
 	snd_pcm_sw_params_alloca(&sw);
@@ -62,14 +66,24 @@ static wa_alsa_pcm *wa_alsa_open(unsigned int rate, unsigned int channels, const
 		free(ctx);
 		return NULL;
 	}
-	*err = wa_alsa_configure(ctx->pcm, rate, channels);
+	unsigned long buffer_frames = 0;
+	*err = wa_alsa_configure(ctx->pcm, rate, channels, &buffer_frames);
 	if (*err < 0) {
 		snd_pcm_close(ctx->pcm);
 		free(ctx);
 		return NULL;
 	}
 	ctx->frame_bytes = channels * sizeof(int16_t);
+	ctx->buffer_frames = buffer_frames;
 	return ctx;
+}
+
+// 驱动实际给的缓冲帧数，0 表示未知。
+static unsigned long wa_alsa_buffer_frames(wa_alsa_pcm *ctx) {
+	if (ctx == NULL) {
+		return 0;
+	}
+	return ctx->buffer_frames;
 }
 
 static long wa_alsa_write(wa_alsa_pcm *ctx, void *data, unsigned long frames) {
@@ -395,15 +409,20 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 	}()
 
 	frameBytes := channels * 2
-	// ALSA 自己的声卡缓冲(60ms)是这条链路不可能再低下去的排队，
-	// 超过它也压不掉，所以目标就定在它之上再加余量。
-	queue := newPCMQueue(rate, frameBytes, msBytes(rate, frameBytes, pcmSinkBufferMs))
-	// 原来是 64KB(≈370ms)：wa_alsa_write 是全量阻塞写，一次塞 370ms 进 60ms 的
-	// 声卡缓冲，要塞 300 多毫秒，这期间进程根本腾不出手去丢包。
+	// 用驱动实际给的缓冲当排队基准：请求 40000us 常被向上取整到周期边界
+	// (实测 78-85ms)，写死 40ms 会让目标低于真实地板，跳读永远在触发。
+	bufferBytes := int64(C.wa_alsa_buffer_frames(pcm)) * int64(frameBytes)
+	if bufferBytes <= 0 {
+		bufferBytes = msBytes(rate, frameBytes, pcmSinkBufferMs)
+	}
+	queue := newPCMQueue(rate, frameBytes, bufferBytes)
+	// 原来是 64KB(≈370ms)：wa_alsa_write 是全量阻塞写，一次塞 370ms 进声卡缓冲，
+	// 要塞 300 多毫秒，这期间进程根本腾不出手去丢包。
 	readBuffer := make([]byte, msBytes(rate, frameBytes, pcmReadChunkMs))
 	pending := make([]byte, 0, len(readBuffer)+frameBytes)
 	emptyReads := 0
-	log.Printf("alsa: 实时流 %dHz %d声道，目标排队 %dms", rate, channels, queue.ms(queue.target))
+	log.Printf("alsa: 实时流 %dHz %d声道，声卡缓冲 %dms，目标排队 %dms",
+		rate, channels, queue.ms(bufferBytes), queue.ms(queue.target))
 	for {
 		// 先量后排、再读：只有还没进声卡的旧音频才丢得掉
 		socketBytes := unreadBytes(remoteAddr)
