@@ -244,7 +244,9 @@ func Init(urlPrefix string) *gin.Engine {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "rate must be 8000-192000 and channels 1-8"})
 			return
 		}
-		if err := player.PlayPCMStream(c.Request.Body, rate, channels); err != nil {
+		// 收紧这条连接的内核接收缓冲，延迟攒得更少，反压也来得更早
+		player.TuneStreamConn(c.Request.RemoteAddr)
+		if err := player.PlayPCMStream(c.Request.Body, rate, channels, c.Request.RemoteAddr); err != nil {
 			status := http.StatusBadGateway
 			if errors.Is(err, player.ErrPCMStreamUnsupported) {
 				status = http.StatusNotImplemented

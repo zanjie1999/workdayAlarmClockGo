@@ -15,7 +15,7 @@ func alsaPlayURL(string) error {
 	return errors.New("direct ALSA backend is unavailable in this build")
 }
 
-func alsaPlayPCMStream(io.Reader, int, int) error {
+func alsaPlayPCMStream(io.Reader, int, int, string) error {
 	return ErrPCMStreamUnsupported
 }
 

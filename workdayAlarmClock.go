@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -306,7 +307,14 @@ func main() {
 			fmt.Println("ECHO 访问http://" + ip + conf.Port)
 		}
 		fmt.Println("\n使用浏览器访问 http://" + ip + conf.Port + " 进入后台\n")
-		if err := run.Run(conf.Port); err != nil {
+		// 用 http.Server 是为了 ConnState：播放实时流时要拿 net.Conn
+		// 去查内核接收缓冲里还压着多少没读的旧音频，也能顺手收紧这个缓冲
+		srv := &http.Server{
+			Addr:      conf.Port,
+			Handler:   run,
+			ConnState: player.PCMStreamConnState,
+		}
+		if err := srv.ListenAndServe(); err != nil {
 			port++
 			log.Println("启动失败，端口被占" + conf.Port)
 		}

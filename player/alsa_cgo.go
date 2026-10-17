@@ -96,6 +96,19 @@ static const char *wa_alsa_error(long err) {
 	return snd_strerror((int)err);
 }
 
+// 已写进驱动、还没播出来的帧数(声卡侧排队)。ALSA 自己知道这个数，
+// 比 aplay 那边靠管道积压猜要准。查不到(比如刚 xrun)返回 -1。
+static long wa_alsa_delay(wa_alsa_pcm *ctx) {
+	if (ctx == NULL || ctx->pcm == NULL) {
+		return -1;
+	}
+	snd_pcm_sframes_t delay = 0;
+	if (snd_pcm_delay(ctx->pcm, &delay) < 0 || delay < 0) {
+		return -1;
+	}
+	return (long)delay;
+}
+
 static void wa_alsa_drop(wa_alsa_pcm *ctx) {
 	if (ctx != NULL && ctx->pcm != NULL) {
 		snd_pcm_drop(ctx->pcm);
@@ -231,8 +244,10 @@ static int wa_alsa_mixer_change(long delta) {
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -356,7 +371,7 @@ func alsaPlayURL(url string) error {
 	}
 }
 
-func alsaPlayPCMStream(r io.Reader, rate, channels int) error {
+func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	ensureALSAConfig()
 	var openErr C.int
 	device := C.CString(alsaDevice())
@@ -380,13 +395,30 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int) error {
 	}()
 
 	frameBytes := channels * 2
-	readBuffer := make([]byte, 64*1024)
-	pending := make([]byte, 0, frameBytes)
+	// ALSA 自己的声卡缓冲(60ms)是这条链路不可能再低下去的排队，
+	// 超过它也压不掉，所以目标就定在它之上再加余量。
+	queue := newPCMQueue(rate, frameBytes, msBytes(rate, frameBytes, pcmSinkBufferMs))
+	// 原来是 64KB(≈370ms)：wa_alsa_write 是全量阻塞写，一次塞 370ms 进 60ms 的
+	// 声卡缓冲，要塞 300 多毫秒，这期间进程根本腾不出手去丢包。
+	readBuffer := make([]byte, msBytes(rate, frameBytes, pcmReadChunkMs))
+	pending := make([]byte, 0, len(readBuffer)+frameBytes)
 	emptyReads := 0
+	log.Printf("alsa: 实时流 %dHz %d声道，目标排队 %dms", rate, channels, queue.ms(queue.target))
 	for {
+		// 先量后排、再读：只有还没进声卡的旧音频才丢得掉
+		socketBytes := unreadBytes(remoteAddr)
+		if err := queue.fix(r, socketBytes, alsaQueuedBytes(pcm, frameBytes, rate)); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				completed = true
+				return nil
+			}
+			return fmt.Errorf("skip PCM stream: %w", err)
+		}
+
 		n, readErr := r.Read(readBuffer)
 		if n > 0 {
 			emptyReads = 0
+			queue.readBytes += int64(n)
 			pending = append(pending, readBuffer[:n]...)
 			aligned := len(pending) / frameBytes * frameBytes
 			if aligned > 0 {
@@ -395,6 +427,7 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int) error {
 				if written < 0 {
 					return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
 				}
+				queue.writtenBytes += int64(aligned)
 				pending = append(pending[:0], pending[aligned:]...)
 			}
 		}
@@ -415,6 +448,15 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int) error {
 			return fmt.Errorf("read PCM stream: %w", readErr)
 		}
 	}
+}
+
+// alsaQueuedBytes 返回声卡侧当前排队的字节数，查不到就按缓冲满来估。
+func alsaQueuedBytes(pcm *C.wa_alsa_pcm, frameBytes, rate int) int64 {
+	delay := C.wa_alsa_delay(pcm)
+	if delay < 0 {
+		return msBytes(rate, frameBytes, pcmSinkBufferMs)
+	}
+	return int64(delay) * int64(frameBytes)
 }
 
 func boolInt(value bool) int {
