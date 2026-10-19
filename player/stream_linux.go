@@ -3,6 +3,7 @@
 package player
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,11 +12,56 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 )
 
 // 播放器子进程 stdin 管道的容量。默认 64KB ≈ 370ms，等于凭空多出一大截延迟，
-// 实时流只需要放下一块音频(2KB ≈ 11ms @44.1kHz 立体声)。
+// 实时流只需要放下一块音频(一页 4KB ≈ 21ms @48kHz 立体声)。
 const pcmPipeBytes = 2 << 10
+
+// 各 rate/声道组合的声卡缓冲字节数，启动时探测一次就记住。
+// aplay -B 40000 常被驱动向上取整(实测 40ms 请求给回 85ms)，
+// 按请求值算会让 read() 多丢掉几十毫秒好音频。
+var aplayCardBytes sync.Map
+
+// probeAplayCardBytes 拿 aplay 侧声卡缓冲的真实大小。
+// 先读 /proc/asound(不用起进程)，读不到再起一个 aplay 用 -v 打出来，都不行就用保守值。
+func probeAplayCardBytes(rate, channels int) int64 {
+	frameBytes := channels * 2
+	key := strconv.Itoa(rate) + "/" + strconv.Itoa(channels)
+	if cached, ok := aplayCardBytes.Load(key); ok {
+		return cached.(int64)
+	}
+	var cardBytes int64
+	if frames := alsaBufferFrames(rate, channels); frames > 0 {
+		cardBytes = int64(frames) * int64(frameBytes)
+	} else if frames := runAplayProbe(rate, channels); frames > 0 {
+		cardBytes = int64(frames) * int64(frameBytes)
+	}
+	if cardBytes <= 0 {
+		cardBytes = msBytes(rate, frameBytes, pcmSinkBufferMs)
+	}
+	aplayCardBytes.Store(key, cardBytes)
+	log.Printf("aplay: 声卡缓冲 %dms(%dHz %d声道)", cardBytes*1000/int64(frameBytes)/int64(rate), rate, channels)
+	return cardBytes
+}
+
+// runAplayProbe 喂一小段静音给 aplay，让它把实际生效的 hw_params(含 buffer_size)打出来。
+// 只跑一次，结果会被 probeAplayCardBytes 缓存。
+func runAplayProbe(rate, channels int) int {
+	frameBytes := channels * 2
+	cmd := exec.Command(ShellPlayer, "-v", "-D", alsaDevice(), "-t", "raw", "-f", "S16_LE",
+		"-c", strconv.Itoa(channels), "-r", strconv.Itoa(rate),
+		"-B", "40000", "-F", "10000")
+	cmd.Stdin = bytes.NewReader(make([]byte, msBytes(rate, frameBytes, 60)))
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return 0
+	}
+	return parseAplayBufferFrames(out.String())
+}
 
 func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	switch filepath.Base(ShellPlayer) {
@@ -44,7 +90,7 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 		pipeSize = pipeCapacityBytes(pipe)
 	}
 	// 管道 + aplay 自己的声卡缓冲，是这条链路不可能再低下去的排队
-	sinkBytes := msBytes(rate, frameBytes, pcmSinkBufferMs)
+	sinkBytes := probeAplayCardBytes(rate, channels)
 	if pipeSize > 0 {
 		sinkBytes += int64(pipeSize)
 	}
@@ -82,7 +128,7 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 			return fmt.Errorf("skip PCM stream: %w", err)
 		}
 
-		n, readErr := queue.read(r, buf, pipeQueuedBytes(pipe, pipeSize, queue))
+		n, readErr := queue.read(r, buf)
 		if n > 0 {
 			emptyReads = 0
 			pending = append(pending, buf[:n]...)
@@ -115,17 +161,21 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 }
 
 // pipeQueuedBytes 估算声卡侧当前排队：管道积压 + aplay 自己的声卡缓冲。
-// 管道满 ⟺ aplay 正堵在写声卡 ⟺ 它缓冲也是满的，所以这时候才算那 60ms；
+// 管道积压是实测的(FIONREAD)；aplay 的声卡缓冲看不到，用启动时探测到的值当上限。
+// 管道满 ⟺ aplay 正堵在写声卡 ⟺ 它缓冲也是满的，所以这时候才把声卡缓冲算满；
 // 欠载时管道是空的，不把它算进去才不会虚高。
 func pipeQueuedBytes(pipe *os.File, pipeSize int, queue *pcmQueue) int64 {
-	alsaBytes := msBytes(queue.rate, queue.frameBytes, pcmSinkBufferMs)
 	backlog := pipeBacklogBytes(pipe)
 	if backlog < 0 {
-		return alsaBytes
+		// 管道量不到，只能按缓冲全满估，宁可高估也不低估
+		return queue.sinkLimit
 	}
 	queued := int64(backlog)
 	if pipeSize <= 0 || int64(backlog) >= int64(pipeSize)*3/4 {
-		queued += alsaBytes
+		// 管道快满，说明 aplay 的声卡缓冲也是满的
+		if cardBytes := queue.sinkLimit - int64(pipeSize); cardBytes > 0 {
+			queued += cardBytes
+		}
 	}
 	return queued
 }
