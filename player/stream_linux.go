@@ -98,13 +98,30 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	log.Printf("aplay: 实时流 %dHz %d声道，管道 %d 字节，目标排队 %dms",
 		rate, channels, pipeSize, queue.ms(queue.target))
 
-	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize)
-	closeErr := stdin.Close()
-	if copyErr != nil {
-		// 请求坏了就立刻停，别再把管道里排队的音频放完
+	// 子进程一定要回收，否则每次断流都会留下一个僵尸 aplay。
+	// 原来只在 copyErr != nil 时 Kill，正常路径走 stdin.Close() 再 Wait()，
+	// 而 Close() 在 aplay 不再读管道时可能永久阻塞，Wait() 就永远到不了，
+	// 于是进程变僵尸。这里用 defer 兜底，任何返回路径都保证回收。
+	reaped := false
+	defer func() {
+		if reaped {
+			return
+		}
 		_ = cmd.Process.Kill()
-	}
+		_ = cmd.Wait()
+	}()
+
+	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize)
+
+	// 连接一断就立刻杀掉 aplay，不等它把管道/声卡缓冲里剩下的音频播完。
+	// 实时流场景下，"播完残留"没有任何意义：上游已经断了，残留放出来的
+	// 只会是过期音频，还会让这台设备比别的设备多拖一截。
+	// 顺序也很重要：先 Kill 再 Close，避免 Close 阻塞(见上面的 defer 注释)。
+	_ = cmd.Process.Kill()
+	closeErr := stdin.Close()
 	waitErr := cmd.Wait()
+	reaped = true
+
 	if copyErr != nil {
 		return copyErr
 	}
