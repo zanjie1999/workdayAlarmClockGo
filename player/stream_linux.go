@@ -162,8 +162,15 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 
 // pipeQueuedBytes 估算声卡侧当前排队：管道积压 + aplay 自己的声卡缓冲。
 // 管道积压是实测的(FIONREAD)；aplay 的声卡缓冲看不到，用启动时探测到的值当上限。
-// 管道满 ⟺ aplay 正堵在写声卡 ⟺ 它缓冲也是满的，所以这时候才把声卡缓冲算满；
-// 欠载时管道是空的，不把它算进去才不会虚高。
+//
+// 原来的推断是"管道快满 ⟹ aplay 正堵在写声卡 ⟹ 声卡缓冲也满"，但管道很小时
+// 这个等价关系不成立：管道只有 43ms 时，3/4 阈值才 32ms，正常 10ms 一批的节奏
+// 稍有抖动就跨过去，于是把声卡缓冲(实测 341ms)全额算进排队，sink 长期顶到
+// 384ms 的天花板。而 fix() 里 target = sink + 余量，sink 在两边抵消，
+// 结果就是"永远刚好、永远不丢"，多设备一旦错位就再也追不回来。
+//
+// 现在改成按管道占用比例折算声卡积压：管道越满越接近满缓冲，但不再一步跳满。
+// 这样既保留了"管道满时声卡多半也满"的方向性，又不会因为几毫秒抖动就虚高几百毫秒。
 func pipeQueuedBytes(pipe *os.File, pipeSize int, queue *pcmQueue) int64 {
 	backlog := pipeBacklogBytes(pipe)
 	if backlog < 0 {
@@ -171,11 +178,15 @@ func pipeQueuedBytes(pipe *os.File, pipeSize int, queue *pcmQueue) int64 {
 		return queue.sinkLimit
 	}
 	queued := int64(backlog)
-	if pipeSize <= 0 || int64(backlog) >= int64(pipeSize)*3/4 {
-		// 管道快满，说明 aplay 的声卡缓冲也是满的
-		if cardBytes := queue.sinkLimit - int64(pipeSize); cardBytes > 0 {
-			queued += cardBytes
-		}
+	cardBytes := queue.sinkLimit - int64(pipeSize)
+	if cardBytes <= 0 || pipeSize <= 0 {
+		return queued
 	}
+	// 管道占用比例，夹在 0..1。空管道时声卡积压按 0 算，满管道时才按全额算。
+	fill := float64(backlog) / float64(pipeSize)
+	if fill > 1 {
+		fill = 1
+	}
+	queued += int64(float64(cardBytes) * fill)
 	return queued
 }

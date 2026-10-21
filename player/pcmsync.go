@@ -30,7 +30,7 @@ const (
 	pcmReadChunkMs = 15.0                  // 每次最多读多久的音频
 	pcmMarginMs    = 25.0                  // 目标在固有排队之上的余量
 	pcmDeadbandMs  = 12.0                  // 死区，避免一直微调
-	pcmMaxSkipMs   = 250.0                 // 单次最多丢多久
+	pcmMaxSkipMs   = 250.0                 // 单次最多丢多久(只限单轮，不限欠账总额)
 	pcmLogGap      = 10 * time.Second      // 跳读日志限流
 
 	// 一次读卡这么久以上，才算真的遇到网络事故。
@@ -65,6 +65,12 @@ type pcmQueue struct {
 	writtenBytes int64 // 写进声卡的
 	skippedBytes int64 // 主动丢弃的
 
+	// 饿读追赶没丢完的欠账。
+	// 一次 Read 只拿得到 pcmReadChunkMs 那么多字节，卡了 300ms 也只能丢 15ms，
+	// 剩下的必须记下来在后续轮次继续丢——否则下一轮 gap 已经很小、不再满足
+	// 触发条件，欠账就永远挂在那里，表现为"丢了但没丢够"。
+	starveOwed int64
+
 	lastCheck time.Time
 	lastLog   time.Time
 	buf       []byte
@@ -96,38 +102,33 @@ func (q *pcmQueue) clampSink(sinkBytes int64) int64 {
 	return sinkBytes
 }
 
-// read 取代调用点的 r.Read：只处理"明显卡住"这种网络事故。
+// read 取代调用点的 r.Read：只负责发现"明显卡住"并记账，丢弃统一交给 fix()。
 //
-// 排队量由 fix() 负责，它用的 pending 和 socket 都是精确量，不需要猜。
-// 这里只做一件事：一次读卡了特别久(超过 pcmStarveGap)，说明上游攒了一大坨
-// 旧音频正在涌过来，把这一轮读到的开头那段丢掉，剩下的就是实时音频。
-//
-// 只丢这一轮已经读到的字节，绝不额外读——额外读会阻塞，阻塞多久声卡就饿多久，
-// 那就是一次卡顿。欠账没丢完也不要紧，下一轮 Read 立刻返回，接着丢。
+// 一次读卡了特别久(超过 pcmStarveGap)，说明上游攒了一大坨旧音频正在涌过来。
+// 这里只把"卡住多久"换算成欠账记进 starveOwed，不在这里丢：
+//  - 这一轮最多只拿得到 pcmReadChunkMs(15ms)，用 15ms 的铲子挖 300ms 的坑，
+//    永远追不上，而卡顿期间上游还在以实时速率继续送；
+//  - fix() 里的 drop() 是 io.ReadFull 循环，能一次性连读任意量，追得快。
+// 所以这里记账、fix() 执行，职责分开，也不会重复计数。
 func (q *pcmQueue) read(r io.Reader, buf []byte) (int, error) {
 	start := time.Now()
 	n, err := r.Read(buf)
 	gap := time.Since(start)
 	if n > 0 {
 		q.readBytes += int64(n)
+
+		// 欠账按实际卡住的时间如实记账，不按 pcmMaxSkip 截断。
+		// 卡了 500ms 只记 250ms 的话，剩下 250ms 永远补不回来，
+		// 下次再卡一次就累积成听感上明显的错位。
 		if gap > pcmStarveGap {
 			owed := msBytes(q.rate, q.frameBytes, float64(gap.Milliseconds())-pcmKeepMs)
-			if owed > q.maxSkip {
-				owed = q.maxSkip
-			}
-			drop := owed
-			if drop > int64(n) {
-				drop = int64(n)
-			}
-			drop -= drop % int64(q.frameBytes) // 帧对齐，别把采样劈开
-			if drop > 0 {
-				copy(buf, buf[drop:n])
-				n -= int(drop)
-				q.skippedBytes += drop
+			if owed > 0 {
+				q.starveOwed += owed
 				if time.Since(q.lastLog) >= pcmLogGap {
 					q.lastLog = time.Now()
-					log.Printf("饿读追赶: 卡了 %dms，丢 %dms(累计 %dms)",
-						gap.Milliseconds(), q.ms(drop), q.ms(q.skippedBytes))
+					log.Printf("饿读: 卡了 %dms，记欠账 %dms(待丢 %dms，累计已丢 %dms)",
+						gap.Milliseconds(), q.ms(owed), q.ms(q.starveOwed),
+						q.ms(q.skippedBytes))
 				}
 			}
 		}
@@ -158,12 +159,28 @@ func (q *pcmQueue) fix(r io.Reader, socketBytes, sinkBytes int64) error {
 	target := q.clampSink(sinkBytes) + msBytes(q.rate, q.frameBytes, pcmMarginMs)
 	excess := queued - target
 	if excess < q.deadband {
+		excess = 0
+	}
+
+	// 饿读欠账是独立的一笔账：read() 卡住时欠下的旧音频，必须无条件补丢。
+	// 它不受 available(socket 里现存量)的限制——那笔数据在卡顿期间
+	// 可能已经被内核收下又被读走，用 socket 现值去限它只会丢不动。
+	// 这里取较大者而不是相加，避免同一笔欠账被算两次。
+	owedOnly := false
+	if q.starveOwed > excess {
+		excess = q.starveOwed
+		owedOnly = true
+	}
+
+	if excess <= 0 {
 		return nil
 	}
 	if excess > q.maxSkip {
 		excess = q.maxSkip
 	}
-	if excess > available {
+	// 常规积压只能用 socket 里现存的量去丢(等新数据来了再丢就等于丢最新音频)；
+	// 但欠账必须丢得动，否则永远补不上。
+	if !owedOnly && excess > available {
 		excess = available
 	}
 	excess -= excess % int64(q.frameBytes)
@@ -171,11 +188,21 @@ func (q *pcmQueue) fix(r io.Reader, socketBytes, sinkBytes int64) error {
 		return nil
 	}
 	dropped, err := q.drop(r, excess)
+
+	// drop() 丢掉的是真实流数据，starveOwed 记的是同一笔欠账，
+	// 已经在这里补上了就必须同步扣减，否则下一轮会重复计算、多丢一截。
+	if dropped > 0 && q.starveOwed > 0 {
+		q.starveOwed -= dropped
+		if q.starveOwed < 0 {
+			q.starveOwed = 0
+		}
+	}
+
 	if dropped > 0 && now.Sub(q.lastLog) >= pcmLogGap {
 		q.lastLog = now
-		log.Printf("跳读: 排队 %dms 目标 %dms(声卡 %dms)，丢 %dms(累计 %dms)",
+		log.Printf("跳读: 排队 %dms 目标 %dms(声卡 %dms)，丢 %dms(累计 %dms，欠 %dms)",
 			q.ms(queued), q.ms(target), q.ms(q.clampSink(sinkBytes)),
-			q.ms(dropped), q.ms(q.skippedBytes))
+			q.ms(dropped), q.ms(q.skippedBytes), q.ms(q.starveOwed))
 	}
 	return err
 }
