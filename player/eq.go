@@ -218,19 +218,42 @@ func (e *EQ) rebuildLocked() {
 		e.params.Store(&eqParams{enabled: false, sampleRate: e.rate})
 		return
 	}
-	filters := make([]*biquad, len(e.cur.Bands))
-	for i, band := range e.cur.Bands {
+	// 0dB 的频段数学上就是直通，系数算了也是白算，直接不挂进链路。
+	// 上游只送 5ms 一片，每片都要过一遍滤波器，省掉空转的段很划算。
+	filters := make([]*biquad, 0, len(e.cur.Bands))
+	for _, band := range e.cur.Bands {
+		if !bandActive(band) {
+			continue
+		}
 		b := &biquad{}
 		b.setCoeffs(band, e.rate)
-		filters[i] = b
+		filters = append(filters, b)
 	}
+	// 全部频段都是 0dB，且预增益也是 0dB：整条链路等价于直通，直接关掉
 	preamp := math.Pow(10, e.cur.Preamp/20)
+	if len(filters) == 0 && preamp == 1 {
+		e.params.Store(&eqParams{enabled: false, sampleRate: e.rate})
+		return
+	}
 	e.params.Store(&eqParams{
 		enabled:    true,
 		sampleRate: e.rate,
 		preamp:     preamp,
 		filters:    filters,
 	})
+}
+
+// bandActive 判断这个频段是否真的会改变声音。
+// 增益为 0dB 时无论频率和 Q 是多少，滤波器都是直通，可以直接跳过。
+func bandActive(band EQBand) bool {
+	if band.Gain == 0 {
+		return false
+	}
+	// 频率非法时 setCoeffs 会退化成直通，同样没必要挂上去
+	if band.Freq <= 0 {
+		return false
+	}
+	return true
 }
 
 // Process 原地处理交错 S16_LE 立体声数据。
