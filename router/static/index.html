@@ -94,10 +94,10 @@
                     var appOnly = document.querySelectorAll('.app-only');
                     var linuxOnly = document.querySelectorAll('.linux-only');
                     for (var i = 0; i < appOnly.length; i++) {
-                        appOnly[i].style.display = d.isApp ? '' : 'none';
+                        appOnly[i].style.display = d.isApp ? 'inline' : 'none';
                     }
                     for (var j = 0; j < linuxOnly.length; j++) {
-                        linuxOnly[j].style.display = d.isApp ? 'none' : '';
+                        linuxOnly[j].style.display = d.isApp ? 'none' : 'inline';
                     }
                     var msg = (d.batLevel ? '电量 ' + d.batLevel.trim() + '%<br>' : '')
                     + (d.stopUnix ? '将在 ' + new Date(d.stopUnix*1000).toLocaleString('af').split(' ')[1] + ' 后停止<br>' : '')

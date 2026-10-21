@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/static/style.css">
     <style>
-        .row { margin: 14px 0; }
-        .row label { display: inline-block; width: 80px; }
-        input[type=range] { width: 58%; max-width: 300px; vertical-align: middle; }
-        .val { display: inline-block; min-width: 70px; font-weight: bold; }
+        .band { margin: 18px 0; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .band h3 { margin: 0 0 8px; font-size: 1em; }
+        .row { margin: 8px 0; }
+        .row label { display: inline-block; width: 52px; color: #666; }
+        input[type=range] { width: 52%; max-width: 280px; vertical-align: middle; }
+        .val { display: inline-block; min-width: 76px; font-weight: bold; }
         #msg { min-height: 1.4em; color: #2a7; }
-        .hint { color: #888; font-size: 0.85em; margin-left: 84px; }
+        .hint { color: #888; font-size: 0.85em; }
+        .tips { background: #f7f7f7; padding: 8px 12px; font-size: 0.85em; color: #666; line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -20,25 +23,49 @@
         <div class="row">
             <label>开关</label>
             <input type="checkbox" id="enabled" onchange="apply()">
-            <span class="hint" style="margin-left:8px">关闭时完全跳过处理</span>
+            <span class="hint">关闭时完全跳过处理</span>
         </div>
 
-        <div class="row">
-            <label>低音</label>
-            <input type="range" id="bass" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
-            <span class="val" id="bassVal">0.0 dB</span>
+        <div class="band">
+            <h3>低音</h3>
+            <div class="row">
+                <label>增益</label>
+                <input type="range" id="bass" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+                <span class="val" id="bassVal">0.0 dB</span>
+            </div>
+            <div class="row">
+                <label>拐点</label>
+                <input type="range" id="bassFreq" min="60" max="500" step="5" value="120" oninput="show(); apply()">
+                <span class="val" id="bassFreqVal">120 Hz</span>
+            </div>
         </div>
 
-        <div class="row">
-            <label>中音</label>
-            <input type="range" id="mid" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
-            <span class="val" id="midVal">0.0 dB</span>
+        <div class="band">
+            <h3>中音</h3>
+            <div class="row">
+                <label>增益</label>
+                <input type="range" id="mid" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+                <span class="val" id="midVal">0.0 dB</span>
+            </div>
+            <div class="row">
+                <label>中心</label>
+                <input type="range" id="midFreq" min="300" max="4000" step="10" value="1000" oninput="show(); apply()">
+                <span class="val" id="midFreqVal">1000 Hz</span>
+            </div>
         </div>
 
-        <div class="row">
-            <label>高音</label>
-            <input type="range" id="treble" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
-            <span class="val" id="trebleVal">0.0 dB</span>
+        <div class="band">
+            <h3>高音</h3>
+            <div class="row">
+                <label>增益</label>
+                <input type="range" id="treble" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+                <span class="val" id="trebleVal">0.0 dB</span>
+            </div>
+            <div class="row">
+                <label>拐点</label>
+                <input type="range" id="trebleFreq" min="2000" max="16000" step="100" value="8000" oninput="show(); apply()">
+                <span class="val" id="trebleFreqVal">8000 Hz</span>
+            </div>
         </div>
 
         <div class="row">
@@ -46,7 +73,12 @@
             <input type="range" id="preamp" min="-12" max="0" step="0.5" value="0" oninput="show(); apply()">
             <span class="val" id="preampVal">0.0 dB</span>
         </div>
-        <div class="hint">低音加多了会削波，可用预增益压一点</div>
+
+        <div class="hint">
+            小喇叭低音下潜有限，60Hz 附近基本发不出声。<br>
+            低音拐点调到 200~400Hz 更容易听出“厚”的变化。<br>
+            加太多会削波，用预增益压一点。
+        </div>
 
         <div id="msg"></div>
 
@@ -59,14 +91,21 @@
 
 <script>
 var timer = null;
-var IDS = ['bass', 'mid', 'treble', 'preamp'];
+// 增益和频率的输入框 id
+var GAIN_IDS = ['bass', 'mid', 'treble'];
+var FREQ_IDS = ['bassFreq', 'midFreq', 'trebleFreq'];
+var ALL_IDS = GAIN_IDS.concat(FREQ_IDS, ['preamp']);
 
-function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
+function fmtDb(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
 
 function show() {
-    IDS.forEach(function (id) {
+    GAIN_IDS.concat(['preamp']).forEach(function (id) {
         var v = parseFloat(document.getElementById(id).value);
-        document.getElementById(id + 'Val').textContent = fmt(v);
+        document.getElementById(id + 'Val').textContent = fmtDb(v);
+    });
+    FREQ_IDS.forEach(function (id) {
+        var v = parseInt(document.getElementById(id).value);
+        document.getElementById(id + 'Val').textContent = v + ' Hz';
     });
 }
 
@@ -80,7 +119,7 @@ function apply() {
 
 function send() {
     var q = 'enabled=' + (document.getElementById('enabled').checked ? 1 : 0);
-    IDS.forEach(function (id) {
+    ALL_IDS.forEach(function (id) {
         q += '&' + id + '=' + document.getElementById(id).value;
     });
     fetch('/eqset?' + q)
@@ -98,7 +137,9 @@ function load() {
             var map = { lowshelf: 'bass', peaking: 'mid', highshelf: 'treble' };
             bands.forEach(function (b) {
                 var id = map[b.type];
-                if (id) document.getElementById(id).value = b.gain;
+                if (!id) return;
+                document.getElementById(id).value = b.gain;
+                if (b.freq) document.getElementById(id + 'Freq').value = b.freq;
             });
             document.getElementById('preamp').value = eq.preamp || 0;
             show();
@@ -108,10 +149,12 @@ function load() {
 }
 
 function reset() {
-    document.getElementById('bass').value = 0;
-    document.getElementById('mid').value = 0;
-    document.getElementById('treble').value = 0;
-    document.getElementById('preamp').value = 0;
+    GAIN_IDS.concat(['preamp']).forEach(function (id) {
+        document.getElementById(id).value = 0;
+    });
+    document.getElementById('bassFreq').value = 120;
+    document.getElementById('midFreq').value = 1000;
+    document.getElementById('trebleFreq').value = 8000;
     show();
     apply();
 }
