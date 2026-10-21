@@ -354,6 +354,9 @@ func alsaPlayURL(url string) error {
 
 	readBuffer := make([]byte, 64*1024)
 	pending := make([]byte, 0, 4)
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
+	GetEQ().SetSampleRate(decoder.SampleRate())
+	ResetEQState()
 	for {
 		for IsPaused && !playbackCanceled(url) {
 			time.Sleep(50 * time.Millisecond)
@@ -367,6 +370,7 @@ func alsaPlayURL(url string) error {
 			pending = append(pending, readBuffer[:n]...)
 			aligned := len(pending) &^ 3
 			if aligned > 0 {
+				ProcessEQ(pending[:aligned])
 				frames := C.ulong(aligned / 4)
 				written := C.wa_alsa_write(pcm, unsafe.Pointer(&pending[0]), frames)
 				if written < 0 {
@@ -409,6 +413,9 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 	}()
 
 	frameBytes := channels * 2
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
+	GetEQ().SetSampleRate(rate)
+	ResetEQState()
 	// 用驱动实际给的缓冲当排队基准：请求 40000us 常被向上取整到周期边界
 	// (实测 78-85ms)，写死 40ms 会让目标低于真实地板，跳读永远在触发。
 	bufferBytes := int64(C.wa_alsa_buffer_frames(pcm)) * int64(frameBytes)
@@ -440,6 +447,7 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 			pending = append(pending, readBuffer[:n]...)
 			aligned := len(pending) / frameBytes * frameBytes
 			if aligned > 0 {
+				ProcessEQ(pending[:aligned])
 				frames := C.ulong(aligned / frameBytes)
 				written := C.wa_alsa_write(pcm, unsafe.Pointer(&pending[0]), frames)
 				if written < 0 {

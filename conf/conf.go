@@ -15,6 +15,82 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
+// EQBand 一个滤波段
+type EQBand struct {
+	// Type: "lowshelf" | "highshelf" | "peaking"
+	Type string `json:"type"`
+	// Freq 中心/拐点频率 Hz
+	Freq float64 `json:"freq"`
+	// Gain 增益 dB，正为增强负为衰减
+	Gain float64 `json:"gain"`
+	// Q 品质因数，0 时用默认 0.707
+	Q float64 `json:"q"`
+}
+
+// EQSettings 均衡器配置，对应 json 里的 eq 字段。
+// 默认关闭，enabled 为 false 时播放链路完全跳过处理。
+type EQSettings struct {
+	Enabled bool     `json:"enabled"`
+	Bands   []EQBand `json:"bands"`
+	// Preamp 预增益 dB，用来补偿增强后的削波
+	Preamp float64 `json:"preamp"`
+}
+
+// 三段均衡器的固定频点：低音 / 中音 / 高音
+const (
+	EQBassFreq    = 120  // 低音拐点
+	EQMidFreq     = 1000 // 中音中心
+	EQTrebleFreq  = 8000 // 高音拐点
+	EQMidDefaultQ = 1.0
+)
+
+// DefaultEQ 默认配置：三段均衡器，关闭状态。
+// 频点顺序固定为 低音、中音、高音，eq.html 按这个顺序渲染。
+func DefaultEQ() EQSettings {
+	return EQSettings{
+		Enabled: false,
+		Preamp:  0,
+		Bands: []EQBand{
+			{Type: "lowshelf", Freq: EQBassFreq, Gain: 0, Q: 0.707},
+			{Type: "peaking", Freq: EQMidFreq, Gain: 0, Q: EQMidDefaultQ},
+			{Type: "highshelf", Freq: EQTrebleFreq, Gain: 0, Q: 0.707},
+		},
+	}
+}
+
+// NormalizeEQ 把配置整理成标准的三段结构。
+// 老配置文件里可能只有一段(低音)，或者频段类型对不上，
+// 这里统一补齐成 低音/中音/高音，保留已有的增益值。
+func NormalizeEQ(eq EQSettings) EQSettings {
+	def := DefaultEQ()
+	out := EQSettings{Enabled: eq.Enabled, Preamp: eq.Preamp, Bands: def.Bands}
+
+	// 按类型把已有频段的增益搬到对应位置
+	for _, band := range eq.Bands {
+		switch band.Type {
+		case "lowshelf":
+			out.Bands[0].Gain = band.Gain
+			if band.Freq > 0 {
+				out.Bands[0].Freq = band.Freq
+			}
+		case "peaking":
+			out.Bands[1].Gain = band.Gain
+			if band.Freq > 0 {
+				out.Bands[1].Freq = band.Freq
+			}
+			if band.Q > 0 {
+				out.Bands[1].Q = band.Q
+			}
+		case "highshelf":
+			out.Bands[2].Gain = band.Gain
+			if band.Freq > 0 {
+				out.Bands[2].Freq = band.Freq
+			}
+		}
+	}
+	return out
+}
+
 type Config struct {
 	VolDefault      string              `json:"volDefault"`
 	VolAlarm        string              `json:"volAlarm"`
@@ -41,6 +117,8 @@ type Config struct {
 	DefSeek         string              `json:"defSeek"`
 	SmallWeekDate   string              `json:"smallWeekDate"`
 	Port            int                 `json:"port"`
+	// 均衡器配置，默认关闭
+	Eq EQSettings `json:"eq"`
 }
 
 var (
@@ -91,6 +169,8 @@ var (
 		SmallWeekDate: "",
 		// 端口号
 		Port: 8080,
+		// 均衡器，默认关闭
+		Eq: DefaultEQ(),
 	}
 )
 
@@ -117,6 +197,8 @@ func Init() {
 	if Cfg.CacheLimit <= 0 {
 		Cfg.CacheLimit = 1024
 	}
+	// 老配置文件没有 eq 字段或只有一段，统一整理成三段
+	Cfg.Eq = NormalizeEQ(Cfg.Eq)
 }
 
 // 保存配置

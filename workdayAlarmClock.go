@@ -279,6 +279,11 @@ func main() {
 		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}
 	conf.Init()
+	// 把配置里的 EQ 设置同步到播放链路，默认关闭时不会有任何额外开销
+	player.SyncEQFromConf()
+	if player.EQActive() {
+		log.Println("均衡器已启用")
+	}
 	if conf.IsApp && conf.Cfg.Wakelock {
 		app.SendLocal("WAKELOCK")
 	}

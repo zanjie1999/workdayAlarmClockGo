@@ -1,0 +1,133 @@
+<html>
+<head>
+    <title>均衡器</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .row { margin: 14px 0; }
+        .row label { display: inline-block; width: 80px; }
+        input[type=range] { width: 58%; max-width: 300px; vertical-align: middle; }
+        .val { display: inline-block; min-width: 70px; font-weight: bold; }
+        #msg { min-height: 1.4em; color: #2a7; }
+        .hint { color: #888; font-size: 0.85em; margin-left: 84px; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <h1 class="me-title">均衡器</h1>
+
+        <div class="row">
+            <label>开关</label>
+            <input type="checkbox" id="enabled" onchange="apply()">
+            <span class="hint" style="margin-left:8px">关闭时完全跳过处理</span>
+        </div>
+
+        <div class="row">
+            <label>低音</label>
+            <input type="range" id="bass" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+            <span class="val" id="bassVal">0.0 dB</span>
+        </div>
+
+        <div class="row">
+            <label>中音</label>
+            <input type="range" id="mid" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+            <span class="val" id="midVal">0.0 dB</span>
+        </div>
+
+        <div class="row">
+            <label>高音</label>
+            <input type="range" id="treble" min="-24" max="24" step="0.5" value="0" oninput="show(); apply()">
+            <span class="val" id="trebleVal">0.0 dB</span>
+        </div>
+
+        <div class="row">
+            <label>预增益</label>
+            <input type="range" id="preamp" min="-12" max="0" step="0.5" value="0" oninput="show(); apply()">
+            <span class="val" id="preampVal">0.0 dB</span>
+        </div>
+        <div class="hint">低音加多了会削波，可用预增益压一点</div>
+
+        <div id="msg"></div>
+
+        <div class="row">
+            <button onclick="load()">刷新</button>
+            <button onclick="reset()">重置</button>
+            <button onclick="off()">关闭</button>
+        </div>
+    </div>
+
+<script>
+var timer = null;
+var IDS = ['bass', 'mid', 'treble', 'preamp'];
+
+function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
+
+function show() {
+    IDS.forEach(function (id) {
+        var v = parseFloat(document.getElementById(id).value);
+        document.getElementById(id + 'Val').textContent = fmt(v);
+    });
+}
+
+function msg(s) { document.getElementById('msg').textContent = s; }
+
+// 拖动滑块会连续触发，合并成 150ms 一次请求
+function apply() {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(send, 150);
+}
+
+function send() {
+    var q = 'enabled=' + (document.getElementById('enabled').checked ? 1 : 0);
+    IDS.forEach(function (id) {
+        q += '&' + id + '=' + document.getElementById(id).value;
+    });
+    fetch('/eqset?' + q)
+        .then(function (r) { return r.json(); })
+        .then(function (j) { msg(j.ok ? '已应用' : '失败'); })
+        .catch(function () { msg('请求失败'); });
+}
+
+function load() {
+    fetch('/eq')
+        .then(function (r) { return r.json(); })
+        .then(function (eq) {
+            document.getElementById('enabled').checked = !!eq.enabled;
+            var bands = eq.bands || [];
+            var map = { lowshelf: 'bass', peaking: 'mid', highshelf: 'treble' };
+            bands.forEach(function (b) {
+                var id = map[b.type];
+                if (id) document.getElementById(id).value = b.gain;
+            });
+            document.getElementById('preamp').value = eq.preamp || 0;
+            show();
+            msg('已加载');
+        })
+        .catch(function () { msg('加载失败'); });
+}
+
+function reset() {
+    document.getElementById('bass').value = 0;
+    document.getElementById('mid').value = 0;
+    document.getElementById('treble').value = 0;
+    document.getElementById('preamp').value = 0;
+    show();
+    apply();
+}
+
+function off() {
+    fetch('/eqoff')
+        .then(function (r) { return r.json(); })
+        .then(function () {
+            document.getElementById('enabled').checked = false;
+            msg('已关闭');
+        })
+        .catch(function () { msg('请求失败'); });
+}
+
+show();
+load();
+</script>
+</body>
+</html>

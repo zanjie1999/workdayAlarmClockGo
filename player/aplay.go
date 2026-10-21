@@ -263,7 +263,7 @@ func pcmURL(url string) error {
 		_, copyErr = stdin.Write(header)
 	}
 	if copyErr == nil {
-		_, copyErr = io.Copy(stdin, decoder)
+		copyErr = copyWithEQ(stdin, decoder, decoder.SampleRate())
 	}
 	closeErr := stdin.Close()
 	waitErr := cmd.Wait()
@@ -282,6 +282,54 @@ func pcmURL(url string) error {
 
 func playbackCanceled(url string) bool {
 	return (IsStop && !IsPlayWeather) || NowUrl != url
+}
+
+// copyWithEQ 把解码后的 MP3 PCM 写进播放器管道，顺便过一遍 EQ。
+// EQ 未启用时退化成普通的 io.Copy，不多占一块缓冲。
+func copyWithEQ(dst io.Writer, src io.Reader, sampleRate int) error {
+	if !EQActive() {
+		_, err := io.Copy(dst, src)
+		return err
+	}
+	eq := GetEQ()
+	eq.SetSampleRate(sampleRate)
+	ResetEQState()
+
+	// 按帧对齐的缓冲：一个立体声 S16 帧 4 字节
+	const frameBytes = 4
+	buf := make([]byte, 16*1024)
+	var tail []byte
+	for {
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if len(tail) > 0 {
+				chunk = append(tail, chunk...)
+				tail = nil
+			}
+			aligned := len(chunk) / frameBytes * frameBytes
+			if aligned > 0 {
+				ProcessEQ(chunk[:aligned])
+				if _, err := dst.Write(chunk[:aligned]); err != nil {
+					return err
+				}
+			}
+			// 不足一帧的尾巴留到下一块，避免滤波器状态被半个采样打乱
+			if aligned < len(chunk) {
+				tail = append([]byte(nil), chunk[aligned:]...)
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF && len(tail) > 0 {
+				// 收尾的残余字节原样送出，不处理
+				_, _ = dst.Write(tail)
+			}
+			if readErr == io.EOF {
+				return nil
+			}
+			return readErr
+		}
+	}
 }
 
 func pcmCommand(sampleRate int) *exec.Cmd {

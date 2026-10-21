@@ -4,6 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* 模式相关的按钮先藏起来，等 /status 返回后再显示，避免闪一下 */
+        .app-only, .linux-only { display: none; }
+    </style>
 </head>
 <body>
     <div class="main-container">
@@ -62,7 +66,7 @@
         <input type="number" name="min" id="timeStop" value="30.0" min="0" step="0.5"> 分钟后
     </form>
         <div>
-        <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a> <a href="/playlist.html" style="margin-left: 20px">我的歌单</a> <a href="/echo?msg=SCREENON" style="margin-left: 20px">亮屏</a> <a href="/echo?msg=SCREENOFF" style="margin-left: 20px">熄屏</a> <a href="javascript:location.href='//'+location.hostname+':8880'" style="margin-left: 20px">查看摄像头</a>
+        <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a> <a href="/playlist.html" style="margin-left: 20px">我的歌单</a><a class="app-only" href="/echo?msg=SCREENON" style="margin-left: 20px">亮屏</a> <a class="app-only" href="/echo?msg=SCREENOFF" style="margin-left: 20px">熄屏</a> <a class="app-only" href="javascript:location.href='//'+location.hostname+':8880'" style="margin-left: 20px">查看摄像头</a><a class="linux-only" href="/eq.html" style="margin-left: 20px">均衡器</a>
     </div>
     </div>
     <script>
@@ -86,6 +90,15 @@
             xhr.onreadystatechange = function() {
                 if (xhr.readyState == 4 && xhr.status == 200) {
                     var d = JSON.parse(xhr.responseText);
+                    // 按运行模式显示按钮：App 下才有亮屏/熄屏/摄像头，Linux 下才有均衡器
+                    var appOnly = document.querySelectorAll('.app-only');
+                    var linuxOnly = document.querySelectorAll('.linux-only');
+                    for (var i = 0; i < appOnly.length; i++) {
+                        appOnly[i].style.display = d.isApp ? '' : 'none';
+                    }
+                    for (var j = 0; j < linuxOnly.length; j++) {
+                        linuxOnly[j].style.display = d.isApp ? 'none' : '';
+                    }
                     var msg = (d.batLevel ? '电量 ' + d.batLevel.trim() + '%<br>' : '')
                     + (d.stopUnix ? '将在 ' + new Date(d.stopUnix*1000).toLocaleString('af').split(' ')[1] + ' 后停止<br>' : '')
                     + (d.skipAlarm ? '将跳过 ' + d.skipAlarm + ' 次闹钟<br>' : '')

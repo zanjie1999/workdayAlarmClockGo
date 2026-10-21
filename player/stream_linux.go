@@ -98,6 +98,10 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	log.Printf("aplay: 实时流 %dHz %d声道，管道 %d 字节，目标排队 %dms",
 		rate, channels, pipeSize, queue.ms(queue.target))
 
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
+	GetEQ().SetSampleRate(rate)
+	ResetEQState()
+
 	// 子进程一定要回收，否则每次断流都会留下一个僵尸 aplay。
 	// 原来只在 copyErr != nil 时 Kill，正常路径走 stdin.Close() 再 Wait()，
 	// 而 Close() 在 aplay 不再读管道时可能永久阻塞，Wait() 就永远到不了，
@@ -151,6 +155,7 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 			pending = append(pending, buf[:n]...)
 			aligned := len(pending) / queue.frameBytes * queue.frameBytes
 			if aligned > 0 {
+				ProcessEQ(pending[:aligned])
 				if _, err := stdin.Write(pending[:aligned]); err != nil {
 					return err
 				}

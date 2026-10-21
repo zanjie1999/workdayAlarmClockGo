@@ -87,6 +87,7 @@ func Init(urlPrefix string) *gin.Engine {
 
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))
+	r.StaticFileFS("/eq.html", "./eq.html", http.FS(staticFs))
 	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
 	root.StaticFile("/weather.mp3", "./weather.mp3")
 
@@ -368,6 +369,101 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>闹钟时间到</h1>"+js2home))
 	})
 
+	// 均衡器：查看当前设置
+	// GET /eq
+	root.GET("/eq", func(c *gin.Context) {
+		c.JSON(http.StatusOK, conf.Cfg.Eq)
+	})
+
+	// 均衡器：实时调节（三段：低音/中音/高音）
+	// GET /eqset?enabled=1&bass=6&mid=-2&treble=3&preamp=0
+	// 只传需要改的参数，其余保持不变；改动立即生效并写回配置文件。
+	root.GET("/eqset", func(c *gin.Context) {
+		eq := conf.NormalizeEQ(conf.Cfg.Eq)
+
+		if v := c.Query("enabled"); v != "" {
+			eq.Enabled = v != "0" && !strings.EqualFold(v, "false") && !strings.EqualFold(v, "off")
+		}
+		if v := c.Query("preamp"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "preamp 需要数字，单位 dB"})
+				return
+			}
+			eq.Preamp = f
+		}
+
+		// 三段增益，参数名固定
+		for _, item := range []struct {
+			name string
+			idx  int
+		}{
+			{"bass", 0},
+			{"mid", 1},
+			{"treble", 2},
+		} {
+			v := c.Query(item.name)
+			if v == "" {
+				continue
+			}
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": item.name + " 需要数字，单位 dB"})
+				return
+			}
+			eq.Bands[item.idx].Gain = f
+		}
+
+		// 频点可选，不传就保持默认
+		if v := c.Query("bassFreq"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "bassFreq 需要数字，单位 Hz"})
+				return
+			}
+			eq.Bands[0].Freq = f
+		}
+		if v := c.Query("midFreq"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "midFreq 需要数字，单位 Hz"})
+				return
+			}
+			eq.Bands[1].Freq = f
+		}
+		if v := c.Query("midQ"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "midQ 需要数字"})
+				return
+			}
+			eq.Bands[1].Q = f
+		}
+		if v := c.Query("trebleFreq"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "trebleFreq 需要数字，单位 Hz"})
+				return
+			}
+			eq.Bands[2].Freq = f
+		}
+
+		conf.Cfg.Eq = eq
+		player.ApplyEQConfig(eq)
+		conf.Save()
+		c.JSON(http.StatusOK, gin.H{"ok": true, "eq": eq, "active": player.EQActive()})
+	})
+
+	// 均衡器：关闭
+	root.GET("/eqoff", func(c *gin.Context) {
+		eq := conf.Cfg.Eq
+		eq.Enabled = false
+		conf.Cfg.Eq = eq
+		player.ApplyEQConfig(eq)
+		conf.Save()
+		c.JSON(http.StatusOK, gin.H{"ok": true, "enabled": false})
+	})
+
 	// 加闹钟
 	root.GET("/addAlarm", func(c *gin.Context) {
 		hhmm := c.Query("hhmm")
@@ -573,6 +669,8 @@ func Init(urlPrefix string) *gin.Engine {
 			"startUnix":  player.StartUnix,
 			"stopUnix":   player.StopUnix,
 			"skipAlarm":  player.SkipAlarm,
+			// 当前是否运行在 Android App 里，index 页面据此显示不同按钮
+			"isApp": conf.IsApp,
 		})
 	})
 
