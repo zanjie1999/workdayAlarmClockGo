@@ -13,7 +13,6 @@
         .val { display: inline-block; min-width: 76px; font-weight: bold; }
         #msg { min-height: 1.4em; color: #2a7; }
         .hint { color: #888; font-size: 0.85em; }
-        .tips { background: #f7f7f7; padding: 8px 12px; font-size: 0.85em; color: #666; line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -85,7 +84,6 @@
         <div class="row">
             <button onclick="load()">刷新</button>
             <button onclick="reset()">重置</button>
-            <button onclick="off()">关闭</button>
         </div>
     </div>
 
@@ -157,16 +155,6 @@ function reset() {
     document.getElementById('trebleFreq').value = 8000;
     show();
     apply();
-}
-
-function off() {
-    fetch('/eqoff')
-        .then(function (r) { return r.json(); })
-        .then(function () {
-            document.getElementById('enabled').checked = false;
-            msg('已关闭');
-        })
-        .catch(function () { msg('请求失败'); });
 }
 
 show();
