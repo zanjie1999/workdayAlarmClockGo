@@ -354,8 +354,12 @@ func alsaPlayURL(url string) error {
 
 	readBuffer := make([]byte, 64*1024)
 	pending := make([]byte, 0, 4)
-	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
-	GetEQ().SetSampleRate(decoder.SampleRate())
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态。
+	// 实例每条流只取一次(GetEQ 走 sync.Once)，Process 仍然每块调用：
+	// 里面只是一次原子读加一个分支，比省掉的那次整块拷贝便宜得多，
+	// 而且这样播放中途打开均衡器能立刻生效。
+	eq := GetEQ()
+	eq.SetSampleRate(decoder.SampleRate())
 	ResetEQState()
 	for {
 		for IsPaused && !playbackCanceled(url) {
@@ -367,16 +371,25 @@ func alsaPlayURL(url string) error {
 
 		n, readErr := decoder.Read(readBuffer)
 		if n > 0 {
-			pending = append(pending, readBuffer[:n]...)
-			aligned := len(pending) &^ 3
-			if aligned > 0 {
-				ProcessEQ(pending[:aligned])
-				frames := C.ulong(aligned / 4)
-				written := C.wa_alsa_write(pcm, unsafe.Pointer(&pending[0]), frames)
-				if written < 0 {
-					return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
+			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
+			// 只有解码器把一帧劈开时，才把不足一帧的残渣攒到下一块一起送。
+			if len(pending) == 0 {
+				aligned := n / 4 * 4
+				if aligned > 0 {
+					if err := alsaWritePCM(pcm, eq, readBuffer[:aligned], 4); err != nil {
+						return err
+					}
 				}
-				pending = append(pending[:0], pending[aligned:]...)
+				pending = append(pending[:0], readBuffer[aligned:n]...)
+			} else {
+				pending = append(pending, readBuffer[:n]...)
+				aligned := len(pending) / 4 * 4
+				if aligned > 0 {
+					if err := alsaWritePCM(pcm, eq, pending[:aligned], 4); err != nil {
+						return err
+					}
+					pending = append(pending[:0], pending[aligned:]...)
+				}
 			}
 		}
 		if readErr == io.EOF {
@@ -413,8 +426,12 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 	}()
 
 	frameBytes := channels * 2
-	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
-	GetEQ().SetSampleRate(rate)
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态。
+	// 实例每条流只取一次(GetEQ 走 sync.Once)，Process 仍然每块调用：
+	// 里面只是一次原子读加一个分支，比省掉的那次整块拷贝便宜得多，
+	// 而且这样播放中途打开均衡器能立刻生效。
+	eq := GetEQ()
+	eq.SetSampleRate(rate)
 	ResetEQState()
 	// 用驱动实际给的缓冲当排队基准：请求 40000us 常被向上取整到周期边界
 	// (实测 78-85ms)，写死 40ms 会让目标低于真实地板，跳读永远在触发。
@@ -444,17 +461,27 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 		n, readErr := queue.read(r, readBuffer)
 		if n > 0 {
 			emptyReads = 0
-			pending = append(pending, readBuffer[:n]...)
-			aligned := len(pending) / frameBytes * frameBytes
-			if aligned > 0 {
-				ProcessEQ(pending[:aligned])
-				frames := C.ulong(aligned / frameBytes)
-				written := C.wa_alsa_write(pcm, unsafe.Pointer(&pending[0]), frames)
-				if written < 0 {
-					return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
+			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
+			// 只有上游把一帧劈开时，才把不足一帧的残渣攒到下一块一起送。
+			if len(pending) == 0 {
+				aligned := n / frameBytes * frameBytes
+				if aligned > 0 {
+					if err := alsaWritePCM(pcm, eq, readBuffer[:aligned], frameBytes); err != nil {
+						return err
+					}
+					queue.writtenBytes += int64(aligned)
 				}
-				queue.writtenBytes += int64(aligned)
-				pending = append(pending[:0], pending[aligned:]...)
+				pending = append(pending[:0], readBuffer[aligned:n]...)
+			} else {
+				pending = append(pending, readBuffer[:n]...)
+				aligned := len(pending) / frameBytes * frameBytes
+				if aligned > 0 {
+					if err := alsaWritePCM(pcm, eq, pending[:aligned], frameBytes); err != nil {
+						return err
+					}
+					queue.writtenBytes += int64(aligned)
+					pending = append(pending[:0], pending[aligned:]...)
+				}
 			}
 		}
 		if n == 0 && readErr == nil {
@@ -477,6 +504,18 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 }
 
 // alsaQueuedBytes 返回声卡侧当前排队的字节数，查不到就按缓冲满来估。
+// alsaWritePCM 把一块按帧对齐的 PCM 过完 EQ 再交给声卡。
+// 调用方保证 len(data) 是 frameBytes 的整数倍且非 0。
+func alsaWritePCM(pcm *C.wa_alsa_pcm, eq *EQ, data []byte, frameBytes int) error {
+	eq.Process(data)
+	frames := C.ulong(len(data) / frameBytes)
+	written := C.wa_alsa_write(pcm, unsafe.Pointer(&data[0]), frames)
+	if written < 0 {
+		return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
+	}
+	return nil
+}
+
 func alsaQueuedBytes(pcm *C.wa_alsa_pcm, frameBytes, rate int) int64 {
 	delay := C.wa_alsa_delay(pcm)
 	if delay < 0 {

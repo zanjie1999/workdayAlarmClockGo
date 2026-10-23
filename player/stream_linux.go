@@ -98,8 +98,12 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	log.Printf("aplay: 实时流 %dHz %d声道，管道 %d 字节，目标排队 %dms",
 		rate, channels, pipeSize, queue.ms(queue.target))
 
-	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态
-	GetEQ().SetSampleRate(rate)
+	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态。
+	// 实例每条流只取一次(GetEQ 走 sync.Once)，Process 仍然每块调用：
+	// 里面只是一次原子读加一个分支，比省掉的那次整块拷贝便宜得多，
+	// 而且这样播放中途打开均衡器能立刻生效。
+	eq := GetEQ()
+	eq.SetSampleRate(rate)
 	ResetEQState()
 
 	// 子进程一定要回收，否则每次断流都会留下一个僵尸 aplay。
@@ -115,7 +119,7 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 		_ = cmd.Wait()
 	}()
 
-	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize)
+	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize, eq)
 
 	// 连接一断就立刻杀掉 aplay，不等它把管道/声卡缓冲里剩下的音频播完。
 	// 实时流场景下，"播完残留"没有任何意义：上游已经断了，残留放出来的
@@ -135,10 +139,20 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	return waitErr
 }
 
-func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr string, pipe *os.File, pipeSize int) error {
+func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr string, pipe *os.File, pipeSize int, eq *EQ) error {
 	buf := make([]byte, msBytes(queue.rate, queue.frameBytes, pcmReadChunkMs))
+	// pending 只是跨块残帧的暂存区，正常情况长度一直是 0
 	pending := make([]byte, 0, len(buf)+queue.frameBytes)
 	emptyReads := 0
+	// flush 把一块按帧对齐的数据过 EQ 后写进管道并记账
+	flush := func(data []byte) error {
+		eq.Process(data)
+		if _, err := stdin.Write(data); err != nil {
+			return err
+		}
+		queue.writtenBytes += int64(len(data))
+		return nil
+	}
 	for {
 		// 先量后排、再读：只有还没进管道/声卡的旧音频才丢得掉
 		socketBytes := unreadBytes(remoteAddr)
@@ -152,15 +166,26 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 		n, readErr := queue.read(r, buf)
 		if n > 0 {
 			emptyReads = 0
-			pending = append(pending, buf[:n]...)
-			aligned := len(pending) / queue.frameBytes * queue.frameBytes
-			if aligned > 0 {
-				ProcessEQ(pending[:aligned])
-				if _, err := stdin.Write(pending[:aligned]); err != nil {
-					return err
+			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
+			// 只有上游把一帧劈开时，才把不足一帧的残渣(最多 frameBytes-1 字节)
+			// 攒到下一块一起送——拷贝量从"整块"降到"几个字节"。
+			if len(pending) == 0 {
+				aligned := n / queue.frameBytes * queue.frameBytes
+				if aligned > 0 {
+					if err := flush(buf[:aligned]); err != nil {
+						return err
+					}
 				}
-				queue.writtenBytes += int64(aligned)
-				pending = append(pending[:0], pending[aligned:]...)
+				pending = append(pending[:0], buf[aligned:n]...)
+			} else {
+				pending = append(pending, buf[:n]...)
+				aligned := len(pending) / queue.frameBytes * queue.frameBytes
+				if aligned > 0 {
+					if err := flush(pending[:aligned]); err != nil {
+						return err
+					}
+					pending = append(pending[:0], pending[aligned:]...)
+				}
 			}
 		}
 		if readErr != nil {

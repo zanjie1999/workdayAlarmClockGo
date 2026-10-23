@@ -309,7 +309,7 @@ func copyWithEQ(dst io.Writer, src io.Reader, sampleRate int) error {
 			}
 			aligned := len(chunk) / frameBytes * frameBytes
 			if aligned > 0 {
-				ProcessEQ(chunk[:aligned])
+				eq.Process(chunk[:aligned])
 				if _, err := dst.Write(chunk[:aligned]); err != nil {
 					return err
 				}
