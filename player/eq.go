@@ -11,8 +11,9 @@ package player
  *  3. 支持三种滤波器：低频 shelf(低音增强/衰减)、高频 shelf、peaking(任意频段)，
  *     另外内部还有低通/高通，给虚拟低音用。
  *  4. 全部用 float64 计算，S16 进出，内部不做重采样。
- *  5. 虚拟低音用带限谐波激励(missing fundamental)：只对低频做全波整流产生
- *     谐波再混回去，不需要 FFT 也不需要过采样，开销约等于多挂 1/3 个 EQ 段。
+ *  5. 虚拟低音用带限谐波激励(missing fundamental)：把低频软饱和+整流成
+ *     3f/5f/7f 谐波再混回去，并用带阈值的 AGC 压住动态。
+ *     不需要 FFT 也不需要过采样，开销约等于多挂一个 EQ 段。
  *
  * 采样率必须在打开音频流时告诉 EQ：SetSampleRate。
  * 不同采样率的歌曲切换时会自动重算系数。
@@ -147,35 +148,107 @@ func (b *biquad) process(s *biquadState, x float64, ch int) float64 {
 // virtualBass 谐波激励式虚拟低音(missing fundamental)。
 // 低频路径按单声道处理：左右低频在录音里高度相关，合并后只跑一次滤波，
 // 生成的谐波等量混回两个声道，滤波开销直接减半。
+//
+// 只做 |x| 整流的话 60Hz 只会出 120Hz，小喇叭还是放不出来；这里用
+// 软饱和产生奇次谐波(3f/5f/7f…)，再叠一层整流补偶次，
+// 把能量堆到 200~600Hz 这段喇叭真正能响的频段。
+// 软饱和比硬削波的高次谐波少，拉高音量时不会变成一片沙沙声。
 type virtualBass struct {
-	lp, hp biquad
-	gain   float64
+	lp, hp, hp2, hp3, post, tilt biquad
+	out                          float64
 }
 
 // virtualBassState 虚拟低音的延迟线，只由音频线程访问。
 type virtualBassState struct {
-	lp, hp biquadState
+	lp, hp, hp2, hp3, post, tilt biquadState
+	// env 低频包络，用来做带阈值的 AGC：大音量低频压到统一强度，
+	// 小音量低频按比例缩小，免得把底噪也顶成满电平谐波
+	env float64
 }
+
+// vbGate 低于这个电平不做虚拟低音，避免把底噪放大成嗡嗡声。
+const vbGate = 128.0
+
+// vbRef 压缩阈值。低频峰值超过它才压到满，轻的低频按比例减小，
+// 这样小声的贝斯不会和大声的一样响，也不会把底噪顶成满电平谐波。
+const vbRef = 4096.0
+
+// vbFullScale 强度 100% 时谐波的满度。
+const vbFullScale = 30000.0
 
 // setCoeffs 按低频上限 cutoff 生成系数。
-// 低通留下要"虚拟"的低频；高通只负责清掉整流产生的直流和差频，
-// 2f 谐波本身不在带内，所以不能切太高。
+// 低通决定拿哪段低频去生成谐波；三级高通(6 阶)把基频和直流彻底去掉，
+// 只留 2f 以上的谐波——否则加回去的只是更响的、喇叭照样放不出的低音。
 func (v *virtualBass) setCoeffs(cutoff, sampleRate float64) {
 	v.lp.setCoeffs(EQBand{Type: "lowpass", Freq: cutoff, Q: 0.707}, sampleRate)
-	hp := cutoff * 0.5
-	if hp < 30 {
-		hp = 30
-	}
-	v.hp.setCoeffs(EQBand{Type: "highpass", Freq: hp, Q: 0.707}, sampleRate)
+	v.hp.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
+	v.hp2.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
+	v.hp3.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
+	// 砍掉刺耳的高次谐波，把能量留在小喇叭的工作频段
+	v.post.setCoeffs(EQBand{Type: "lowpass", Freq: 800, Q: 0.707}, sampleRate)
+	// 小喇叭大多从 200~300Hz 才开始有输出，这里把谐波往这个频段提一点
+	v.tilt.setCoeffs(EQBand{Type: "peaking", Freq: 320, Gain: 5, Q: 0.9}, sampleRate)
 }
 
-// process 出入都是 S16 量纲的左右声道。
-// 全波整流 |x| 产生 2f/4f… 谐波；带限之后高次谐波衰减很快，
-// 24kHz 以上已经低到可忽略，所以不需要过采样来压混叠。
-func (v *virtualBass) process(s *virtualBassState, l, r float64) (float64, float64) {
-	m := v.lp.process(&s.lp, (l+r)*0.5, 0)
-	h := v.hp.process(&s.hp, math.Abs(m), 0) * v.gain
+// analyze 先扫一遍低频、更新包络，返回这一块要用的归一化增益。
+// 分两遍是为了用当前块的真实峰值做 AGC，而不是滞后一块。
+// 超过 vbRef 才压到满，低于它按比例减小，保留原曲的低频动态。
+func (v *virtualBass) analyze(s *virtualBassState, buf []byte, frames int, scratch []float64, rate float64) float64 {
+	peak := 0.0
+	for i := 0; i < frames; i++ {
+		j := i * 4
+		l := float64(int16(uint16(buf[j]) | uint16(buf[j+1])<<8))
+		r := float64(int16(uint16(buf[j+2]) | uint16(buf[j+3])<<8))
+		m := v.lp.process(&s.lp, (l+r)*0.5, 0)
+		scratch[i] = m
+		if a := math.Abs(m); a > peak {
+			peak = a
+		}
+	}
+	if rate <= 0 || frames <= 0 {
+		return 0
+	}
+	// 瞬时起音 + 250ms 释放
+	decay := math.Exp(-float64(frames) / rate / 0.25)
+	if peak > s.env {
+		s.env = peak
+	} else {
+		s.env *= decay
+	}
+	if s.env <= vbGate {
+		return 0
+	}
+	lvl := (s.env - vbGate) / (vbGate * 3)
+	if lvl > 1 {
+		lvl = 1
+	}
+	den := s.env
+	if den < vbRef {
+		den = vbRef
+	}
+	return lvl / den
+}
+
+// process 把低频 m 变成谐波并混回左右声道。
+// 各次谐波的相位和基频一致，所以大脑会把它们融合回原来的低音音高。
+func (v *virtualBass) process(s *virtualBassState, m, l, r, g float64) (float64, float64) {
+	u := m * g
+	// 软饱和而不是硬削波：同样出 3f/5f，但高次谐波和互调少得多，
+	// 强度拉高时不会变成一片"沙沙"的杂音。
+	h := softClip(u * 5)
+	h += 0.5 * math.Abs(u) // 整流：补 2f/4f 偶次谐波
+	h = v.hp.process(&s.hp, h, 0)
+	h = v.hp2.process(&s.hp2, h, 0)
+	h = v.hp3.process(&s.hp3, h, 0)
+	h = v.post.process(&s.post, h, 0)
+	h = v.tilt.process(&s.tilt, h, 0) * v.out
 	return l + h, r + h
+}
+
+// softClip 平滑饱和，输出始终在 (-1,1) 内。
+// 比 clamp 多了 1/n² 的高次衰减，听感更干净；代价是一次除法。
+func softClip(x float64) float64 {
+	return x / (1 + math.Abs(x))
 }
 
 // eqFilter 一条挂进链路的频段：系数 + 它对应的频段下标。
@@ -213,8 +286,10 @@ type EQ struct {
 	// 参数热更新时只换系数，延迟线原样保留，才不会咔哒。
 	state     []biquadState
 	bassState virtualBassState
-	curGen    uint64
-	nextGen   uint64 // 仅 e.mu 保护
+	// 虚拟低音第一遍扫低频用的临时缓冲，音频线程独占，按需增长
+	vbBuf   []float64
+	curGen  uint64
+	nextGen uint64 // 仅 e.mu 保护
 }
 
 var (
@@ -300,6 +375,7 @@ func (e *EQ) rebuildLocked() {
 		filters = append(filters, eqFilter{coeffs: b, band: bi})
 	}
 	// 虚拟低音：强度 0 时完全不建这条链路，Process 里连 if 都省了
+	preamp := math.Pow(10, e.cur.Preamp/20)
 	var bass *virtualBass
 	if amount := e.cur.VirtualBass / 100; amount > 0 {
 		if amount > 1 {
@@ -309,11 +385,11 @@ func (e *EQ) rebuildLocked() {
 		if freq <= 0 {
 			freq = conf.VBassDefaultFreq
 		}
-		bass = &virtualBass{gain: amount}
+		// 谐波也跟着预增益缩放，否则压 preamp 压不住它
+		bass = &virtualBass{out: amount * vbFullScale * preamp}
 		bass.setCoeffs(freq, e.rate)
 	}
 	// 全部频段都是 0dB、预增益 0dB、又没开虚拟低音：整条链路等价于直通
-	preamp := math.Pow(10, e.cur.Preamp/20)
 	if len(filters) == 0 && preamp == 1 && bass == nil {
 		e.storeDisabled()
 		return
@@ -387,6 +463,20 @@ func (e *EQ) Process(buf []byte) {
 	filters := p.filters
 	state := e.state
 	bassState := &e.bassState
+	frames := n / 4
+
+	// 虚拟低音要先扫一遍低频做 AGC，再回头处理：每块多一次解码，
+	// 换来大音量低频的谐波强度稳定，不用按录音电平调强度。
+	var vbGain float64
+	var scratch []float64
+	if bass != nil {
+		if cap(e.vbBuf) < frames {
+			e.vbBuf = make([]float64, frames)
+		}
+		scratch = e.vbBuf[:frames]
+		vbGain = bass.analyze(bassState, buf, frames, scratch, p.sampleRate)
+	}
+
 	for i := 0; i < n; i += 4 {
 		l := float64(int16(uint16(buf[i]) | uint16(buf[i+1])<<8))
 		r := float64(int16(uint16(buf[i+2]) | uint16(buf[i+3])<<8))
@@ -395,7 +485,7 @@ func (e *EQ) Process(buf []byte) {
 			r *= preamp
 		}
 		if bass != nil {
-			l, r = bass.process(bassState, l, r)
+			l, r = bass.process(bassState, scratch[i>>2], l, r, vbGain)
 		}
 		for fi := range filters {
 			f := &filters[fi]
@@ -406,7 +496,7 @@ func (e *EQ) Process(buf []byte) {
 		putS16LE(dst, l, r)
 	}
 
-	e.processed.Add(uint64(n / 4))
+	e.processed.Add(uint64(frames))
 }
 
 // putS16LE 写入一个立体声帧，带饱和截断防止削波溢出。
