@@ -6,10 +6,13 @@ package player
  * 设计要点：
  *  1. 默认关闭。conf.Cfg.Eq.Enabled 为 false 时，Process 直接返回，
  *     调用点只需要一次 if 判断，几乎零开销，不改变原有播放行为。
- *  2. 参数可热更新。滤波器系数与状态分离：系数在参数变化时重算，
- *     状态(延迟线)保留，所以播放中途改增益不会爆音，只会平滑过渡到新曲线。
- *  3. 支持三种滤波器：低频 shelf(低音增强/衰减)、高频 shelf、peaking(任意频段)。
+ *  2. 参数可热更新。系数与状态彻底分离：eqParams 快照里只有系数(不可变)，
+ *     延迟线挂在 EQ 上由音频线程独占，所以播放中途改增益/频率不会清零状态、不会爆音。
+ *  3. 支持三种滤波器：低频 shelf(低音增强/衰减)、高频 shelf、peaking(任意频段)，
+ *     另外内部还有低通/高通，给虚拟低音用。
  *  4. 全部用 float64 计算，S16 进出，内部不做重采样。
+ *  5. 虚拟低音用带限谐波激励(missing fundamental)：只对低频做全波整流产生
+ *     谐波再混回去，不需要 FFT 也不需要过采样，开销约等于多挂 1/3 个 EQ 段。
  *
  * 采样率必须在打开音频流时告诉 EQ：SetSampleRate。
  * 不同采样率的歌曲切换时会自动重算系数。
@@ -32,19 +35,17 @@ func DefaultEQ() EQSettings {
 	return conf.DefaultEQ()
 }
 
-// biquad 二阶滤波器，Direct Form I。
+// biquad 二阶滤波器系数，Direct Form I。
+// 这里只放系数(不可变快照)，延迟线在 biquadState 里，由音频线程独占，
+// 这样热更新参数时重算系数不会把正在用的状态清掉。
 type biquad struct {
 	b0, b1, b2 float64
 	a1, a2     float64
-	// 左右声道各自的状态，避免串音
-	x1, x2, y1, y2 [2]float64
 }
 
-func (b *biquad) reset() {
-	b.x1 = [2]float64{}
-	b.x2 = [2]float64{}
-	b.y1 = [2]float64{}
-	b.y2 = [2]float64{}
+// biquadState 左右声道各自的延迟线，避免串音。
+type biquadState struct {
+	x1, x2, y1, y2 [2]float64
 }
 
 // setCoeffs 用 RBJ Audio EQ Cookbook 公式计算系数。
@@ -96,6 +97,22 @@ func (b *biquad) setCoeffs(band EQBand, sampleRate float64) {
 		a0 = 1 + alpha/A
 		a1 = -2 * cosW0
 		a2 = 1 - alpha/A
+	case "lowpass":
+		alpha := sinW0 / (2 * q)
+		b0 = (1 - cosW0) / 2
+		b1 = 1 - cosW0
+		b2 = b0
+		a0 = 1 + alpha
+		a1 = -2 * cosW0
+		a2 = 1 - alpha
+	case "highpass":
+		alpha := sinW0 / (2 * q)
+		b0 = (1 + cosW0) / 2
+		b1 = -(1 + cosW0)
+		b2 = b0
+		a0 = 1 + alpha
+		a1 = -2 * cosW0
+		a2 = 1 - alpha
 	default:
 		b.setBypass()
 		return
@@ -117,22 +134,68 @@ func (b *biquad) setBypass() {
 	b.a1, b.a2 = 0, 0
 }
 
-// process 原地处理一个采样点。
-func (b *biquad) process(x float64, ch int) float64 {
-	y := b.b0*x + b.b1*b.x1[ch] + b.b2*b.x2[ch] - b.a1*b.y1[ch] - b.a2*b.y2[ch]
-	b.x2[ch] = b.x1[ch]
-	b.x1[ch] = x
-	b.y2[ch] = b.y1[ch]
-	b.y1[ch] = y
+// process 原地处理一个采样点，状态由调用方传入。
+func (b *biquad) process(s *biquadState, x float64, ch int) float64 {
+	y := b.b0*x + b.b1*s.x1[ch] + b.b2*s.x2[ch] - b.a1*s.y1[ch] - b.a2*s.y2[ch]
+	s.x2[ch] = s.x1[ch]
+	s.x1[ch] = x
+	s.y2[ch] = s.y1[ch]
+	s.y1[ch] = y
 	return y
 }
 
-// eqParams 是一份不可变的处理参数快照。
+// virtualBass 谐波激励式虚拟低音(missing fundamental)。
+// 低频路径按单声道处理：左右低频在录音里高度相关，合并后只跑一次滤波，
+// 生成的谐波等量混回两个声道，滤波开销直接减半。
+type virtualBass struct {
+	lp, hp biquad
+	gain   float64
+}
+
+// virtualBassState 虚拟低音的延迟线，只由音频线程访问。
+type virtualBassState struct {
+	lp, hp biquadState
+}
+
+// setCoeffs 按低频上限 cutoff 生成系数。
+// 低通留下要"虚拟"的低频；高通只负责清掉整流产生的直流和差频，
+// 2f 谐波本身不在带内，所以不能切太高。
+func (v *virtualBass) setCoeffs(cutoff, sampleRate float64) {
+	v.lp.setCoeffs(EQBand{Type: "lowpass", Freq: cutoff, Q: 0.707}, sampleRate)
+	hp := cutoff * 0.5
+	if hp < 30 {
+		hp = 30
+	}
+	v.hp.setCoeffs(EQBand{Type: "highpass", Freq: hp, Q: 0.707}, sampleRate)
+}
+
+// process 出入都是 S16 量纲的左右声道。
+// 全波整流 |x| 产生 2f/4f… 谐波；带限之后高次谐波衰减很快，
+// 24kHz 以上已经低到可忽略，所以不需要过采样来压混叠。
+func (v *virtualBass) process(s *virtualBassState, l, r float64) (float64, float64) {
+	m := v.lp.process(&s.lp, (l+r)*0.5, 0)
+	h := v.hp.process(&s.hp, math.Abs(m), 0) * v.gain
+	return l + h, r + h
+}
+
+// eqFilter 一条挂进链路的频段：系数 + 它对应的频段下标。
+// 记下标是为了让延迟线按频段固定存放，中间某个频段从 0dB 变成非 0dB 时
+// 不会把后面频段的状态错位。
+type eqFilter struct {
+	coeffs biquad
+	band   int
+}
+
+// eqParams 是一份不可变的处理参数快照，只含系数。
 type eqParams struct {
 	enabled    bool
 	sampleRate float64
 	preamp     float64
-	filters    []*biquad
+	filters    []eqFilter
+	bass       *virtualBass
+	bandCount  int
+	// gen 每次重建自增，Process 用它判断状态数组要不要跟着换长度
+	gen uint64
 }
 
 // EQ 全局均衡器。零值不可用，必须用 GetEQ。
@@ -145,6 +208,13 @@ type EQ struct {
 	rate float64
 	// 统计：累计处理帧数，方便调试
 	processed atomic.Uint64
+
+	// 下面几个字段是音频线程独占的滤波状态，不放进 eqParams 快照：
+	// 参数热更新时只换系数，延迟线原样保留，才不会咔哒。
+	state     []biquadState
+	bassState virtualBassState
+	curGen    uint64
+	nextGen   uint64 // 仅 e.mu 保护
 }
 
 var (
@@ -171,7 +241,7 @@ func (e *EQ) Apply(s EQSettings) bool {
 	defer e.mu.Unlock()
 	e.cur = s
 	e.rebuildLocked()
-	return s.Enabled && len(s.Bands) > 0
+	return s.Enabled
 }
 
 // SetSampleRate 告诉 EQ 当前流的采样率。
@@ -213,34 +283,67 @@ func (e *EQ) Enabled() bool {
 
 // rebuildLocked 重算系数并原子替换参数快照。调用方必须持有 e.mu。
 func (e *EQ) rebuildLocked() {
-	// 关闭或没有有效频段时，放一个"空参数"，Process 里直接短路
-	if !e.cur.Enabled || len(e.cur.Bands) == 0 {
-		e.params.Store(&eqParams{enabled: false, sampleRate: e.rate})
+	// 关闭时放一个"空参数"，Process 里直接短路
+	if !e.cur.Enabled {
+		e.storeDisabled()
 		return
 	}
 	// 0dB 的频段数学上就是直通，系数算了也是白算，直接不挂进链路。
 	// 上游只送 5ms 一片，每片都要过一遍滤波器，省掉空转的段很划算。
-	filters := make([]*biquad, 0, len(e.cur.Bands))
-	for _, band := range e.cur.Bands {
+	filters := make([]eqFilter, 0, len(e.cur.Bands))
+	for bi, band := range e.cur.Bands {
 		if !bandActive(band) {
 			continue
 		}
-		b := &biquad{}
+		var b biquad
 		b.setCoeffs(band, e.rate)
-		filters = append(filters, b)
+		filters = append(filters, eqFilter{coeffs: b, band: bi})
 	}
-	// 全部频段都是 0dB，且预增益也是 0dB：整条链路等价于直通，直接关掉
+	// 虚拟低音：强度 0 时完全不建这条链路，Process 里连 if 都省了
+	var bass *virtualBass
+	if amount := e.cur.VirtualBass / 100; amount > 0 {
+		if amount > 1 {
+			amount = 1
+		}
+		freq := e.cur.VirtualBassFreq
+		if freq <= 0 {
+			freq = conf.VBassDefaultFreq
+		}
+		bass = &virtualBass{gain: amount}
+		bass.setCoeffs(freq, e.rate)
+	}
+	// 全部频段都是 0dB、预增益 0dB、又没开虚拟低音：整条链路等价于直通
 	preamp := math.Pow(10, e.cur.Preamp/20)
-	if len(filters) == 0 && preamp == 1 {
-		e.params.Store(&eqParams{enabled: false, sampleRate: e.rate})
+	if len(filters) == 0 && preamp == 1 && bass == nil {
+		e.storeDisabled()
 		return
 	}
+	e.nextGen++
 	e.params.Store(&eqParams{
 		enabled:    true,
 		sampleRate: e.rate,
 		preamp:     preamp,
 		filters:    filters,
+		bass:       bass,
+		bandCount:  len(e.cur.Bands),
+		gen:        e.nextGen,
 	})
+}
+
+func (e *EQ) storeDisabled() {
+	e.nextGen++
+	e.params.Store(&eqParams{sampleRate: e.rate, gen: e.nextGen})
+}
+
+// syncState 在参数快照换代时把状态数组调整到新长度。
+// 状态按下标(即频段位置)保存，所以拖动滑块改增益/频率不会把声音打断。
+func (e *EQ) syncState(p *eqParams) {
+	if n := p.bandCount; n != len(e.state) {
+		st := make([]biquadState, n)
+		copy(st, e.state)
+		e.state = st
+	}
+	e.curGen = p.gen
 }
 
 // bandActive 判断这个频段是否真的会改变声音。
@@ -269,6 +372,10 @@ func (e *EQ) Process(buf []byte) {
 	if p == nil || !p.enabled {
 		return
 	}
+	// 参数换代了才动状态数组，平时这里就是一次整数比较
+	if p.gen != e.curGen {
+		e.syncState(p)
+	}
 
 	n := len(buf) &^ 3
 	if n == 0 {
@@ -276,7 +383,10 @@ func (e *EQ) Process(buf []byte) {
 	}
 
 	preamp := p.preamp
+	bass := p.bass
 	filters := p.filters
+	state := e.state
+	bassState := &e.bassState
 	for i := 0; i < n; i += 4 {
 		l := float64(int16(uint16(buf[i]) | uint16(buf[i+1])<<8))
 		r := float64(int16(uint16(buf[i+2]) | uint16(buf[i+3])<<8))
@@ -284,9 +394,13 @@ func (e *EQ) Process(buf []byte) {
 			l *= preamp
 			r *= preamp
 		}
-		for _, f := range filters {
-			l = f.process(l, 0)
-			r = f.process(r, 1)
+		if bass != nil {
+			l, r = bass.process(bassState, l, r)
+		}
+		for fi := range filters {
+			f := &filters[fi]
+			l = f.coeffs.process(&state[f.band], l, 0)
+			r = f.coeffs.process(&state[f.band], r, 1)
 		}
 		dst := buf[i : i+4]
 		putS16LE(dst, l, r)
@@ -327,13 +441,8 @@ func ResetEQState() {
 	e := GetEQ()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	p := e.params.Load()
-	if p == nil {
-		return
-	}
-	for _, f := range p.filters {
-		f.reset()
-	}
+	clear(e.state)
+	e.bassState = virtualBassState{}
 }
 
 // EQActive 是否有任何处理需要做。

@@ -77,7 +77,22 @@
             <span class="val" id="preampVal">0.0 dB</span>
         </div>
 
+        <div class="band">
+            <h3>虚拟低音</h3>
+            <div class="row">
+                <label>强度</label>
+                <input type="range" id="vbass" min="0" max="100" step="5" value="0" oninput="show(); apply()">
+                <span class="val" id="vbassVal">0%</span>
+            </div>
+            <div class="row">
+                <label>上限</label>
+                <input type="range" id="vbassFreq" min="40" max="300" step="5" value="100" oninput="show(); apply()">
+                <span class="val" id="vbassFreqVal">100 Hz</span>
+            </div>
+        </div>
+
         <div class="hint">
+            虚拟低音可以给给放不出低频的小喇叭“补”出低音的感觉：只对上限以下的内容生成谐波。<br>
             小喇叭低音下潜有限，60Hz 附近基本发不出声。<br>
             低音拐点调到 200~400Hz 更容易听出“厚”的变化。<br>
             加太多会削波，用预增益压一点。
@@ -96,7 +111,7 @@ var timer = null;
 // 增益和频率的输入框 id
 var GAIN_IDS = ['bass', 'mid', 'treble'];
 var FREQ_IDS = ['bassFreq', 'midFreq', 'trebleFreq'];
-var ALL_IDS = GAIN_IDS.concat(FREQ_IDS, ['preamp']);
+var ALL_IDS = GAIN_IDS.concat(FREQ_IDS, ['preamp', 'vbass', 'vbassFreq']);
 
 function fmtDb(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
 
@@ -109,6 +124,10 @@ function show() {
         var v = parseInt(document.getElementById(id).value);
         document.getElementById(id + 'Val').textContent = v + ' Hz';
     });
+    document.getElementById('vbassVal').textContent =
+        parseInt(document.getElementById('vbass').value) + '%';
+    document.getElementById('vbassFreqVal').textContent =
+        parseInt(document.getElementById('vbassFreq').value) + ' Hz';
 }
 
 function msg(s) { document.getElementById('msg').textContent = s; }
@@ -144,6 +163,8 @@ function load() {
                 if (b.freq) document.getElementById(id + 'Freq').value = b.freq;
             });
             document.getElementById('preamp').value = eq.preamp || 0;
+            document.getElementById('vbass').value = eq.virtualBass || 0;
+            document.getElementById('vbassFreq').value = eq.virtualBassFreq || 100;
             show();
             msg('已加载');
         })
@@ -157,6 +178,8 @@ function reset() {
     document.getElementById('bassFreq').value = 120;
     document.getElementById('midFreq').value = 1000;
     document.getElementById('trebleFreq').value = 8000;
+    document.getElementById('vbass').value = 0;
+    document.getElementById('vbassFreq').value = 100;
     show();
     apply();
 }

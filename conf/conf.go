@@ -34,6 +34,10 @@ type EQSettings struct {
 	Bands   []EQBand `json:"bands"`
 	// Preamp 预增益 dB，用来补偿增强后的削波
 	Preamp float64 `json:"preamp"`
+	// VirtualBass 虚拟低音强度 0~100，0 表示关闭(整条链路跳过)
+	VirtualBass float64 `json:"virtualBass"`
+	// VirtualBassFreq 参与虚拟低音的低频上限 Hz
+	VirtualBassFreq float64 `json:"virtualBassFreq"`
 }
 
 // 三段均衡器的固定频点：低音 / 中音 / 高音
@@ -44,12 +48,21 @@ const (
 	EQMidDefaultQ = 1.0
 )
 
+// 虚拟低音的默认/合法范围
+const (
+	VBassDefaultFreq = 100
+	VBassMinFreq     = 40
+	VBassMaxFreq     = 300
+)
+
 // DefaultEQ 默认配置：三段均衡器，关闭状态。
 // 频点顺序固定为 低音、中音、高音，eq.html 按这个顺序渲染。
 func DefaultEQ() EQSettings {
 	return EQSettings{
-		Enabled: false,
-		Preamp:  0,
+		Enabled:         false,
+		Preamp:          0,
+		VirtualBass:     0,
+		VirtualBassFreq: VBassDefaultFreq,
 		Bands: []EQBand{
 			{Type: "lowshelf", Freq: EQBassFreq, Gain: 0, Q: 0.707},
 			{Type: "peaking", Freq: EQMidFreq, Gain: 0, Q: EQMidDefaultQ},
@@ -63,7 +76,17 @@ func DefaultEQ() EQSettings {
 // 这里统一补齐成 低音/中音/高音，保留已有的增益值。
 func NormalizeEQ(eq EQSettings) EQSettings {
 	def := DefaultEQ()
-	out := EQSettings{Enabled: eq.Enabled, Preamp: eq.Preamp, Bands: def.Bands}
+	out := EQSettings{
+		Enabled:         eq.Enabled,
+		Preamp:          eq.Preamp,
+		VirtualBass:     clampF(eq.VirtualBass, 0, 100),
+		VirtualBassFreq: eq.VirtualBassFreq,
+		Bands:           def.Bands,
+	}
+	if out.VirtualBassFreq <= 0 {
+		out.VirtualBassFreq = def.VirtualBassFreq
+	}
+	out.VirtualBassFreq = clampF(out.VirtualBassFreq, VBassMinFreq, VBassMaxFreq)
 
 	// 按类型把已有频段的增益搬到对应位置
 	for _, band := range eq.Bands {
@@ -89,6 +112,16 @@ func NormalizeEQ(eq EQSettings) EQSettings {
 		}
 	}
 	return out
+}
+
+func clampF(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 type Config struct {

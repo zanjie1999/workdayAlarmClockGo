@@ -375,8 +375,8 @@ func Init(urlPrefix string) *gin.Engine {
 		c.JSON(http.StatusOK, conf.Cfg.Eq)
 	})
 
-	// 均衡器：实时调节（三段：低音/中音/高音）
-	// GET /eqset?enabled=1&bass=6&mid=-2&treble=3&preamp=0
+	// 均衡器：实时调节（三段：低音/中音/高音，外加虚拟低音）
+	// GET /eqset?enabled=1&bass=6&mid=-2&treble=3&preamp=0&vbass=30&vbassFreq=100
 	// 只传需要改的参数，其余保持不变；改动立即生效并写回配置文件。
 	root.GET("/eqset", func(c *gin.Context) {
 		eq := conf.NormalizeEQ(conf.Cfg.Eq)
@@ -391,6 +391,23 @@ func Init(urlPrefix string) *gin.Engine {
 				return
 			}
 			eq.Preamp = f
+		}
+		// 虚拟低音：强度 0~100，频率是低频上限 Hz
+		if v := c.Query("vbass"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "vbass 需要数字，0~100"})
+				return
+			}
+			eq.VirtualBass = f
+		}
+		if v := c.Query("vbassFreq"); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "vbassFreq 需要数字，单位 Hz"})
+				return
+			}
+			eq.VirtualBassFreq = f
 		}
 
 		// 三段增益，参数名固定
@@ -448,6 +465,8 @@ func Init(urlPrefix string) *gin.Engine {
 			eq.Bands[2].Freq = f
 		}
 
+		// 统一夹取范围(虚拟低音强度/频率)，避免越界参数写进配置
+		eq = conf.NormalizeEQ(eq)
 		conf.Cfg.Eq = eq
 		player.ApplyEQConfig(eq)
 		conf.Save()
