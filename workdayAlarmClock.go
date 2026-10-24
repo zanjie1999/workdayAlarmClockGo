@@ -19,13 +19,14 @@ import (
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/router"
+	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
 
 	"github.com/zanjie1999/httpme"
 )
 
 var (
-	VERSION  = "42.5"
+	VERSION  = "43.0"
 	lasthhmm = ""
 )
 
@@ -158,6 +159,21 @@ func shellInput() {
 				}
 			case "weather":
 				weather.GetWeather("")
+			case "checkupdate":
+				p, err := update.Check()
+				if err != nil {
+					fmt.Println("检查更新失败", err)
+				} else if p.HasUpdate {
+					fmt.Println("发现新版本 v" + p.Latest + "，更新内容：" + p.Release)
+					if p.Asset != "" {
+						fmt.Println("输入 update 更新到该版本")
+					}
+				} else {
+					fmt.Println("当前已是最新版本 v" + VERSION)
+				}
+			case "update":
+				// 会替换并重启自己，放goroutine里先把日志吐出去
+				go selfUpdate()
 			default:
 				if strings.HasPrefix(cmd, "play ") {
 					player.PlayUrl(cmd[5:])
@@ -207,29 +223,83 @@ func shellInput() {
 	}
 }
 
+func updateRepo() string {
+	if conf.IsApp {
+		return "zanjie1999/workdayAlarmClockAndroid"
+	}
+	return "zanjie1999/workdayAlarmClockGo"
+}
+
+// 手动更新，会重启进程所以放在goroutine里
+func selfUpdate() {
+	if conf.IsApp {
+		fmt.Println("Android 版请在 App 内更新")
+		return
+	}
+	p, err := update.Check()
+	if err != nil {
+		fmt.Println("检查更新失败", err)
+		return
+	}
+	if !p.HasUpdate {
+		fmt.Println("当前已是最新版本 v" + VERSION)
+		return
+	}
+	if p.Asset == "" {
+		fmt.Println("Release 里没有适合当前设备的文件，请手动下载", update.RepoURL()+"/releases")
+		return
+	}
+	if player.IsAlarm || !player.IsStop {
+		fmt.Println("正在播放，停止后再更新")
+		return
+	}
+	fmt.Println("正在更新到 v" + p.Latest + " ...")
+	if err := update.Apply(p); err != nil {
+		fmt.Println("更新失败", err)
+		return
+	}
+	fmt.Println("更新完成，正在重启")
+	if err := update.Restart(); err != nil {
+		fmt.Println("重启失败，请手动重启程序", err)
+	}
+}
+
 func checkUpdate() {
 	// 检查更新
-	repo := "zanjie1999/workdayAlarmClock"
-	if conf.IsApp {
-		repo += "Android"
-	} else {
-		repo += "Go"
-	}
-	req := httpme.Httpme()
-	resp, err := req.Get("https://api.github.com/repos/" + repo + "/releases/latest")
-	if err == nil {
-		var j map[string]interface{}
-		if err = resp.Json(&j); err == nil {
-			if tag, ok := j["tag_name"].(string); ok && tag != VERSION {
-				fmt.Println("\n发现新版本v" + j["tag_name"].(string) + "，请到https://github.com/" + repo + "/releases下载更新，更新内容：" + j["name"].(string) + "\n")
-			} else {
-				log.Println("当前已是最新版本 开源仓库：https://github.com/" + repo)
-			}
-		} else {
-			log.Println("检查更新失败", err)
-		}
-	} else {
+	p, err := update.Check()
+	if err != nil {
 		log.Println("检查更新失败", err)
+		return
+	}
+	// 只有远端版本比当前新才提示，当前版本更高（自己编译的）不提示
+	if !p.HasUpdate {
+		log.Println("当前已是最新版本 v"+VERSION+" 开源仓库：", update.RepoURL())
+		return
+	}
+	log.Println("\n发现新版本v" + p.Latest + "，更新内容：" + p.Release)
+	log.Println("下载地址：", update.RepoURL()+"/releases")
+
+	if conf.IsApp {
+		// App 由 Android 端自己管理，这里只提示
+		return
+	}
+	if p.Asset == "" {
+		log.Println("Release 里没有适合当前设备的文件，请手动下载")
+		return
+	}
+	// 等一下再动手，避开启动阶段的网络/音频初始化
+	time.Sleep(30 * time.Second)
+	if player.IsAlarm || !player.IsStop {
+		log.Println("正在播放，跳过本次自动更新，可稍后手动更新")
+		return
+	}
+	if err := update.Apply(p); err != nil {
+		log.Println("自动更新失败", err)
+		return
+	}
+	log.Println("自动更新完成，正在重启")
+	if err := update.Restart(); err != nil {
+		log.Println("重启失败，请手动重启程序以使用新版本", err)
 	}
 }
 
@@ -279,6 +349,12 @@ func main() {
 		log.Println("使用音乐播放器：", player.ShellPlayer)
 	}
 	conf.Init()
+	// 自动更新初始化
+	update.Init(VERSION, updateRepo())
+	if !conf.IsApp {
+		// 清理上次更新留下的临时文件和旧版本备份
+		update.CleanupOld()
+	}
 	// 把配置里的 EQ 设置同步到播放链路，默认关闭时不会有任何额外开销
 	player.SyncEQFromConf()
 	if player.EQActive() {

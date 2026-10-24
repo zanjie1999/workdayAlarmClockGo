@@ -23,6 +23,7 @@ import (
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/display"
 	"workdayAlarmClock/player"
+	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
 
 	"github.com/gin-gonic/gin"
@@ -690,6 +691,8 @@ func Init(urlPrefix string) *gin.Engine {
 			"skipAlarm":  player.SkipAlarm,
 			// 当前是否运行在 Android App 里，index 页面据此显示不同按钮
 			"isApp": conf.IsApp,
+			// 当前版本号
+			"version": update.Current(),
 		})
 	})
 
@@ -712,6 +715,57 @@ func Init(urlPrefix string) *gin.Engine {
 	root.GET("/downWeather", func(c *gin.Context) {
 		player.DownWeather()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>下载完毕</h1>"+js2home))
+	})
+
+	// 检查更新，只查不下载
+	root.GET("/checkUpdate", func(c *gin.Context) {
+		p, err := update.Check()
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, p)
+	})
+
+	// 更新到最新版本：下载替换后重启自己，所以要先把结果回给浏览器
+	root.GET("/selfUpdate", func(c *gin.Context) {
+		msg := func(s string) {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+s+"</h1>"+js2home))
+		}
+		if conf.IsApp {
+			msg("Android 版请在 App 内更新")
+			return
+		}
+		p, err := update.Check()
+		if err != nil {
+			msg("检查更新失败：" + err.Error())
+			return
+		}
+		if !p.HasUpdate {
+			msg("已是最新版本 v" + p.Current)
+			return
+		}
+		if p.Asset == "" {
+			msg("Release 里没有适合当前设备的文件，请手动下载")
+			return
+		}
+		if player.IsAlarm || !player.IsStop {
+			msg("正在播放，停止后再更新")
+			return
+		}
+		msg("正在更新到 v" + p.Latest + "，下载完成后会自动重启，请稍候")
+		go func() {
+			// 留点时间把响应发出去，exec 会直接接管进程
+			time.Sleep(2 * time.Second)
+			if err := update.Apply(p); err != nil {
+				log.Println("更新失败", err)
+				return
+			}
+			log.Println("更新完成，正在重启")
+			if err := update.Restart(); err != nil {
+				log.Println("重启失败，请手动重启程序", err)
+			}
+		}()
 	})
 
 	root.GET("/restart", func(c *gin.Context) {

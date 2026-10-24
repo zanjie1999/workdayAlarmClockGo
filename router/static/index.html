@@ -13,7 +13,7 @@
     <div class="main-container">
     <div class="linemode">
         <img src="/favicon.ico"><br><br>
-        <h1 class="me-title">工作咩闹钟</h1>
+        <h1 class="me-title">工作咩闹钟 <span id="ver" style="font-size:12px;font-weight:normal"></span></h1>
     </div>
     <div class="linemode" id="statusMsg">&nbsp;</div>
     <div class="linemode ctrlbox">
@@ -66,7 +66,7 @@
         <input type="number" name="min" id="timeStop" value="30.0" min="0" step="0.5"> 分钟后
     </form>
         <div>
-        <a href="/restart">重启</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a> <a href="/playlist.html" style="margin-left: 20px">我的歌单</a><a class="app-only" href="/echo?msg=SCREENON" style="margin-left: 20px">亮屏</a> <a class="app-only" href="/echo?msg=SCREENOFF" style="margin-left: 20px">熄屏</a> <a class="app-only" href="javascript:location.href='//'+location.hostname+':8880'" style="margin-left: 20px">查看摄像头</a><a class="linux-only" href="/eq.html" style="margin-left: 20px">均衡器</a>
+        <a href="/restart">重启</a> <a href="javascript:checkUpdate()" style="margin-left: 20px">检查更新</a> <a href="/alarm.html" style="margin-left: 20px">闹钟设置</a> <a href="/playlist.html" style="margin-left: 20px">我的歌单</a><a class="app-only" href="/echo?msg=SCREENON" style="margin-left: 20px">亮屏</a> <a class="app-only" href="/echo?msg=SCREENOFF" style="margin-left: 20px">熄屏</a> <a class="app-only" href="javascript:location.href='//'+location.hostname+':8880'" style="margin-left: 20px">查看摄像头</a><a class="linux-only" href="/eq.html" style="margin-left: 20px">均衡器</a>
     </div>
     </div>
     <script>
@@ -82,6 +82,35 @@
         }
         function playurl() {
             localStorage.setItem('lastPlayUrl', document.getElementById('playUrl').value);
+        }
+        // 检查更新，只查不下载；有新版本再给出更新按钮
+        function checkUpdate() {
+            var el = document.getElementById('statusMsg');
+            el.innerHTML = '正在检查更新...';
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/checkUpdate?t=' + Date.now(), true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState != 4) return;
+                if (xhr.status != 200) {
+                    var msg = '检查更新失败';
+                    try { msg += '：' + JSON.parse(xhr.responseText).error } catch (e) {}
+                    el.innerHTML = msg;
+                    return;
+                }
+                var d = JSON.parse(xhr.responseText);
+                if (!d.hasUpdate) {
+                    el.innerHTML = '已是最新版本 v' + d.current;
+                    return;
+                }
+                var html = '发现新版本 v' + d.latest + (d.size ? '（' + (d.size / 1048576).toFixed(1) + 'MB）' : '');
+                if (d.asset) {
+                    html += '<br><a href="/selfUpdate">立即更新并重启</a>';
+                } else {
+                    html += '<br>没有适合当前设备的更新文件，请手动下载';
+                }
+                el.innerHTML = html;
+            };
+            xhr.send();
         }
         // 状态信息
         function getStatus() {
@@ -106,6 +135,9 @@
                     + (d.playList && d.playList.length > 0 ? '待播放 '+d.playList.length + ' 首 ' : '')
                     + (d.nowId ? '<a href="https://music.163.com/#/song?id=' + d.nowId + '">正在播放</a>' : d.nowUrl ? '<a href="' + d.nowUrl + '">正在播放</a>' : ''));
                     document.getElementById('statusMsg').innerHTML = msg;
+                    if (d.version) {
+                        document.getElementById('ver').innerHTML = 'v' + d.version;
+                    }
                 }
             }
             xhr.send();
