@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
@@ -775,13 +774,12 @@ func Init(urlPrefix string) *gin.Engine {
 			app.Send("RESTART")
 			os.Exit(0)
 		} else {
-			self, err := os.Executable()
-			if err == nil {
-				os.Chmod(self, 0755)
-				err = syscall.Exec(self, os.Args, os.Environ())
+			// 统一用 update.Restart，它执行的是启动时缓存的路径，
+			// 不会因为更新时把程序改名成 .old 而跑回旧版本
+			if err := update.Restart(); err != nil {
+				log.Println("重启失败", err)
+				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>重启失败</h1>"+js2home))
 			}
-			log.Println("重启失败", err)
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>重启失败</h1>"+js2home))
 		}
 	})
 

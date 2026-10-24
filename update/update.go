@@ -78,6 +78,10 @@ var (
 	cacheRel *Release
 
 	applyMu sync.Mutex
+
+	// 自身路径的缓存，见 selfPath
+	selfPathMu    sync.Mutex
+	selfPathCache string
 )
 
 // Init 初始化，由 main 在启动时调用
@@ -85,6 +89,11 @@ func Init(version, repoName string) {
 	current = strings.TrimSpace(version)
 	repo = strings.Trim(strings.TrimSpace(repoName), "/")
 	proxy = DefaultProxy
+	// 必须在任何更新动作之前把自身路径缓存下来：
+	// 替换程序时会先把自己改名成 xxx.old，之后 /proc/self/exe 就跟着指向备份文件了
+	if _, err := selfPath(); err != nil {
+		log.Println("缓存程序路径失败", err)
+	}
 }
 
 // Current 当前版本号
@@ -338,6 +347,16 @@ func applyTo(exe string, p *Plan) error {
 		return lastErr
 	}
 
+	if err := replaceWith(exe, tmp, p.Size); err != nil {
+		return err
+	}
+	log.Println("更新完成，旧版本备份在", exe+".old")
+	return nil
+}
+
+// replaceWith 用 tmp 替换 exe，原来的 exe 备份成 exe.old；任何一步失败都回滚，
+// 保证原路径上不会留下半截文件
+func replaceWith(exe, tmp string, wantSize int64) error {
 	// 保持原来的权限位
 	mode := os.FileMode(0755)
 	if fi, err := os.Stat(exe); err == nil {
@@ -364,7 +383,31 @@ func applyTo(exe string, p *Plan) error {
 		os.Remove(tmp)
 		return errors.New("替换程序失败：" + err.Error())
 	}
-	log.Println("更新完成，旧版本备份在", old)
+	// 替换完成后再确认一次，避免把空文件或半截文件留在原路径上
+	if err := checkReplaced(exe, wantSize); err != nil {
+		if rerr := os.Rename(old, exe); rerr != nil {
+			return fmt.Errorf("%w；回滚也失败了，请手动把 %s 改名回 %s", err, old, exe)
+		}
+		return err
+	}
+	return nil
+}
+
+// checkReplaced 校验替换后的文件大小与执行权限
+func checkReplaced(exe string, wantSize int64) error {
+	fi, err := os.Stat(exe)
+	if err != nil {
+		return errors.New("替换后找不到程序：" + err.Error())
+	}
+	if fi.Size() == 0 {
+		return errors.New("替换后的文件是空的")
+	}
+	if wantSize > 0 && fi.Size() != wantSize {
+		return fmt.Errorf("替换后文件大小不符，期望 %d 实际 %d", wantSize, fi.Size())
+	}
+	if fi.Mode().Perm()&0111 == 0 {
+		return errors.New("替换后的文件没有执行权限")
+	}
 	return nil
 }
 
@@ -467,7 +510,17 @@ func verify(path string) error {
 }
 
 // selfPath 当前可执行文件的真实路径（解开软链接）
+//
+// 结果只在第一次调用时解析并缓存。Linux 的 /proc/self/exe 会跟随 rename：
+// 更新流程把正在运行的程序改名成 xxx.old 之后，再解析拿到的就是备份文件的路径，
+// 用这个路径 exec 只会把旧版本重新跑一遍。所以 Init 时会先预热缓存，
+// 后续的 Restart、CleanupOld 一律用缓存值。
 func selfPath() (string, error) {
+	selfPathMu.Lock()
+	defer selfPathMu.Unlock()
+	if selfPathCache != "" {
+		return selfPathCache, nil
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", errors.New("获取程序路径失败：" + err.Error())
@@ -475,8 +528,16 @@ func selfPath() (string, error) {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	return filepath.Abs(exe)
+	abs, err := filepath.Abs(exe)
+	if err != nil {
+		return "", errors.New("获取程序路径失败：" + err.Error())
+	}
+	selfPathCache = abs
+	return abs, nil
 }
+
+// SelfExe 返回启动时缓存下来的自身路径
+func SelfExe() (string, error) { return selfPath() }
 
 // CleanupOld 清理上次更新留下的临时文件，启动时调用。
 // 旧版本备份只在它已经存在超过10分钟时才删，
