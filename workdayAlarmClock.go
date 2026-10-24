@@ -280,7 +280,8 @@ func checkUpdate() {
 	log.Println("下载地址：", update.RepoURL()+"/releases")
 
 	if conf.IsApp {
-		// App 由 Android 端自己管理，这里只提示
+		app.Send("HASUPDATE")
+		app.Send("ECHO 有新版本v" + p.Latest)
 		return
 	}
 	if p.Asset == "" {
