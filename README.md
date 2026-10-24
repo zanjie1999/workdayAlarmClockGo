@@ -158,18 +158,20 @@ ffmpeg -f avfoundation -list_devices true -i ""
 ffmpeg -f avfoundation -thread_queue_size 128 -framerate 10 -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -i "4:none" -vf "scale=272:272:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=272:272:(ow-iw)/2:(oh-ih)/2:black" -vsync passthrough -q:v 8 -flush_packets 1 -avioflags direct -f mpjpeg pipe:1 | curl --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.165:8880/fb"
 ```
 
-在Windows下：  
+在Windows下：
+使用DXGI采集 `output_idx=0` 就是第1个显示器，有两处分辨率需要修改 `scale=480:320` 和 `pad=480:320`  
+
 比如任你说音箱这个480x320的屏:  
 ```
-ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 10 -fflags nobuffer -i desktop -vf "scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
 ```
 比如AKU的屏128x160转90度
 ```
-ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 30 -fflags nobuffer -i desktop -vf "scale=160:128:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=160:128:(ow-iw)/2:(oh-ih)/2:black,transpose=2" -q:v 8 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.144/fb"
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=160:128:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=160:128:(ow-iw)/2:(oh-ih)/2:black,transpose=2" -q:v 8 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.144/fb"
 ```
 比如Kindle Voyage等高分屏机器
 ```
-ffmpeg.exe -f gdigrab -thread_queue_size 1 -framerate 1 -fflags nobuffer -i desktop -vf "transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
 ```
 
 </details>
