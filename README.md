@@ -665,7 +665,16 @@ chmod +x /userdisk/Favorite/workdayAlarmClock/*
 ```
 ps|grep -E 'runDictPen|miniapp'|awk '{system("kill -9 "$1)}'
 ```
-启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了
+启动完了线可以拔掉,屏幕喇叭都不错,用来给电脑当显示器和音箱实在是太妙了  
+实现开机启动,可以写到文件`/userdisk/skip_re/skip_login.sh`
+```
+mkdir -p /userdisk/skip_re
+cat << SPARKLE > /userdisk/skip_re/skip_login.sh
+#!/bin/sh
+sleep 15
+/userdisk/Favorite/workdayAlarmClock/start.sh
+SPARKLE
+```
 
 
 ### 协议 咩License
