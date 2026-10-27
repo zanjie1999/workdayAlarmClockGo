@@ -671,9 +671,12 @@ ps|grep -E 'runDictPen|miniapp'|awk '{system("kill -9 "$1)}'
 mkdir -p /userdisk/skip_re
 cat << SPARKLE > /userdisk/skip_re/skip_login.sh
 #!/bin/sh
+printf 'usb_mtp_en\nusb_adb_en\n' > /tmp/.usb_config
+/usr/bin/S98usbdevice restart
 sleep 15
 /userdisk/Favorite/workdayAlarmClock/start.sh
 SPARKLE
+chmod +x /userdisk/skip_re/skip_login.sh
 ```
 
 
