@@ -62,6 +62,10 @@ func timeJob() {
 	if hhmm == conf.Cfg.WeatherUpdate {
 		weather.GetWeather("")
 	}
+	if hhmm == "2233" {
+		// 自动检查更新
+		go checkUpdate()
+	}
 	if dayTypeList, ok := conf.Cfg.Alarm[hhmm]; ok {
 		// 增加 同时间 多类型 的闹钟支持
 		for _, dayType := range dayTypeList {
