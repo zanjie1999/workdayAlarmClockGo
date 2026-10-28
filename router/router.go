@@ -260,6 +260,10 @@ func Init(urlPrefix string) *gin.Engine {
 	}
 	root.POST("/aplay", aplayStream)
 	root.PUT("/aplay", aplayStream)
+	// 实时流的延迟指标：本机排队(内核缓冲+管道+声卡)、跳读量、追赶次数、声卡欠载次数。
+	root.GET("/aplayinfo", func(c *gin.Context) {
+		c.JSON(http.StatusOK, player.PCMStreamStats())
+	})
 
 	// 一键急停按钮 自动控制播放停止
 	root.GET("/1key", func(c *gin.Context) {

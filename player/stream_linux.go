@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // 播放器子进程 stdin 管道的容量。默认 64KB ≈ 370ms，等于凭空多出一大截延迟，
@@ -95,8 +96,18 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 		sinkBytes += int64(pipeSize)
 	}
 	queue := newPCMQueue(rate, frameBytes, sinkBytes)
+	queue.backend = "aplay"
 	log.Printf("aplay: 实时流 %dHz %d声道，管道 %d 字节，目标排队 %dms",
 		rate, channels, pipeSize, queue.ms(queue.target))
+	defer queue.clearPCMStats()
+
+	// 量不到内核接收缓冲时，稳态 fix() 会完全失效，只剩"按卡顿时长追平"这一条路。
+	// 这里把到底卡在哪一步打出来，省得以后靠猜。
+	if conn, ok := streamConn(remoteAddr); !ok {
+		log.Printf("aplay: 没登记到连接 %s，读不到内核接收缓冲，只按卡顿时长追平", remoteAddr)
+	} else if unreadBytes(remoteAddr) < 0 {
+		log.Printf("aplay: 连接类型 %T 取不到 FIONREAD，只按卡顿时长追平", conn)
+	}
 
 	// EQ 按当前流的采样率重算系数，并清掉上一条流残留的滤波状态。
 	// 实例每条流只取一次(GetEQ 走 sync.Once)，Process 仍然每块调用：
@@ -119,7 +130,7 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 		_ = cmd.Wait()
 	}()
 
-	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize, eq)
+	copyErr := copyPCMStream(r, stdin, queue, remoteAddr, pipe, pipeSize, cmd.Process.Pid, eq)
 
 	// 连接一断就立刻杀掉 aplay，不等它把管道/声卡缓冲里剩下的音频播完。
 	// 实时流场景下，"播完残留"没有任何意义：上游已经断了，残留放出来的
@@ -139,11 +150,19 @@ func playPCMStream(r io.Reader, rate, channels int, remoteAddr string) error {
 	return waitErr
 }
 
-func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr string, pipe *os.File, pipeSize int, eq *EQ) error {
+func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr string, pipe *os.File, pipeSize int, pid int, eq *EQ) error {
 	buf := make([]byte, msBytes(queue.rate, queue.frameBytes, pcmReadChunkMs))
 	// pending 只是跨块残帧的暂存区，正常情况长度一直是 0
 	pending := make([]byte, 0, len(buf)+queue.frameBytes)
 	emptyReads := 0
+	// aplay 启动瞬间可能还没 open 设备，那时 /proc/asound 里找不到它的 pcm。
+	// 所以第一次读到数据之后再定位一次，之后每轮只读这一个 status 文件。
+	var probe *pcmSinkProbe
+	probeTried := false
+	src := pcmSource{
+		socket: func() int64 { return unreadBytes(remoteAddr) },
+		sink:   func() int64 { return pipeQueuedBytes(pipe, pipeSize, queue, probe) },
+	}
 	// flush 把一块按帧对齐的数据过 EQ 后写进管道并记账
 	flush := func(data []byte) error {
 		eq.Process(data)
@@ -154,18 +173,22 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 		return nil
 	}
 	for {
-		// 先量后排、再读：只有还没进管道/声卡的旧音频才丢得掉
-		socketBytes := unreadBytes(remoteAddr)
-		if err := queue.fix(r, socketBytes, pipeQueuedBytes(pipe, pipeSize, queue)); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil
-			}
-			return fmt.Errorf("skip PCM stream: %w", err)
+		n, skip, readErr := queue.step(r, buf, src)
+		if !probeTried && n > 0 {
+			probeTried = true
+			probe = newPCMStatusProbe(pid, queue.rate, queue.frameBytes/2, queue.frameBytes)
 		}
-
-		n, readErr := queue.read(r, buf)
+		if count := probe.drainXRuns(); count > 0 {
+			queue.xruns += count
+		}
 		if n > 0 {
 			emptyReads = 0
+		}
+		if skip {
+			// 追赶态烧掉的过期音频：step 已经记过账，这里只要保证不把它写进声卡
+			queue.discardPending(int64(len(pending)))
+			pending = pending[:0]
+		} else if n > 0 {
 			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
 			// 只有上游把一帧劈开时，才把不足一帧的残渣(最多 frameBytes-1 字节)
 			// 攒到下一块一起送——拷贝量从"整块"降到"几个字节"。
@@ -207,10 +230,11 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 	}
 }
 
-// pipeQueuedBytes 估算声卡侧当前排队：管道积压 + aplay 自己的声卡缓冲。
-// 管道积压是实测的(FIONREAD)；aplay 的声卡缓冲看不到，用启动时探测到的值当上限。
+// pipeQueuedBytes 返回声卡侧当前排队：管道积压 + aplay 写进驱动的未播数据。
+// 管道积压是实测的(FIONREAD)；声卡排队优先读 /proc/asound 的 delay，
+// 读不到时退回原来的估算。
 //
-// 原来的推断是"管道快满 ⟹ aplay 正堵在写声卡 ⟹ 声卡缓冲也满"，但管道很小时
+// 原来的估算推断是"管道快满 ⟹ aplay 正堵在写声卡 ⟹ 声卡缓冲也满"，但管道很小时
 // 这个等价关系不成立：管道只有 43ms 时，3/4 阈值才 32ms，正常 10ms 一批的节奏
 // 稍有抖动就跨过去，于是把声卡缓冲(实测 341ms)全额算进排队，sink 长期顶到
 // 384ms 的天花板。而 fix() 里 target = sink + 余量，sink 在两边抵消，
@@ -218,13 +242,18 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 //
 // 现在改成按管道占用比例折算声卡积压：管道越满越接近满缓冲，但不再一步跳满。
 // 这样既保留了"管道满时声卡多半也满"的方向性，又不会因为几毫秒抖动就虚高几百毫秒。
-func pipeQueuedBytes(pipe *os.File, pipeSize int, queue *pcmQueue) int64 {
+func pipeQueuedBytes(pipe *os.File, pipeSize int, queue *pcmQueue, probe *pcmSinkProbe) int64 {
 	backlog := pipeBacklogBytes(pipe)
 	if backlog < 0 {
 		// 管道量不到，只能按缓冲全满估，宁可高估也不低估
 		return queue.sinkLimit
 	}
 	queued := int64(backlog)
+	if probe != nil {
+		if card := probe.refresh(time.Now()); card >= 0 {
+			return queued + card
+		}
+	}
 	cardBytes := queue.sinkLimit - int64(pipeSize)
 	if cardBytes <= 0 || pipeSize <= 0 {
 		return queued

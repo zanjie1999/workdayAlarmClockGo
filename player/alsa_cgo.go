@@ -17,6 +17,9 @@ typedef struct {
 	// 驱动实际给的缓冲帧数。请求的 40000us 常被向上取整到周期边界
 	// (实测能到 78-85ms)，排队基准必须用它，否则目标会低于真实地板。
 	unsigned long buffer_frames;
+	// 欠载次数。卡顿期间声卡空转，时间轴已经被吃掉，这个数用来解释
+	// "为什么不该再按卡顿时长补丢"。
+	unsigned long xruns;
 } wa_alsa_pcm;
 
 static int wa_alsa_configure(snd_pcm_t *pcm, unsigned int rate, unsigned int channels, unsigned long *buffer_frames) {
@@ -92,6 +95,9 @@ static long wa_alsa_write(wa_alsa_pcm *ctx, void *data, unsigned long frames) {
 	while (written < frames) {
 		snd_pcm_sframes_t n = snd_pcm_writei(ctx->pcm, ptr + written * ctx->frame_bytes, frames - written);
 		if (n < 0) {
+			if ((int)n == -EPIPE) {
+				ctx->xruns++;
+			}
 			n = snd_pcm_recover(ctx->pcm, (int)n, 1);
 			if (n < 0) {
 				return n;
@@ -104,6 +110,14 @@ static long wa_alsa_write(wa_alsa_pcm *ctx, void *data, unsigned long frames) {
 		written += (unsigned long)n;
 	}
 	return (long)written;
+}
+
+// 累计欠载次数，用来解释"卡顿期间时间轴已经被吃掉"。
+static unsigned long wa_alsa_xruns(wa_alsa_pcm *ctx) {
+	if (ctx == NULL) {
+		return 0;
+	}
+	return ctx->xruns;
 }
 
 static const char *wa_alsa_error(long err) {
@@ -258,7 +272,6 @@ static int wa_alsa_mixer_change(long delta) {
 import "C"
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -440,27 +453,32 @@ func alsaPlayPCMStream(r io.Reader, rate, channels int, remoteAddr string) error
 		bufferBytes = msBytes(rate, frameBytes, pcmSinkBufferMs)
 	}
 	queue := newPCMQueue(rate, frameBytes, bufferBytes)
+	queue.backend = "alsa"
+	defer queue.clearPCMStats()
 	// 原来是 64KB(≈370ms)：wa_alsa_write 是全量阻塞写，一次塞 370ms 进声卡缓冲，
 	// 要塞 300 多毫秒，这期间进程根本腾不出手去丢包。
 	readBuffer := make([]byte, msBytes(rate, frameBytes, pcmReadChunkMs))
 	pending := make([]byte, 0, len(readBuffer)+frameBytes)
 	emptyReads := 0
+	src := pcmSource{
+		socket: func() int64 { return unreadBytes(remoteAddr) },
+		sink:   func() int64 { return alsaQueuedBytes(pcm, frameBytes, rate) },
+	}
 	log.Printf("alsa: 实时流 %dHz %d声道，声卡缓冲 %dms，目标排队 %dms",
 		rate, channels, queue.ms(bufferBytes), queue.ms(queue.target))
 	for {
-		// 先量后排、再读：只有还没进声卡的旧音频才丢得掉
-		socketBytes := unreadBytes(remoteAddr)
-		if err := queue.fix(r, socketBytes, alsaQueuedBytes(pcm, frameBytes, rate)); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				completed = true
-				return nil
-			}
-			return fmt.Errorf("skip PCM stream: %w", err)
+		n, skip, readErr := queue.step(r, readBuffer, src)
+		if count := int64(C.wa_alsa_xruns(pcm)); count > queue.xruns {
+			queue.xruns = count
 		}
-
-		n, readErr := queue.read(r, readBuffer)
 		if n > 0 {
 			emptyReads = 0
+		}
+		if skip {
+			// 追赶态烧掉的过期音频：step 已经记过账，这里只要保证不把它写进声卡
+			queue.discardPending(int64(len(pending)))
+			pending = pending[:0]
+		} else if n > 0 {
 			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
 			// 只有上游把一帧劈开时，才把不足一帧的残渣攒到下一块一起送。
 			if len(pending) == 0 {
