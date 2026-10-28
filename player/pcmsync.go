@@ -427,15 +427,7 @@ func (q *pcmQueue) drop(r io.Reader, excess int64) (int64, error) {
 	return done, nil
 }
 
-// discardPending 把跨块残帧算成已丢弃，避免进追赶后拼出半帧旧数据。
-// 这些字节读入时已经计过 readBytes，只是还没写过声卡，所以只补 skippedBytes。
-func (q *pcmQueue) discardPending(pending int64) {
-	if pending <= 0 {
-		return
-	}
-	q.skippedBytes += pending
-	q.catchSkips += pending
-}
+
 
 // ms 把字节数换算成毫秒，只用来打日志和上报。
 func (q *pcmQueue) ms(bytes int64) int64 {

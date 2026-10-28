@@ -185,9 +185,17 @@ func copyPCMStream(r io.Reader, stdin io.Writer, queue *pcmQueue, remoteAddr str
 			emptyReads = 0
 		}
 		if skip {
-			// 追赶态烧掉的过期音频：step 已经记过账，这里只要保证不把它写进声卡
-			queue.discardPending(int64(len(pending)))
-			pending = pending[:0]
+			// 追赶丢的也是流里的字节，必须和稳态一样按帧拼接：Read 返回多少字节
+			// 是随机的，n 不是 frameBytes 的整数倍时，扔掉的余数会让之后所有数据的
+			// 帧边界整体错位——左右声道交错，听起来就是白噪音。
+			if len(pending) == 0 {
+				aligned := n / queue.frameBytes * queue.frameBytes
+				pending = append(pending[:0], buf[aligned:n]...)
+			} else {
+				pending = append(pending, buf[:n]...)
+				aligned := len(pending) / queue.frameBytes * queue.frameBytes
+				pending = append(pending[:0], pending[aligned:]...)
+			}
 		} else if n > 0 {
 			// 稳态下每块本身就是整帧，直接原地处理原地写，不再整块拷一遍。
 			// 只有上游把一帧劈开时，才把不足一帧的残渣(最多 frameBytes-1 字节)
