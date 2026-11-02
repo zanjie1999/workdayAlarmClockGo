@@ -26,11 +26,13 @@ import (
 )
 
 // http.StatusMultiStatus 的字符串形式，部分客户端只认这个
-const davAllowMethods = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, PROPPATCH, LOCK, UNLOCK"
+const davAllowMethods = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, PROPPATCH, LOCK, UNLOCK, MOVE"
 
 type webdavHandler struct {
 	// 目录的绝对路径，注册时快照，与 StaticFS 使用同一个目录
 	base string
+	// 挂载点，比如 /music，用于解析 MOVE 的 Destination
+	route string
 }
 
 // RegisterWebDAV 为 route(如 "/music") 挂上最小 WebDAV 能力。
@@ -48,7 +50,7 @@ func RegisterWebDAV(group *gin.RouterGroup, route, dir string) {
 		route = "/" + route
 	}
 	route = strings.TrimSuffix(route, "/")
-	h := &webdavHandler{base: base}
+	h := &webdavHandler{base: base, route: route}
 	// 通配路径先注册，再补精确路径，避免客户端不带尾斜杠时依赖重定向
 	group.Handle(http.MethodOptions, route+"/*filepath", h.options)
 	group.Handle("PROPFIND", route+"/*filepath", h.propfind)
@@ -56,6 +58,7 @@ func RegisterWebDAV(group *gin.RouterGroup, route, dir string) {
 	group.Handle(http.MethodPut, route+"/*filepath", h.put)
 	group.Handle(http.MethodDelete, route+"/*filepath", h.delete)
 	group.Handle("MKCOL", route+"/*filepath", h.mkcol)
+	group.Handle("MOVE", route+"/*filepath", h.move)
 	group.Handle("LOCK", route+"/*filepath", h.lock)
 	group.Handle("UNLOCK", route+"/*filepath", h.unlock)
 	group.Handle(http.MethodOptions, route, h.options)
@@ -72,14 +75,55 @@ func (h *webdavHandler) checkBase(c *gin.Context) bool {
 	return true
 }
 
-// resolve 把 URL 子路径解析成 base 内的绝对路径，越界回 403 且不回显真实路径
-func (h *webdavHandler) resolve(c *gin.Context) (string, bool) {
+// safeTarget 把 URL 子路径解析成 base 内的绝对路径，越界返回 false
+func (h *webdavHandler) safeTarget(rel string) (string, bool) {
 	// 先归一化掉 .. ，再用 filepath.Rel 二次确认，兼容 Windows 盘符与分隔符
-	rel := path.Clean("/" + filepath.ToSlash(c.Param("filepath")))
-	target := filepath.Join(h.base, filepath.FromSlash(rel))
+	clean := path.Clean("/" + filepath.ToSlash(rel))
+	target := filepath.Join(h.base, filepath.FromSlash(clean))
 	toBase, err := filepath.Rel(h.base, target)
 	if err != nil || toBase == ".." || strings.HasPrefix(toBase, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return target, true
+}
+
+// resolve 解析请求路径，越界回 403 且不回显真实路径
+func (h *webdavHandler) resolve(c *gin.Context) (string, bool) {
+	target, ok := h.safeTarget(c.Param("filepath"))
+	if !ok {
 		log.Println("webdav: 越界请求", c.Param("filepath"))
+		c.AbortWithStatus(http.StatusForbidden)
+		return "", false
+	}
+	return target, true
+}
+
+// destination 解析 MOVE 的 Destination 头，必须是本挂载点内的路径
+func (h *webdavHandler) destination(c *gin.Context) (string, bool) {
+	raw := c.GetHeader("Destination")
+	if raw == "" {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return "", false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return "", false
+	}
+	p := u.Path
+	switch {
+	case p == h.route:
+		p = "/"
+	case strings.HasPrefix(p, h.route+"/"):
+		p = p[len(h.route):]
+	default:
+		log.Println("webdav: Destination 不在挂载点内", raw)
+		c.AbortWithStatus(http.StatusForbidden)
+		return "", false
+	}
+	target, ok := h.safeTarget(p)
+	if !ok {
+		log.Println("webdav: Destination 越界", raw)
 		c.AbortWithStatus(http.StatusForbidden)
 		return "", false
 	}
@@ -305,6 +349,54 @@ func (h *webdavHandler) mkcol(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusCreated)
+}
+
+// move 重命名或移动。Windows 资源管理器新建文件夹、改名都靠它。
+func (h *webdavHandler) move(c *gin.Context) {
+	if !h.checkBase(c) {
+		return
+	}
+	src, ok := h.resolve(c)
+	if !ok {
+		return
+	}
+	dst, ok := h.destination(c)
+	if !ok {
+		return
+	}
+	if src == h.base || dst == h.base {
+		// 挂载点本身不搬
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if _, err := os.Stat(src); err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	status := http.StatusCreated
+	if _, err := os.Stat(dst); err == nil {
+		if strings.EqualFold(strings.TrimSpace(c.GetHeader("Overwrite")), "F") {
+			c.AbortWithStatus(http.StatusPreconditionFailed)
+			return
+		}
+		status = http.StatusNoContent
+	}
+	err := os.Rename(src, dst)
+	if err != nil {
+		// 目标是已存在的目录之类，删掉再来一次
+		if _, statErr := os.Stat(dst); statErr == nil {
+			if removeErr := os.RemoveAll(dst); removeErr == nil {
+				err = os.Rename(src, dst)
+			}
+		}
+	}
+	if err != nil {
+		log.Println("webdav: 移动失败", src, dst, err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	log.Println("webdav: 已移动", src, "->", dst)
+	c.Status(status)
 }
 
 // lock 不做真实锁，只返回一个假 token。资源管理器/Finder 写入前会发 LOCK，
