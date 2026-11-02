@@ -144,6 +144,7 @@ type Config struct {
 	AlarmTime       float64             `json:"alarmTime"`
 	MuteWhenStop    bool                `json:"muteWhenStop"`
 	MusicQuality    string              `json:"musicQuality"`
+	Cookie          string              `json:"cookie"`
 	SavePath        string              `json:"savePath"`
 	CacheLimit      int64               `json:"cacheLimit"`
 	BroadcastMode   bool                `json:"broadcastMode"`
@@ -190,6 +191,8 @@ var (
 		MuteWhenStop: false,
 		// 音质
 		MusicQuality: "standard",
+		// 网易云cookie
+		Cookie: "",
 		// 保存音乐文件缓存
 		SavePath: "",
 		// 音乐缓存上限（MB）
