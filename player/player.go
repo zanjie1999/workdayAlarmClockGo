@@ -503,6 +503,11 @@ func PlayAlarm() {
 	}
 }
 
+// 是网络地址还是本地文件，本地文件不该走下载逻辑
+func isNetworkURL(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
 // 下载文件 细想一下之前为什么之前要写个curl，直接用http咩不更好
 func downloadFile(url string, filename string) error {
 	var err error
@@ -573,6 +578,10 @@ func UnixPlayUrl(url string) {
 		if err := pcmURL(url); err != nil {
 			if !IsStop && NowUrl == url {
 				log.Println(ShellPlayer+" error:", err)
+				// 放不出来就跳下一首，单曲循环时不重试，免得原地打转
+				if !LoopMode {
+					Next()
+				}
 			}
 			return
 		}
@@ -587,6 +596,10 @@ func UnixPlayUrl(url string) {
 	var cmd *exec.Cmd
 	if strings.Contains(ShellPlayer, "meMp3Player") {
 		// 使用 咩MP3播放器 的时候，无需下载，直接播放音频流
+		log.Println("shell: ", ShellPlayer, url)
+		cmd = exec.Command(ShellPlayer, url)
+	} else if !isNetworkURL(url) {
+		// 本地文件直接交给播放器，不用走 downloadFile 去 HTTP 拉
 		log.Println("shell: ", ShellPlayer, url)
 		cmd = exec.Command(ShellPlayer, url)
 	} else {
@@ -608,6 +621,10 @@ func UnixPlayUrl(url string) {
 	clearUnixCmd(cmd)
 	if err != nil {
 		log.Println("wait", ShellPlayer, " error:"+err.Error())
+		// 还是当前这首说明真放不出来，跳过；被切歌打断的不要动
+		if !IsStop && NowUrl == url && !LoopMode {
+			Next()
+		}
 		return
 	}
 	if !IsStop && NowUrl == url || IsPlayWeather {

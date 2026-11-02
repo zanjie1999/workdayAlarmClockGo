@@ -392,10 +392,6 @@ func responseTotalLength(resp *http.Response) int64 {
 	return total
 }
 
-func isNetworkURL(url string) bool {
-	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
-}
-
 func setPCMStream(url string, stream io.ReadCloser) bool {
 	pcmStreamMu.Lock()
 	defer pcmStreamMu.Unlock()

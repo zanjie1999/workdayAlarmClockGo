@@ -159,11 +159,13 @@ func Init(urlPrefix string) *gin.Engine {
 	root.POST("/setCookie", setCookie)
 	root.GET("/setCookie", setCookie)
 
-	// 允许直接浏览缓存
+	// 允许直接浏览缓存，同时支持 WebDAV 上传/删除，当个小网盘用
 	if conf.Cfg.SavePath != "" {
 		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))
+		RegisterWebDAV(root, "/music", conf.Cfg.SavePath)
 	}
 	root.StaticFS("/sdcard", gin.Dir("/sdcard", true))
+	RegisterWebDAV(root, "/sdcard", "/sdcard")
 
 	// 删除缓存目录
 	root.GET("/delSave", func(c *gin.Context) {

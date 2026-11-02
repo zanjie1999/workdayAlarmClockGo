@@ -22,6 +22,10 @@ import (
 
 // 歌单列表                歌单id   歌单名  是否缓存
 func PlayList(id string) ([]string, string, bool) {
+	// 填的是路径就当本地歌单，不请求网易云也不写 .list 缓存
+	if isLocalPath(id) {
+		return LocalPlayList(id)
+	}
 	req := httpme.Httpme()
 	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id=" + id)
 	if err == nil {

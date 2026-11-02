@@ -204,6 +204,25 @@ ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownl
 歌单会优先使用网络的，歌曲则会优先播放缓存的，在切换音质后需要清理缓存才能播放目标音质的音频  
 另外增加了 `/sdcard` 路径，用于访问Android设备的sdcard中的文件  
 
+### WebDAV
+`/music` 和 `/sdcard` 支持简易WebDAV，可以当小网盘用，直接挂载后拖文件进去  
+支持 `OPTIONS`、`PROPFIND`、`MKCOL`、`PUT`、`DELETE`，不支持重命名（`MOVE`）和复制（`COPY`）  
+```
+# 上传
+curl -T 歌曲.mp3 http://127.0.0.1:8080/music/歌曲.mp3
+# 删除
+curl -X DELETE http://127.0.0.1:8080/music/歌曲.mp3
+# 建目录
+curl -X MKCOL http://127.0.0.1:8080/music/sub/
+# 看目录（Depth 0 只看自己，Depth 1 列一层）
+curl -X PROPFIND -H "Depth: 1" http://127.0.0.1:8080/music/
+```  
+注意写入 `/music` 的文件同样参与缓存上限淘汰，可能被自动清理  
+
+### 播放本地文件
+歌单输入框除了可以填歌单id，也可以填 `./` 或 `/` 开头的路径（Windows 盘符如 `C:/` 也行）
+填目录就扫描该目录（含子目录）下的所有文件当作歌单，填文件路径就只放那一个
+
 ### 全屋同步播放
 实现了一个很酷的功能，可以让局域网所有工作咩闹钟设备同时放一样的音乐，也可以叫UDP广播群控  
 只需要在闹钟设置中想作为主机的设备上勾选 `全屋同步播放主机` 即刻  

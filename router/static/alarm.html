@@ -51,6 +51,7 @@
             闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
             默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
             （在没有上一首时按上一首时播放该歌单）<br>
+            （歌单也能填 ./ 或 / 开头的路径，会扫描该目录下的文件当歌单）<br>
             时区UTC+<input type="number" name="tz" id="tz" placeholder="中国是+8区填8"><br>
             天气代码<input type="text" name="weatherCityCode" id="weatherCityCode" placeholder="不填不播报"><button type="button" onclick="getCityCode()">输入市/区查询</button><br>
             更新时间<input type="number" name="weatherUpdate" id="weatherUpdate" placeholder="HHmm"><br>
@@ -67,7 +68,7 @@
             量力而行，音质过高可能会卡或无法播放，推荐128处理最快<br>
             缓存目录<input type="text" name="savePath" id="savePath" placeholder="默认留空不缓存"  style="margin-bottom: 0"><br>
             缓存上限<input type="number" name="cacheLimit" id="cacheLimit" min="1" placeholder="1024" style="margin-bottom: 0">MB<br>
-            请输入绝对路径，保证有权限访问，或者输入./music保存在内部 <a href="/delSave">清空缓存</a><br>
+            请输入绝对路径，保证有权限访问，比如/sdcard/Music，或者输入./music保存在内部 <a href="/delSave">清空缓存</a><br>
             全屋同步播放主机<input type="checkbox" name="broadcastMode" id="broadcastMode" value="1"><br>
             同步偏移<input type="number" name="defSeek" id="defSeek" placeholder="毫秒，越大越早播放"  style="margin-bottom: 0"><br>
             建议服务设置-10左右，客户端默认0，再调大性能差的设备，客户端可能需要开启唤醒锁 <a href="/echo?msg=SEEK" style="margin-left: 20px">尝试对齐</a><br>
