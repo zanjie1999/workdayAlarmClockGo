@@ -88,7 +88,12 @@ func Init(urlPrefix string) *gin.Engine {
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))
 	r.StaticFileFS("/eq.html", "./eq.html", http.FS(staticFs))
-	root.StaticFile("/cfg.json", "./workdayAlarmClock.json")
+	// 回显配置时拷贝一份，把cookie清掉，避免局域网里直接看到登录态
+	root.GET("/cfg.json", func(c *gin.Context) {
+		cfg := conf.Cfg
+		cfg.Cookie = ""
+		c.JSON(http.StatusOK, cfg)
+	})
 	root.StaticFile("/weather.mp3", "./weather.mp3")
 
 	// 网易云 API 流式代理。仅允许明确列出的 API 路径，避免代理被滥用为通用请求器。
@@ -110,10 +115,9 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		// Cookie 由调用方提供，支持转发网易云登录态；os=pc 用于请求完整歌单列表。
 		cookie := c.GetHeader("Cookie")
-		// playlist.html stores the user's complete Netease cookie in a local
-		// cookie; extract it before forwarding the upstream request.
-		if savedCookie, err := c.Cookie("netease_cookie"); err == nil && savedCookie != "" {
-			cookie = savedCookie
+		// 优先使用本机配置里保存的cookie
+		if conf.Cfg.Cookie != "" {
+			cookie = conf.Cfg.Cookie
 		}
 		if cookie == "" {
 			cookie = "os=pc"
@@ -139,6 +143,22 @@ func Init(urlPrefix string) *gin.Engine {
 		}
 		_, _ = io.Copy(c.Writer, resp.Body)
 	})
+	// 保存网易云cookie，playlist.html 登录时调用，传空值即清除
+	setCookie := func(c *gin.Context) {
+		cookie := c.PostForm("cookie")
+		if cookie == "" {
+			cookie = c.Query("cookie")
+		}
+		cookie = strings.TrimSpace(cookie)
+		conf.Cfg.Cookie = cookie
+		conf.Save()
+		// 不打印cookie内容，只打长度
+		log.Println("已更新网易云cookie，长度", len(cookie))
+		c.JSON(http.StatusOK, gin.H{"code": 200, "cookieLen": len(cookie)})
+	}
+	root.POST("/setCookie", setCookie)
+	root.GET("/setCookie", setCookie)
+
 	// 允许直接浏览缓存
 	if conf.Cfg.SavePath != "" {
 		root.StaticFS("/music", gin.Dir(conf.Cfg.SavePath, true))

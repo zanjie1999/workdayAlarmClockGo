@@ -364,7 +364,7 @@
                 <button type="button" id="saveCookie">保存并登录</button><button type="button" class="red" id="clearCookie">清除</button>
               </div>
               <div class="muted">
-                Cookie保存在当前浏览器中<br>
+                如果你登录了VIP账号，则可以播放VIP歌曲<br>
                 先登录网页版网易云音乐，按F12打开开发者工具，切换到"网络"标签，刷新页面，点击第一个请求，找到"请求标头"中的"Cookie"，右键"复制值"粘贴到上方输入框
               </div>
             </div>
@@ -422,30 +422,6 @@
         $("message").textContent = t;
         $("message").style.color = e ? "#c0392b" : "";
       }
-      function decodeCookie(v) {
-        try {
-          return decodeURIComponent(v);
-        } catch (e) {
-          return v;
-        }
-      }
-      function cv() {
-        var values = document.cookie ? document.cookie.split("; ") : [];
-        var prefix = "netease_cookie=";
-        var i;
-        for (i = 0; i < values.length; i++) {
-          if (values[i].indexOf(prefix) === 0) {
-            return values[i].substring(prefix.length);
-          }
-        }
-        return "";
-      }
-      function setcv(v) {
-        document.cookie =
-          "netease_cookie=" +
-          encodeURIComponent(v) +
-          "; path=/; max-age=2592000; SameSite=Lax";
-      }
       function request(url, done, failed) {
         var xhr;
         var finished = false;
@@ -477,6 +453,36 @@
           xhr.send(null);
         } catch (e) {
           fail(e);
+        }
+      }
+      function postForm(url, body, done, failed) {
+        var xhr;
+        failed = failed || function () {};
+        try {
+          xhr = window.XMLHttpRequest
+            ? new XMLHttpRequest()
+            : new ActiveXObject("Microsoft.XMLHTTP");
+          xhr.onreadystatechange = function () {
+            var status;
+            if (xhr.readyState !== 4) return;
+            status = xhr.status === 1223 ? 204 : xhr.status;
+            if (status >= 200 && status < 300) {
+              done(xhr.responseText);
+            } else {
+              failed(new Error("HTTP " + status));
+            }
+          };
+          xhr.onerror = function () {
+            failed(new Error("网络请求失败"));
+          };
+          xhr.open("POST", url, true);
+          xhr.setRequestHeader(
+            "Content-Type",
+            "application/x-www-form-urlencoded"
+          );
+          xhr.send(body);
+        } catch (e) {
+          failed(e);
         }
       }
       function json(url, done, failed) {
@@ -1732,8 +1738,6 @@
       }
       $("cookieInput").type = "text";
       $("loginButton").onclick = function () {
-        var value = cv();
-        if (value) $("cookieInput").value = decodeCookie(value);
         editor(true);
       };
       $("saveCookie").onclick = function () {
@@ -1742,15 +1746,34 @@
           msg("请输入 Cookie", true);
           return;
         }
-        setcv(value);
-        editor(false);
-        load();
+        postForm(
+          "/setCookie",
+          "cookie=" + encodeURIComponent(value),
+          function () {
+            editor(false);
+            msg("Cookie 已保存到本机");
+            load();
+          },
+          function (e) {
+            msg("保存 Cookie 失败：" + e.message, true);
+          }
+        );
       };
       $("clearCookie").onclick = function () {
-        document.cookie = "netease_cookie=; path=/; max-age=0";
-        editor(false);
-        account("");
-        load();
+        postForm(
+          "/setCookie",
+          "cookie=",
+          function () {
+            $("cookieInput").value = "";
+            editor(false);
+            account("");
+            msg("Cookie 已清除");
+            load();
+          },
+          function (e) {
+            msg("清除 Cookie 失败：" + e.message, true);
+          }
+        );
       };
       $("backButton").onclick = function () {
         addClass($("detailPanel"), "mobile-hidden");
@@ -1759,7 +1782,6 @@
       $("playAll").onclick = function () {
         play(idsFromRows(document.querySelectorAll("#trackList .track-row"), 0));
       };
-      if (cv()) $("cookieInput").value = decodeCookie(cv());
       load();
       setInterval(refreshPlayingStatus, 60000);
     </script>
