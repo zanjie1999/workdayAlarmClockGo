@@ -13,7 +13,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
+	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"workdayAlarmClock/conf"
 
@@ -222,4 +226,111 @@ func reverseString(s string) string {
 		r[i], r[j] = r[j], r[i]
 	}
 	return string(r)
+}
+
+// neteaseSource 网易云音乐实现
+type neteaseSource struct{}
+
+// CachePrefix 网易云沿用原来的 <id>.mp3，不带前缀
+func (neteaseSource) CachePrefix() string { return "" }
+
+func (neteaseSource) MusicURL(id, quality string) (string, error) {
+	return wyySongURL(httpme.Httpme(), id, quality)
+}
+
+func (neteaseSource) PlayList(id string) ([]string, string, bool) {
+	ids, name, err := wyyPlayListIDs(id)
+	if err == nil {
+		saveListCache(id, ids)
+		return ids, name, false
+	}
+	log.Println("获取歌单信息出错", err)
+	// 接口不通时放缓存，断网闹钟也能响
+	if cached, ok := loadListCache(id); ok {
+		return cached, "缓存", true
+	}
+	return []string{}, "无法播放", false
+}
+
+// wyyPlayListIDs 歌单详情接口
+func wyyPlayListIDs(id string) ([]string, string, error) {
+	// 带个Cookie可以直接放私人雷达
+	resp, err := httpme.Httpme().GetStream("http://music.163.com/api/v6/playlist/detail?n=0&id="+id, httpme.Header{"Cookie": conf.Cfg.Cookie})
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.R.Body.Close()
+	if resp.R.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("接口状态异常: %s", resp.R.Status)
+	}
+	var j wyyPlayListDetail
+	if err := json.NewDecoder(resp.R.Body).Decode(&j); err != nil {
+		return nil, "", fmt.Errorf("解析歌单失败: %w", err)
+	}
+	if j.Code != 200 {
+		return nil, "", fmt.Errorf("接口返回异常: %d %s", j.Code, j.Message)
+	}
+	ids := make([]string, len(j.Playlist.TrackIDs))
+	for i, v := range j.Playlist.TrackIDs {
+		ids[i] = strconv.FormatInt(v.ID, 10)
+	}
+	return ids, j.Playlist.Name, nil
+}
+
+type wyyPlayListDetail struct {
+	Code     int    `json:"code"`
+	Message  string `json:"message"`
+	Playlist struct {
+		Name     string `json:"name"`
+		TrackIDs []struct {
+			ID int64 `json:"id"`
+		} `json:"trackIds"`
+	} `json:"playlist"`
+}
+
+// 链接解析用的正则，包级只编译一次
+var (
+	neteaseNumericRe   = regexp.MustCompile(`^\d+$`)
+	neteaseShortLinkRe = regexp.MustCompile(`(https?://)?163cn\.tv/[^\s"'<>，。；、)）]+`)
+	neteasePlaylistRe  = regexp.MustCompile(`playlist\?[^#]*?id=(\d+)`)
+	neteaseSongRe      = regexp.MustCompile(`song\?[^#]*?id=(\d+)`)
+)
+
+func (neteaseSource) ParsePlaylistID(raw string) string {
+	return parseNeteaseID(raw, neteasePlaylistRe)
+}
+
+func (neteaseSource) ParseSongID(raw string) string { return parseNeteaseID(raw, neteaseSongRe) }
+
+// parseNeteaseID 裸数字直接用，163cn.tv 短链跟随跳转，其它链接里抠 id=
+func parseNeteaseID(s string, re *regexp.Regexp) string {
+	if neteaseNumericRe.MatchString(s) {
+		return s
+	}
+	if m := neteaseShortLinkRe.FindStringSubmatch(s); m != nil {
+		if url := followShortLink(m[0]); url != "" {
+			s = url
+		}
+	}
+	if m := re.FindStringSubmatch(s); m != nil {
+		return m[1]
+	}
+	return s
+}
+
+// followShortLink 跟随短链跳转，返回最终地址，失败返回空
+func followShortLink(url string) string {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "https://" + url
+	}
+	resp, err := httpme.Httpme().GetStream(url)
+	if err != nil {
+		log.Println("解析短链失败", err)
+		return ""
+	}
+	resp.R.Body.Close()
+	if resp.R.Request == nil || resp.R.Request.URL == nil {
+		return ""
+	}
+	return resp.R.Request.URL.String()
 }

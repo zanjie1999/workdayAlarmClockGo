@@ -124,6 +124,52 @@ func clampF(v, lo, hi float64) float64 {
 	return v
 }
 
+// 音乐来源，三个平台共用同一套设置，只切换取歌单和取播放地址的实现
+const (
+	MusicApiNetease = "netease"
+	MusicApiQQ      = "qq"
+	MusicApiKugou   = "kugou"
+)
+
+// MusicApis 所有支持的来源，顺序即设置页下拉顺序
+var MusicApis = []string{MusicApiNetease, MusicApiQQ, MusicApiKugou}
+
+// IsValidMusicApi 是否是支持的来源
+func IsValidMusicApi(api string) bool {
+	for _, v := range MusicApis {
+		if api == v {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeMusicApi 空值和未知值一律回落网易云，保证老配置文件行为不变
+func NormalizeMusicApi(api string) string {
+	if IsValidMusicApi(api) {
+		return api
+	}
+	return MusicApiNetease
+}
+
+// SetMusicApi 切换音乐来源，传空串或不认识的来源返回 false
+// 来源变化时清空已播放记录，否则另一个平台的 id 会让闹钟选曲过滤失准
+func SetMusicApi(api string) bool {
+	if api == "" {
+		return false
+	}
+	if !IsValidMusicApi(api) {
+		return false
+	}
+	if Cfg.MusicApi == api {
+		return true
+	}
+	Cfg.MusicApi = api
+	Cfg.NePlayed = []string{}
+	Save()
+	return true
+}
+
 type Config struct {
 	VolDefault      string              `json:"volDefault"`
 	VolAlarm        string              `json:"volAlarm"`
@@ -144,13 +190,15 @@ type Config struct {
 	AlarmTime       float64             `json:"alarmTime"`
 	MuteWhenStop    bool                `json:"muteWhenStop"`
 	MusicQuality    string              `json:"musicQuality"`
-	Cookie          string              `json:"cookie"`
-	SavePath        string              `json:"savePath"`
-	CacheLimit      int64               `json:"cacheLimit"`
-	BroadcastMode   bool                `json:"broadcastMode"`
-	DefSeek         string              `json:"defSeek"`
-	SmallWeekDate   string              `json:"smallWeekDate"`
-	Port            int                 `json:"port"`
+	// MusicApi 音乐来源 netease / qq / kugou，默认 netease
+	MusicApi      string `json:"musicApi"`
+	Cookie        string `json:"cookie"`
+	SavePath      string `json:"savePath"`
+	CacheLimit    int64  `json:"cacheLimit"`
+	BroadcastMode bool   `json:"broadcastMode"`
+	DefSeek       string `json:"defSeek"`
+	SmallWeekDate string `json:"smallWeekDate"`
+	Port          int    `json:"port"`
 	// 均衡器配置，默认关闭
 	Eq EQSettings `json:"eq"`
 }
@@ -191,6 +239,8 @@ var (
 		MuteWhenStop: false,
 		// 音质
 		MusicQuality: "standard",
+		// 音乐来源，默认网易云
+		MusicApi: MusicApiNetease,
 		// 网易云cookie
 		Cookie: "",
 		// 保存音乐文件缓存
@@ -235,6 +285,8 @@ func Init() {
 	}
 	// 老配置文件没有 eq 字段或只有一段，统一整理成三段
 	Cfg.Eq = NormalizeEQ(Cfg.Eq)
+	// 老配置文件没有音乐来源字段，统一回落网易云
+	Cfg.MusicApi = NormalizeMusicApi(Cfg.MusicApi)
 }
 
 // 保存配置

@@ -48,6 +48,12 @@
             闹钟音量<input type="number" name="volAlarm" id="volAlarm" placeholder="0-100" min="0" max="100"><br>
             闹钟时长<input type="number" name="alarmTime" id="alarmTime" placeholder="4.5" min="0" step="0.5">分钟<br>
             （闹钟一直播放直到达到设定时长）<br>
+            音乐来源<select name="musicApi" id="musicApi" style="margin-bottom: 0">
+                <option value="netease">网易云音乐</option>
+                <option value="qq">QQ音乐</option>
+                <option value="kugou">酷狗音乐</option>
+            </select><br>
+            （切换后需要到我的歌单重新用Cookie登录）<br>
             闹钟歌单id<input type="text" name="nePlayListId" id="nePlayListId" placeholder="分享链接的id="><br>
             默认歌单id<input type="text" name="defPlayListId" id="defPlayListId" placeholder="分享链接的id="><br>
             （在没有上一首时按上一首时播放该歌单）<br>
@@ -147,6 +153,7 @@
                     document.getElementById('alarmTime').value = d.alarmTime
                     document.getElementById('muteWhenStop').checked = d.muteWhenStop
                     document.getElementById('musicQuality').value = d.musicQuality
+                    document.getElementById('musicApi').value = d.musicApi || 'netease'
                     document.getElementById('savePath').value = d.savePath
                     document.getElementById('cacheLimit').value = d.cacheLimit || 1024
                     document.getElementById('broadcastMode').checked = d.broadcastMode    

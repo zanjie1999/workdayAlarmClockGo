@@ -418,12 +418,13 @@ func filterListHasCache(in []string) []string {
 		return []string{}
 	}
 	for _, file := range files {
-		// 文件名是id
+		// 文件名是缓存主名，带平台前缀
 		filterMap[strings.SplitN(file.Name(), ".", 2)[0]] = struct{}{}
 	}
 	var out []string
 	for _, id := range in {
-		if _, exists := filterMap[id]; exists {
+		// 各平台缓存文件名不同，统一用 CacheBase 换算
+		if _, exists := filterMap[nemusic.CacheBase(id)]; exists {
 			out = append(out, id)
 		}
 	}

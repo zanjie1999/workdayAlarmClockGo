@@ -1,13 +1,12 @@
 /*
- * 往抑云
+ * 音乐来源Api入口
  * zyyme 20230630
- * v1.0
+ * v2.0
  */
 
 package nemusic
 
 import (
-	"encoding/gob"
 	"fmt"
 	"log"
 	"os"
@@ -16,74 +15,32 @@ import (
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
-
-	"github.com/zanjie1999/httpme"
 )
 
 // 歌单列表                歌单id   歌单名  是否缓存
 func PlayList(id string) ([]string, string, bool) {
-	// 填的是路径就当本地歌单，不请求网易云也不写 .list 缓存
+	// 填的是路径就当本地歌单，不请求接口也不写 .list 缓存，各平台通用
 	if isLocalPath(id) {
 		return LocalPlayList(id)
 	}
-	req := httpme.Httpme()
-	// 带个Cookie可以直接放私人雷达
-	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id="+id, httpme.Header{"Cookie": conf.Cfg.Cookie})
-	if err == nil {
-		var j map[string]interface{}
-		resp.Json(&j)
-		if j["code"].(float64) != 200 {
-			log.Println("获取歌单信息出错", j["code"], j["message"])
-			return []string{}, j["message"].(string), false
-		}
-		tids := j["playlist"].(map[string]interface{})["trackIds"].([]interface{})
-		ids := make([]string, len(tids))
-		for i, v := range tids {
-			ids[i] = fmt.Sprintf("%.0f", v.(map[string]interface{})["id"].(float64))
-		}
-		if conf.Cfg.SavePath != "" {
-			// 保存本地缓存
-			file, err := os.Create(conf.Cfg.SavePath + id + ".list")
-			if err != nil {
-				log.Println("创建歌单缓存文件失败", err)
-			} else {
-				gob.NewEncoder(file).Encode(ids)
-			}
-			file.Close()
-		}
-		return ids, j["playlist"].(map[string]interface{})["name"].(string), false
-	}
-	log.Println("获取歌单信息出错", err)
-	if conf.Cfg.SavePath != "" {
-		file, err := os.Open(conf.Cfg.SavePath + id + ".list")
-		if err == nil {
-			log.Println("使用缓存")
-			var ids []string
-			gob.NewDecoder(file).Decode(&ids)
-			return ids, "缓存", true
-		} else {
-			log.Println("没有缓存", err)
-		}
-	}
-	return []string{}, "无法播放", false
+	return Current().PlayList(id)
 }
 
 // 获取音乐播放地址 不一定能放先检查下
 func MusicUrl(id string) string {
-	req := httpme.Httpme()
-	var url = ""
 	// 本地缓存
 	if conf.Cfg.SavePath != "" {
-		if stat, err := os.Stat(conf.Cfg.SavePath + id + ".mp3"); err == nil && stat.Size() > 0 {
-			log.Println("播放缓存", url)
-			return conf.Cfg.SavePath + id + ".mp3"
+		cacheFile := conf.Cfg.SavePath + CacheBase(id) + ".mp3"
+		if stat, err := os.Stat(cacheFile); err == nil && stat.Size() > 0 {
+			log.Println("播放缓存", cacheFile)
+			return cacheFile
 		}
 	}
 	if conf.Cfg.MusicQuality == "" {
 		conf.Cfg.MusicQuality = "standard"
 	}
 	log.Println("获取地址 音质", conf.Cfg.MusicQuality)
-	url, err := wyySongURL(req, id, conf.Cfg.MusicQuality)
+	url, err := Current().MusicURL(id, conf.Cfg.MusicQuality)
 	if err != nil {
 		log.Println("获取歌曲地址出错", err)
 		return ""
@@ -93,34 +50,28 @@ func MusicUrl(id string) string {
 		return ""
 	}
 	log.Println("获取歌曲地址成功")
-	if conf.Cfg.SavePath != "" && url != "" {
-		removed, err := removeOldestMp3IfFull(conf.Cfg.SavePath, conf.Cfg.CacheLimit)
-		if err != nil {
-			log.Println("清理缓存失败，跳过缓存下载", err)
-			return url
-		}
-		if removed != "" {
-			log.Println("缓存达到上限，删除最旧文件", removed)
-		}
-		// 下载用时较长，先暂停
-		if conf.IsApp {
-			app.SendLocal("PAUSE")
-		}
-		// 缓存
-		log.Println("开始下载到", conf.Cfg.SavePath+id+".mp3")
-		resp, err := httpme.Get(url)
-		if err != nil {
-			log.Println("下载出错", err)
-		} else {
-			err = resp.SaveFile(conf.Cfg.SavePath + id + ".mp3")
-			if err != nil {
-				log.Println("保存出错", err)
-			} else {
-				url = conf.Cfg.SavePath + id + ".mp3"
-			}
-		}
+	if conf.Cfg.SavePath == "" {
+		return url
 	}
-	return url
+	removed, err := removeOldestMp3IfFull(conf.Cfg.SavePath, conf.Cfg.CacheLimit)
+	if err != nil {
+		log.Println("清理缓存失败，跳过缓存下载", err)
+		return url
+	}
+	if removed != "" {
+		log.Println("缓存达到上限，删除最旧文件", removed)
+	}
+	// 下载用时较长，先暂停
+	if conf.IsApp {
+		app.SendLocal("PAUSE")
+	}
+	cacheFile := conf.Cfg.SavePath + CacheBase(id) + ".mp3"
+	log.Println("开始下载到", cacheFile)
+	if err := downloadTo(url, cacheFile); err != nil {
+		log.Println("下载出错", err)
+		return url
+	}
+	return cacheFile
 }
 
 func removeOldestMp3IfFull(savePath string, limitMB int64) (string, error) {

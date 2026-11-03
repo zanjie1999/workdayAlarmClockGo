@@ -13,20 +13,20 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/display"
+	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
 
 	"github.com/gin-gonic/gin"
-	"github.com/zanjie1999/httpme"
 )
 
 // 下面这个注释配置了需要打包进二进制文件的静态文件
@@ -39,27 +39,40 @@ var (
 	js2back = "<script>window.history.go(-1)</script>"
 )
 
-func parseNeID(s, typ string) string {
-	if regexp.MustCompile(`^\d+$`).MatchString(s) {
-		return s
+// 第三方接口代理用的客户端，连接复用，弱设备少握手
+var apiClient = &http.Client{Timeout: 30 * time.Second}
+
+// proxyStream 把上游响应原样流式写回，不解析也不缓存，避免占内存
+func proxyStream(c *gin.Context, method, target, body string, header map[string]string) {
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
 	}
-	if m := regexp.MustCompile(`(https?://)?163cn\.tv/[^\s"'<>，。；、)）]+`).FindStringSubmatch(s); m != nil {
-		url := m[0]
-		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-			url = "https://" + url
+	req, err := http.NewRequestWithContext(c.Request.Context(), method, target, reader)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	for key, value := range header {
+		if value != "" {
+			req.Header.Set(key, value)
 		}
-		req := httpme.Httpme()
-		if resp, err := req.Get(url); err == nil {
-			resp.R.Body.Close()
-			s = resp.R.Request.URL.String()
-		} else {
-			log.Println("解析网易云短链失败", err)
-		}
 	}
-	if m := regexp.MustCompile(typ + `\?[^#]*?id=(\d+)`).FindStringSubmatch(s); m != nil {
-		return m[1]
+	resp, err := apiClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
 	}
-	return s
+	defer resp.Body.Close()
+	// 只回传 Content-Type，上游的 Set-Cookie 之类不能带给浏览器
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		c.Writer.Header().Set("Content-Type", ct)
+	}
+	c.Status(resp.StatusCode)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	_, _ = io.Copy(c.Writer, resp.Body)
 }
 
 func Init(urlPrefix string) *gin.Engine {
@@ -108,42 +121,126 @@ func Init(urlPrefix string) *gin.Engine {
 		if rawQuery := c.Request.URL.RawQuery; rawQuery != "" {
 			upstreamURL += "?" + rawQuery
 		}
-		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-			return
-		}
-		// Cookie 由调用方提供，支持转发网易云登录态；os=pc 用于请求完整歌单列表。
-		cookie := c.GetHeader("Cookie")
-		// 优先使用本机配置里保存的cookie
-		if conf.Cfg.Cookie != "" {
-			cookie = conf.Cfg.Cookie
-		}
+		// os=pc 用于请求完整歌单列表
+		cookie := conf.Cfg.Cookie
 		if cookie == "" {
 			cookie = "os=pc"
 		} else if !strings.Contains(cookie, "os=") {
 			cookie += "; os=pc"
 		}
-		req.Header.Set("Cookie", cookie)
-		req.Header.Set("User-Agent", c.GetHeader("User-Agent"))
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		proxyStream(c, http.MethodGet, upstreamURL, "", map[string]string{"Cookie": cookie})
+	})
+
+	// QQ音乐歌单详情，参数只用 id
+	root.GET("/qqapi/playlist/detail", func(c *gin.Context) {
+		id := c.Query("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is empty"})
 			return
 		}
-		defer resp.Body.Close()
-		for key, values := range resp.Header {
-			for _, value := range values {
-				c.Writer.Header().Add(key, value)
-			}
-		}
-		c.Status(resp.StatusCode)
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
-		_, _ = io.Copy(c.Writer, resp.Body)
+		target := "https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&format=json" +
+			"&disstid=" + url.QueryEscape(id) +
+			"&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0"
+		proxyStream(c, http.MethodGet, target, "", map[string]string{
+			"Referer": "https://y.qq.com/",
+			"Cookie":  conf.Cfg.Cookie,
+		})
 	})
-	// 保存网易云cookie，playlist.html 登录时调用，传空值即清除
+	// QQ音乐用户信息，只从cookie里取QQ号，不请求上游
+	root.GET("/qqapi/user/info", func(c *gin.Context) {
+		uin := nemusic.QQCookieUin(conf.Cfg.Cookie)
+		if uin == "" {
+			c.JSON(http.StatusOK, gin.H{"code": 301, "message": "未登录"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"uin": uin}})
+	})
+	// QQ音乐用户歌单，按uin查，响应原样返回
+	root.GET("/qqapi/user/playlist", func(c *gin.Context) {
+		uin := c.Query("uin")
+		if uin == "" {
+			uin = nemusic.QQCookieUin(conf.Cfg.Cookie)
+		}
+		if uin == "" {
+			c.JSON(http.StatusOK, gin.H{"code": 301, "message": "未登录"})
+			return
+		}
+		body := `{"comm":{"ct":24,"cv":0,"format":"json","uin":"` + uin + `"},"req_0":{"module":"music.musicasset.PlaylistBaseRead","method":"GetPlaylistByUin","param":{"uin":"` + uin + `","offset":0,"size":200}}}`
+		proxyStream(c, http.MethodPost, "https://u.y.qq.com/cgi-bin/musicu.fcg", body, map[string]string{
+			"Referer":      "https://y.qq.com/",
+			"Cookie":       conf.Cfg.Cookie,
+			"Content-Type": "application/json",
+		})
+	})
+
+	// 酷狗歌单信息与歌曲列表
+	kugouHeader := func() map[string]string {
+		return map[string]string{
+			"Referer": "https://www.kugou.com/",
+			"Cookie":  conf.Cfg.Cookie,
+		}
+	}
+	root.GET("/kgapi/special/detail", func(c *gin.Context) {
+		id := c.Query("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is empty"})
+			return
+		}
+		name := nemusic.KugouPlaylistName(id)
+		if name == "" {
+			name = "酷狗歌单" + id
+		}
+		c.JSON(http.StatusOK, gin.H{"status": 1, "data": gin.H{"specialname": name, "imgurl": ""}})
+	})
+	root.GET("/kgapi/special/song", func(c *gin.Context) {
+		id := c.Query("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is empty"})
+			return
+		}
+		page := c.DefaultQuery("page", "1")
+		// appid 和 mid 不带会直接返回 Access Deny
+		target := "https://mobileservice.kugou.com/api/v3/special/song?specialid=" + url.QueryEscape(id) +
+			"&page=" + url.QueryEscape(page) + "&pagesize=-1&plat=0&version=9108&appid=1005&clientver=9108&mid=" + url.QueryEscape(nemusic.KugouMid(conf.Cfg.Cookie))
+		proxyStream(c, http.MethodGet, target, "", kugouHeader())
+	})
+	// 酷狗用户信息，只从cookie里取userid
+	root.GET("/kgapi/user/info", func(c *gin.Context) {
+		userID := nemusic.KugouCookieUserID(conf.Cfg.Cookie)
+		if userID == "" {
+			c.JSON(http.StatusOK, gin.H{"status": 0, "err_code": 301, "error": "未登录"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": 1, "data": gin.H{"userid": userID}})
+	})
+	root.GET("/kgapi/user/playlist", func(c *gin.Context) {
+		userID := c.Query("userid")
+		if userID == "" {
+			userID = nemusic.KugouCookieUserID(conf.Cfg.Cookie)
+		}
+		if userID == "" {
+			c.JSON(http.StatusOK, gin.H{"status": 0, "err_code": 301, "error": "未登录"})
+			return
+		}
+		page := c.DefaultQuery("page", "1")
+		target := "https://mobileservice.kugou.com/api/v3/user/playlist?userid=" + url.QueryEscape(userID) +
+			"&page=" + url.QueryEscape(page) + "&pagesize=-1&plat=0&version=9108"
+		proxyStream(c, http.MethodGet, target, "", kugouHeader())
+	})
+
+	// 切换音乐来源，只改一个字段，不动其它设置
+	root.GET("/setMusicApi", func(c *gin.Context) {
+		api := c.Query("api")
+		if !conf.SetMusicApi(api) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的来源", "api": conf.Cfg.MusicApi})
+			return
+		}
+		log.Println("已切换音乐来源", conf.Cfg.MusicApi)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "api": conf.Cfg.MusicApi})
+	})
+
+	// 保存登录cookie，playlist.html 登录时调用，传空值即清除
+	// 三个平台共用一个字段，切换来源后要重新粘贴
 	setCookie := func(c *gin.Context) {
 		cookie := c.PostForm("cookie")
 		if cookie == "" {
@@ -153,7 +250,7 @@ func Init(urlPrefix string) *gin.Engine {
 		conf.Cfg.Cookie = cookie
 		conf.Save()
 		// 不打印cookie内容，只打长度
-		log.Println("已更新网易云cookie，长度", len(cookie))
+		log.Println("已更新cookie，来源", conf.Cfg.MusicApi, "长度", len(cookie))
 		c.JSON(http.StatusOK, gin.H{"code": 200, "cookieLen": len(cookie)})
 	}
 	root.POST("/setCookie", setCookie)
@@ -293,7 +390,7 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/playlist", func(c *gin.Context) {
-		id := parseNeID(c.Query("id"), "playlist")
+		id := nemusic.ParseID("playlist", c.Query("id"))
 		if id == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
@@ -313,7 +410,7 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	root.GET("/playmusic", func(c *gin.Context) {
-		id := parseNeID(c.Query("id"), "song")
+		id := nemusic.ParseID("song", c.Query("id"))
 		if id == "" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>id is empty</h1>"+js2home))
 			return
@@ -578,6 +675,7 @@ func Init(urlPrefix string) *gin.Engine {
 		defSeek := c.Query("defSeek")
 		broadcastMode := c.Query("broadcastMode")
 		smallWeekDate := c.Query("smallWeekDate")
+		musicApi := c.Query("musicApi")
 		var cacheLimitMB int64
 		if cacheLimit != "" {
 			var err error
@@ -622,6 +720,12 @@ func Init(urlPrefix string) *gin.Engine {
 			conf.Cfg.AlarmTime, _ = strconv.ParseFloat(alarmTime, 64)
 		}
 		conf.Cfg.MusicQuality = musicQuality
+		// 换源只在传了合法值时生效，没传就保持原样，不清空其它设置
+		if musicApi != "" && conf.IsValidMusicApi(musicApi) && conf.Cfg.MusicApi != musicApi {
+			conf.Cfg.MusicApi = musicApi
+			// 另一个平台的已播放记录没意义，清掉
+			conf.Cfg.NePlayed = []string{}
+		}
 		if cacheLimit != "" {
 			conf.Cfg.CacheLimit = cacheLimitMB
 		}
