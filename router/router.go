@@ -101,6 +101,7 @@ func Init(urlPrefix string) *gin.Engine {
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))
 	r.StaticFileFS("/eq.html", "./eq.html", http.FS(staticFs))
+	r.StaticFileFS("/kugouLogin.html", "./kugouLogin.html", http.FS(staticFs))
 	// 回显配置时拷贝一份，把cookie清掉，避免局域网里直接看到登录态
 	root.GET("/cfg.json", func(c *gin.Context) {
 		cfg := conf.Cfg
@@ -173,6 +174,25 @@ func Init(urlPrefix string) *gin.Engine {
 		})
 	})
 
+	// 酷狗扫码登录，签名在服务端拼好，响应原样透传给前端
+	// 抽象的1B，官网Cookie拿不到云歌单，只能用App扫码换来的token
+	kugouLoginProxy := func(c *gin.Context, action, key string) {
+		proxyStream(c, http.MethodGet, nemusic.KugouLoginURL(action, key), "", map[string]string{
+			"Referer": "https://www.kugou.com/",
+		})
+	}
+	root.GET("/kgapi/login/qr", func(c *gin.Context) {
+		kugouLoginProxy(c, "qrcode", "")
+	})
+	root.GET("/kgapi/login/qr/check", func(c *gin.Context) {
+		key := c.Query("key")
+		if key == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "key is empty"})
+			return
+		}
+		kugouLoginProxy(c, "check", key)
+	})
+
 	// 酷狗歌单信息与歌曲列表
 	kugouHeader := func() map[string]string {
 		return map[string]string{
@@ -186,16 +206,23 @@ func Init(urlPrefix string) *gin.Engine {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is empty"})
 			return
 		}
-		name := nemusic.KugouPlaylistName(id)
-		if name == "" {
-			name = "酷狗歌单" + id
-		}
-		c.JSON(http.StatusOK, gin.H{"status": 1, "data": gin.H{"specialname": name, "imgurl": ""}})
+		c.JSON(http.StatusOK, gin.H{"status": 1, "data": gin.H{"specialname": "", "imgurl": ""}})
 	})
 	root.GET("/kgapi/special/song", func(c *gin.Context) {
 		id := c.Query("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is empty"})
+			return
+		}
+		// 新版歌单 id 老接口不认，直接走签名网关
+		if strings.HasPrefix(id, "collection_") {
+			body, err := nemusic.KugouCollectionSongs(id)
+			if err != nil {
+				log.Println("酷狗获取歌单歌曲出错", err)
+				c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+				return
+			}
+			c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 			return
 		}
 		page := c.DefaultQuery("page", "1")
@@ -222,10 +249,15 @@ func Init(urlPrefix string) *gin.Engine {
 			c.JSON(http.StatusOK, gin.H{"status": 0, "err_code": 301, "error": "未登录"})
 			return
 		}
-		page := c.DefaultQuery("page", "1")
-		target := "https://mobileservice.kugou.com/api/v3/user/playlist?userid=" + url.QueryEscape(userID) +
-			"&page=" + url.QueryEscape(page) + "&pagesize=-1&plat=0&version=9108"
-		proxyStream(c, http.MethodGet, target, "", kugouHeader())
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		// 老接口 mobileservice 的用户歌单已经关了，只能走网关签名接口，必须带 token
+		body, err := nemusic.KugouUserPlayList(conf.Cfg.Cookie, c.Query("userid"), page, 50)
+		if err != nil {
+			log.Println("酷狗获取账号歌单出错", err)
+			c.JSON(http.StatusBadGateway, gin.H{"status": 0, "error": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 	})
 
 	// 切换音乐来源，只改一个字段，不动其它设置

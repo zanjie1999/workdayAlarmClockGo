@@ -343,7 +343,8 @@
                 placeholder="粘贴当前平台的完整 Cookie"
               />
               <div class="account-actions">
-                <button type="button" id="saveCookie">保存并登录</button><button type="button" class="red" id="clearCookie">清除</button>
+                <button type="button" id="saveCookie">保存并登录</button><button type="button" id="qrLoginBtn" hidden>扫码登录</button
+                ><button type="button" class="red" id="clearCookie">清除</button>
               </div>
               <div class="muted" id="cookieHint"></div>
             </div>
@@ -527,7 +528,7 @@
         kugou: {
           label: "酷狗音乐",
           daily: false,
-          cookieHint: "先登录网页版kugou.com，按F12打开开发者工具，切换到\"网络\"标签，刷新页面，点击第一个请求，找到\"请求标头\"中的\"Cookie\"，右键\"复制值\"粘贴到上方输入框",
+          cookieHint: "酷狗音乐比较抽象，只能扫码登录",
           userInfo: function (done, failed) {
             json("/kgapi/user/info", function (u) {
               if (!u || u.status !== 1 || !u.data || !u.data.userid) {
@@ -563,7 +564,8 @@
                 var raw = (songs && songs.data && songs.data.info) || [];
                 done({
                   id: String(id),
-                  name: d.specialname || "未命名歌单",
+                  // 酷狗详情没有名字，返回空，交给 select() 保留列表里已有的名称
+                  name: d.specialname || "",
                   coverImgUrl: fixKugouImg(d.imgurl),
                   trackCount: d.songcount || raw.length,
                   tracks: normalizeKugou(raw)
@@ -622,7 +624,8 @@
               finished = true;
               done(xhr.responseText);
             } else {
-              fail(new Error("HTTP " + status));
+              // 后端会把上游错误写在 error 字段里，直接显示出来
+              fail(new Error(errorText(xhr.responseText) || "HTTP " + status));
             }
           };
           xhr.onerror = function () {
@@ -633,6 +636,16 @@
         } catch (e) {
           fail(e);
         }
+      }
+      // errorText 取后端错误响应里的 error 字段，取不到返回空串
+      function errorText(text) {
+        var data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          return "";
+        }
+        return data && data.error ? String(data.error) : "";
       }
       function postForm(url, body, done, failed) {
         var xhr;
@@ -842,10 +855,16 @@
       function editor(v) {
         setHidden($("cookieEditor"), !v);
         setHidden($("loginButton"), v);
-        if (v) $("cookieInput").focus();
+        // 输入框可能被隐藏了，隐藏时不要抢焦点
+        if (v && !$("cookieInput").hidden) $("cookieInput").focus();
       }
       function updateCookieHint() {
         $("cookieHint").innerHTML = source().cookieHint;
+        // 酷狗只能扫码登录，粘贴框和保存按钮都用不上
+        var kugou = state.api === "kugou";
+        setHidden($("qrLoginBtn"), !kugou);
+        setHidden($("cookieInput"), kugou);
+        setHidden($("saveCookie"), kugou);
       }
       function isDesktop() {
         if (window.matchMedia) return window.matchMedia("(min-width:651px)").matches;
@@ -1279,6 +1298,10 @@
       $("cookieInput").type = "text";
       $("loginButton").onclick = function () {
         editor(true);
+      };
+      // 酷狗拿歌单要 App 端的 token，官网 cookie 不行，所以走扫码页
+      $("qrLoginBtn").onclick = function () {
+        location.href = "/kugouLogin.html";
       };
       $("saveCookie").onclick = function () {
         var value = $("cookieInput").value.replace(/^\s+|\s+$/g, "");

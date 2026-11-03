@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>酷狗扫码登录</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+      .qrbox {
+        text-align: center;
+      }
+      .qr {
+        width: 220px;
+        height: 220px;
+        margin: 0 auto 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: #fff;
+      }
+      .qr img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .qr .placeholder {
+        color: #999;
+        font-size: 13px;
+      }
+      #status {
+        min-height: 1.6em;
+        color: #666;
+      }
+      #status.ok {
+        color: #2a7;
+      }
+      #status.error {
+        color: #c0392b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main-container">
+      <div class="linemode">
+        <img src="/favicon.ico" /><br /><br />
+        <h1 class="me-title">酷狗扫码登录</h1>
+      </div>
+      <div class="box qrbox">
+        <div class="qr" id="qr"><div class="placeholder">正在获取二维码…</div></div>
+        <div id="status">请稍候</div>
+        <button type="button" id="retry" hidden>重新获取二维码</button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var qr = document.getElementById("qr");
+        var statusEl = document.getElementById("status");
+        var retry = document.getElementById("retry");
+        var key = "";
+        var timer = null;
+        var stopped = false;
+
+        function setStatus(text, kind) {
+          statusEl.textContent = text;
+          statusEl.className = kind || "";
+        }
+
+        function stop() {
+          stopped = true;
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+
+        function fail(text) {
+          stop();
+          setStatus(text, "error");
+          retry.hidden = false;
+        }
+
+        function get(url, done) {
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", url, true);
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            var data = null;
+            try {
+              data = JSON.parse(xhr.responseText);
+            } catch (e) {}
+            done(xhr.status, data, xhr.responseText);
+          };
+          xhr.send();
+        }
+
+        // 扫码成功后把 userid/token 写进后端配置的 cookie
+        function saveLogin(userid, token) {
+          var cookie = "userid=" + userid + "; token=" + token;
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/setCookie", true);
+          xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status >= 200 && xhr.status < 300) {
+              setStatus("登录成功，正在返回歌单页…", "ok");
+              setTimeout(function () {
+                location.href = "/playlist.html";
+              }, 1200);
+            } else {
+              fail("凭据保存失败，请返回歌单页重试");
+            }
+          };
+          xhr.send("cookie=" + encodeURIComponent(cookie));
+        }
+
+        function poll() {
+          if (stopped || !key) return;
+          get("/kgapi/login/qr/check?key=" + encodeURIComponent(key), function (code, data) {
+            if (stopped) return;
+            if (code < 200 || code >= 300 || !data) return;
+            var d = data.data || {};
+            if (Number(d.status) === 4 && d.token && d.userid) {
+              stop();
+              saveLogin(d.userid, d.token);
+              return;
+            }
+            if (Number(d.status) === 2) {
+              setStatus("已扫码，请在手机上确认");
+              return;
+            }
+            if (Number(d.status) === 0) {
+              fail("二维码已过期，请重新获取");
+            }
+          });
+        }
+
+        function loadQr() {
+          stopped = false;
+          retry.hidden = true;
+          qr.innerHTML = '<div class="placeholder">正在获取二维码…</div>';
+          setStatus("请稍候");
+          get("/kgapi/login/qr", function (code, data) {
+            var d = data && data.data ? data.data : null;
+            if (code < 200 || code >= 300 || !d || !d.qrcode || !d.qrcode_img) {
+              fail("获取二维码失败，请稍后重试");
+              return;
+            }
+            key = d.qrcode;
+            var img = document.createElement("img");
+            img.alt = "酷狗登录二维码";
+            img.src = d.qrcode_img;
+            qr.innerHTML = "";
+            qr.appendChild(img);
+            setStatus("请用手机酷狗音乐App扫码");
+            if (timer) clearInterval(timer);
+            timer = setInterval(poll, 2000);
+          });
+        }
+
+        retry.onclick = loadQr;
+        loadQr();
+      })();
+    </script>
+  </body>
+</html>
