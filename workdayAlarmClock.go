@@ -269,42 +269,46 @@ func selfUpdate() {
 }
 
 func checkUpdate() {
-	// 检查更新
-	p, err := update.Check()
-	if err != nil {
-		log.Println("检查更新失败", err)
-		return
-	}
-	// 只有远端版本比当前新才提示，当前版本更高（自己编译的）不提示
-	if !p.HasUpdate {
-		log.Println("当前已是最新版本 v"+VERSION+" 开源仓库：", update.RepoURL())
-		return
-	}
-	log.Println("\n发现新版本v" + p.Latest + "，更新内容：" + p.Release)
-	log.Println("下载地址：", update.RepoURL()+"/releases")
+	for i := 0; i < 3; i++ {
+		// 检查更新
+		p, err := update.Check()
+		if err != nil {
+			log.Println("检查更新失败", err)
+			time.Sleep(4 * time.Minute)
+			continue
+		}
+		// 只有远端版本比当前新才提示，当前版本更高（自己编译的）不提示
+		if !p.HasUpdate {
+			log.Println("当前已是最新版本 v"+VERSION+" 开源仓库：", update.RepoURL())
+			return
+		}
+		log.Println("\n发现新版本v" + p.Latest + "，更新内容：" + p.Release)
+		log.Println("下载地址：", update.RepoURL()+"/releases")
 
-	if conf.IsApp {
-		app.Send("HASUPDATE")
-		app.Send("ECHO 有新版本v" + p.Latest)
-		return
-	}
-	if p.Asset == "" {
-		log.Println("Release 里没有适合当前设备的文件，请手动下载")
-		return
-	}
-	// 等一下再动手，避开启动阶段的网络/音频初始化
-	time.Sleep(30 * time.Second)
-	if player.IsAlarm || !player.IsStop {
-		log.Println("正在播放，跳过本次自动更新，可稍后手动更新")
-		return
-	}
-	if err := update.Apply(p); err != nil {
-		log.Println("自动更新失败", err)
-		return
-	}
-	log.Println("自动更新完成，正在重启")
-	if err := update.Restart(); err != nil {
-		log.Println("重启失败，请手动重启程序以使用新版本", err)
+		if conf.IsApp {
+			app.Send("HASUPDATE")
+			app.Send("ECHO 有新版本v" + p.Latest)
+			return
+		}
+		if p.Asset == "" {
+			log.Println("Release 里没有适合当前设备的文件，请手动下载")
+			return
+		}
+		// 等一下再动手，避开启动阶段的网络/音频初始化
+		time.Sleep(30 * time.Second)
+		if player.IsAlarm || !player.IsStop {
+			log.Println("正在播放，跳过本次自动更新，可稍后手动更新")
+			return
+		}
+		if err := update.Apply(p); err != nil {
+			log.Println("自动更新失败", err)
+			return
+		}
+		log.Println("自动更新完成，正在重启")
+		if err := update.Restart(); err != nil {
+			log.Println("重启失败，请手动重启程序以使用新版本", err)
+			return
+		}
 	}
 }
 
