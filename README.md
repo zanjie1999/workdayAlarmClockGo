@@ -206,7 +206,7 @@ ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownl
 
 ### WebDAV
 `/music` 和 `/sdcard` 支持简易WebDAV，可以当小网盘用，直接挂载后拖文件进去  
-支持 `OPTIONS`、`PROPFIND`、`MKCOL`、`PUT`、`DELETE`、`MOVE`，不支持复制（`COPY`）  
+支持 `OPTIONS`、`PROPFIND`、`MKCOL`、`PUT`、`DELETE`、`MOVE`、`COPY`  
 ```
 # 上传
 curl -T 歌曲.mp3 http://127.0.0.1:8080/music/歌曲.mp3
@@ -216,6 +216,8 @@ curl -X DELETE http://127.0.0.1:8080/music/歌曲.mp3
 curl -X MKCOL http://127.0.0.1:8080/music/sub/
 # 重命名/移动（Windows新建文件夹很抽象，是先创建再重命名的）
 curl -X MOVE -H "Destination: http://127.0.0.1:8080/music/新名字.mp3" http://127.0.0.1:8080/music/歌曲.mp3
+# 复制
+curl -X COPY -H "Destination: http://127.0.0.1:8080/music/歌曲2.mp3" http://127.0.0.1:8080/music/歌曲.mp3
 # 看目录（Depth 0 只看自己，Depth 1 列一层）
 curl -X PROPFIND -H "Depth: 1" http://127.0.0.1:8080/music/
 ```  

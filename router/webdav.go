@@ -26,7 +26,7 @@ import (
 )
 
 // http.StatusMultiStatus 的字符串形式，部分客户端只认这个
-const davAllowMethods = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, PROPPATCH, LOCK, UNLOCK, MOVE"
+const davAllowMethods = "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, PROPPATCH, LOCK, UNLOCK, MOVE, COPY"
 
 type webdavHandler struct {
 	// 目录的绝对路径，注册时快照，与 StaticFS 使用同一个目录
@@ -59,10 +59,12 @@ func RegisterWebDAV(group *gin.RouterGroup, route, dir string) {
 	group.Handle(http.MethodDelete, route+"/*filepath", h.delete)
 	group.Handle("MKCOL", route+"/*filepath", h.mkcol)
 	group.Handle("MOVE", route+"/*filepath", h.move)
+	group.Handle("COPY", route+"/*filepath", h.copy)
 	group.Handle("LOCK", route+"/*filepath", h.lock)
 	group.Handle("UNLOCK", route+"/*filepath", h.unlock)
 	group.Handle(http.MethodOptions, route, h.options)
 	group.Handle("PROPFIND", route, h.propfind)
+	group.Handle("COPY", route, h.copy)
 }
 
 // checkBase 确认 base 目录存在，不存在时直接回 404(比如非 Android 上的 /sdcard)
@@ -98,7 +100,7 @@ func (h *webdavHandler) resolve(c *gin.Context) (string, bool) {
 	return target, true
 }
 
-// destination 解析 MOVE 的 Destination 头，必须是本挂载点内的路径
+// destination 解析 MOVE/COPY 的 Destination 头，必须是本挂载点内的路径
 func (h *webdavHandler) destination(c *gin.Context) (string, bool) {
 	raw := c.GetHeader("Destination")
 	if raw == "" {
@@ -397,6 +399,161 @@ func (h *webdavHandler) move(c *gin.Context) {
 	}
 	log.Println("webdav: 已移动", src, "->", dst)
 	c.Status(status)
+}
+
+// copy 复制文件或目录。Depth 只支持 0 和 infinity，传 1 按规范回 400。
+func (h *webdavHandler) copy(c *gin.Context) {
+	if !h.checkBase(c) {
+		return
+	}
+	src, ok := h.resolve(c)
+	if !ok {
+		return
+	}
+	dst, ok := h.destination(c)
+	if !ok {
+		return
+	}
+	if src == h.base || dst == h.base {
+		// 挂载点本身不复制
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	depth := strings.ToLower(strings.TrimSpace(c.GetHeader("Depth")))
+	switch depth {
+	case "", "infinity":
+		depth = "infinity"
+	case "0":
+	default:
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	// 目标就是源本身或源的祖先目录时，覆盖会先删掉源，直接拒绝
+	if rel, err := filepath.Rel(dst, src); err == nil &&
+		rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if srcInfo.IsDir() {
+		// 目标落在源目录内部会无限自我复制，直接拒绝
+		if rel, err := filepath.Rel(src, dst); err == nil &&
+			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+	}
+	status := http.StatusCreated
+	if _, err := os.Stat(dst); err == nil {
+		if strings.EqualFold(strings.TrimSpace(c.GetHeader("Overwrite")), "F") {
+			c.AbortWithStatus(http.StatusPreconditionFailed)
+			return
+		}
+		// 覆盖时先清掉旧目标，避免残留旧目录里的多余文件
+		if err := os.RemoveAll(dst); err != nil {
+			log.Println("webdav: 覆盖前清理失败", dst, err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		status = http.StatusNoContent
+	}
+	if srcInfo.IsDir() {
+		err = copyTree(src, dst, depth != "0")
+	} else {
+		err = copyFile(src, dst)
+	}
+	if err != nil {
+		log.Println("webdav: 复制失败", src, dst, err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	log.Println("webdav: 已复制", src, "->", dst)
+	c.Status(status)
+}
+
+// copyFile 流式复制单个文件，先写同目录临时文件再改名，避免播放器读到半截文件
+func copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	dir := filepath.Dir(dst)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".webdav-*.part")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	done := false
+	defer func() {
+		tmp.Close()
+		if !done {
+			os.Remove(tmpName)
+		}
+	}()
+	// io.Copy 优先走 copy_file_range，不支持时退化成 32KB 池化缓冲，全程不占大块堆内存
+	if _, err := io.Copy(tmp, sf); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		return err
+	}
+	done = true
+	// 尽力保留源文件权限，FUSE 上失败也不影响内容
+	_ = os.Chmod(dst, srcInfo.Mode().Perm())
+	return nil
+}
+
+// copyTree 递归复制目录；recurse 为 false 时只建目录本身(Depth: 0)。
+// 用 ReadDir(64) 分批读，内存占用与目录条目数无关。
+func copyTree(src, dst string, recurse bool) error {
+	if err := os.MkdirAll(dst, os.ModePerm); err != nil {
+		return err
+	}
+	if !recurse {
+		return nil
+	}
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	for {
+		entries, err := f.ReadDir(64)
+		for _, entry := range entries {
+			srcChild := filepath.Join(src, entry.Name())
+			dstChild := filepath.Join(dst, entry.Name())
+			if entry.IsDir() {
+				if err := copyTree(srcChild, dstChild, true); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := copyFile(srcChild, dstChild); err != nil {
+				return err
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 // lock 不做真实锁，只返回一个假 token。资源管理器/Finder 写入前会发 LOCK，
