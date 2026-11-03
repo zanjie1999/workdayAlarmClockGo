@@ -35,7 +35,7 @@ type qqSource struct{}
 // CachePrefix QQ音乐的缓存文件前缀，避免和网易云的数字 id 撞名
 func (qqSource) CachePrefix() string { return "qq_" }
 
-// qqQuality 音质档位对应的文件名前缀和扩展名，接口返回什么就用什么
+// qqQuality 音质档位对应的文件名前缀和扩展名，接口按后缀返回对应容器
 func qqQuality(quality string) (prefix, ext string) {
 	switch quality {
 	case "exhigh":
@@ -43,7 +43,7 @@ func qqQuality(quality string) (prefix, ext string) {
 	case "lossless", "hires":
 		return "F000", ".flac"
 	default:
-		return "M500", ".m4a"
+		return "M500", ".mp3"
 	}
 }
 
