@@ -221,6 +221,8 @@ curl -X COPY -H "Destination: http://127.0.0.1:8080/music/歌曲2.mp3" http://12
 # 看目录（Depth 0 只看自己，Depth 1 列一层）
 curl -X PROPFIND -H "Depth: 1" http://127.0.0.1:8080/music/
 ```  
+Windows可以直接在资源管理器地址栏输入比如 `\\192.168.1.152@8080\music` 访问，macOS等则需要挂载 `http://192.168.1.152:8080/music` 映射网络驱动器时也需要使用http开头的
+
 注意写入 `/music` 的文件同样参与缓存上限淘汰，可能被自动清理  
 
 ### 播放本地文件
