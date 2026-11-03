@@ -27,7 +27,8 @@ func PlayList(id string) ([]string, string, bool) {
 		return LocalPlayList(id)
 	}
 	req := httpme.Httpme()
-	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id=" + id)
+	// 带个Cookie可以直接放私人雷达
+	resp, err := req.Get("http://music.163.com/api/v6/playlist/detail?n=0&id="+id, httpme.Header{"Cookie": conf.Cfg.Cookie})
 	if err == nil {
 		var j map[string]interface{}
 		resp.Json(&j)

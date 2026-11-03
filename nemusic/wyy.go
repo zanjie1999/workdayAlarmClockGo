@@ -83,9 +83,7 @@ func wyySongURL(req *httpme.Request, id string, level string) (string, error) {
 	}
 	headers := httpme.Header{
 		"Referer": "https://music.163.com/",
-	}
-	if conf.Cfg.Cookie != "" {
-		headers["Cookie"] = conf.Cfg.Cookie
+		"Cookie":  conf.Cfg.Cookie,
 	}
 	resp, err := req.Post(wyySongApi+"?csrf_token="+csrf, httpme.Datas{
 		"params":    params,
