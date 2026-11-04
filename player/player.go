@@ -492,7 +492,8 @@ func PlayAlarm() {
 		rand.Shuffle(len(ids), func(i, j int) {
 			ids[i], ids[j] = ids[j], ids[i]
 		})
-		PlayList = ids
+		// 万一歌单里的歌曲都放不了呢
+		PlayList = append(ids, "http://127.0.0.1"+conf.Port+"/music.mp3")
 		if len(PlayList) == 0 {
 			// 你该不是在拿咩咩寻开心吧
 			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")
