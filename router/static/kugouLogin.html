@@ -1,53 +1,83 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="format-detection" content="telephone=no" />
     <title>酷狗扫码登录</title>
     <link rel="stylesheet" href="/static/style.css" />
     <style>
       .qrbox {
+        padding: 18px;
         text-align: center;
       }
+      /* 二维码容器固定方形，靠 line-height 居中，不用 flex；
+         图片只缩放不裁剪，object-fit:contain 在 iOS 7 上不支持会把码拉变形扫不出来 */
       .qr {
         width: 220px;
         height: 220px;
-        margin: 0 auto 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        margin: 0 auto 14px;
+        line-height: 218px;
+        text-align: center;
         overflow: hidden;
-        background: #fff;
+        background: #ffffff;
+        border: 1px solid #e3e5ea;
+        border-radius: 12px;
+        -webkit-border-radius: 12px;
       }
       .qr img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        display: block;
+        display: inline-block;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        vertical-align: middle;
       }
       .qr .placeholder {
-        color: #999;
-        font-size: 13px;
+        display: inline-block;
+        line-height: 1.6;
+        font-size: 15px;
+        color: #8a919e;
+        vertical-align: middle;
       }
       #status {
-        min-height: 1.6em;
-        color: #666;
+        min-height: 26px;
+        font-size: 16px;
+        line-height: 1.6;
+        color: #6b7280;
       }
       #status.ok {
-        color: #2a7;
+        color: #178a52;
       }
       #status.error {
-        color: #c0392b;
+        color: #e5484d;
+      }
+      #retry {
+        margin-top: 6px;
+      }
+      @media (prefers-color-scheme: dark) {
+        #status {
+          color: #9aa1ad;
+        }
+        #status.ok {
+          color: #57d195;
+        }
+        #status.error {
+          color: #ff6369;
+        }
       }
     </style>
   </head>
   <body>
     <div class="main-container">
-      <div class="linemode">
-        <img src="/favicon.ico" /><br /><br />
-        <h1 class="me-title">酷狗扫码登录</h1>
-      </div>
-      <div class="box qrbox">
+      <header class="page-head">
+        <a href="/playlist.html"><img class="brand" src="/favicon.ico" width="44" height="44" alt="返回歌单" /></a>
+        <div class="page-head-text">
+          <h1 class="page-title">酷狗扫码登录</h1>
+        </div>
+      </header>
+
+      <div class="card qrbox">
         <div class="qr" id="qr"><div class="placeholder">正在获取二维码…</div></div>
         <div id="status">请稍候</div>
         <button type="button" id="retry" hidden>重新获取二维码</button>
@@ -79,6 +109,7 @@
           stop();
           setStatus(text, "error");
           retry.hidden = false;
+          retry.style.display = "";
         }
 
         function get(url, done) {
@@ -92,7 +123,11 @@
             } catch (e) {}
             done(xhr.status, data, xhr.responseText);
           };
-          xhr.send();
+          try {
+            xhr.send();
+          } catch (e) {
+            done(0, null, "");
+          }
         }
 
         // 扫码成功后把 userid/token 写进后端配置的 cookie
@@ -139,6 +174,7 @@
         function loadQr() {
           stopped = false;
           retry.hidden = true;
+          retry.style.display = "none";
           qr.innerHTML = '<div class="placeholder">正在获取二维码…</div>';
           setStatus("请稍候");
           get("/kgapi/login/qr", function (code, data) {

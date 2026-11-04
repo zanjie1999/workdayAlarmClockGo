@@ -6,227 +6,283 @@
     <title>我的歌单</title>
     <link rel="stylesheet" href="/static/style.css" />
     <style>
-      .music-shell {
-        display: flex;
-        min-height: 640px;
+      /* 我的歌单：两栏用 float 分栏（最老的写法，iOS 7 / IE8 都认），
+         列表项用绝对定位放封面，不依赖 flex / object-fit / gap */
+      .main-container {
+        max-width: none;
+        width: 100%;
+        min-height: 100vh;
+        padding: 16px;
       }
-      .library-panel,
-      .detail-panel {
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
+      .music-shell {
+        overflow: hidden;
       }
       .library-panel {
-        flex: 1 1 0;
-        min-width: 220px;
+        float: left;
+        width: 37%;
+        padding: 12px;
+        background: #ffffff;
+        border: 1px solid #e3e5ea;
+        border-radius: 14px;
+        -webkit-border-radius: 14px;
       }
       .detail-panel {
-        flex: 2 1 0;
-        margin-left: 18px;
-        padding: 20px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px #00000014;
+        float: left;
+        width: 61%;
+        margin-left: 2%;
+        padding: 14px;
+        background: #ffffff;
+        border: 1px solid #e3e5ea;
+        border-radius: 14px;
+        -webkit-border-radius: 14px;
       }
+      /* 标题栏：图片左浮，标题跟上，返回右浮 */
       .panel-heading {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+      .panel-heading img {
+        float: left;
+        display: block;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: #e9ebf1;
       }
       .panel-heading h2 {
-        margin: 0;
-        color: #2c3e50;
-        font-size: 1.25em;
-        font-weight: 500;
+        float: left;
+        margin: 4px 0 0 8px;
+        font-size: 19px;
+        font-weight: 600;
+        color: #111418;
       }
+      .panel-heading a {
+        float: right;
+        font-size: 16px;
+        line-height: 28px;
+      }
+      #message {
+        margin: 0 0 10px;
+        font-size: 15px;
+        line-height: 1.6;
+        color: #6b7280;
+        white-space: pre-line;
+        word-wrap: break-word;
+      }
+      /* 账号栏 */
       .account {
-        padding: 12px;
-        background: #f2f5f7;
-        border-radius: 6px;
+        overflow: hidden;
         margin-bottom: 12px;
+        padding: 10px;
+        background: #f6f7fa;
+        border-radius: 10px;
+        -webkit-border-radius: 10px;
       }
-      .account button {
-        margin: 0;
-        padding: 6px 10px;
-        min-height: 2em;
+      #accountLabel {
+        float: left;
+        max-width: 55%;
+        font-size: 15px;
+        line-height: 32px;
+        color: #4b5563;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .account input {
-        width: 100%;
-        margin: 8px 0;
+      #loginButton {
+        float: right;
+        padding: 7px 14px;
+        font-size: 15px;
+      }
+      #cookieEditor {
+        clear: both;
+        padding-top: 8px;
+      }
+      #cookieInput {
+        margin: 0 0 8px;
         font-family: monospace;
       }
       .account-actions {
-        display: flex;
+        overflow: hidden;
       }
       .account-actions button {
-        flex: 1;
-      }
-      .account-actions button + button {
-        margin-left: 6px;
+        display: inline-block;
+        margin: 0 6px 0 0;
+        padding: 8px 12px;
+        font-size: 15px;
       }
       .muted {
-        color: #7f8c8d;
-        font-size: 0.88em;
+        margin-top: 8px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #8a919e;
       }
-      .playlist-list,
-      .track-list {
-        overflow-y: auto;
-        border: 1px solid #777777;
-        border-radius: 6px;
-      }
+      /* 歌单列表 */
       .playlist-list {
-        flex: 1;
-        max-height: 570px;
+        -webkit-overflow-scrolling: touch;
       }
       .playlist-item {
+        display: block;
+        position: relative;
         width: 100%;
-        display: flex;
-        align-items: center;
-        padding: 9px;
+        min-height: 68px;
+        margin: 0 0 2px;
+        padding: 8px 10px 8px 68px;
         border: 0;
-        border-bottom: 1px solid #edf0f2;
+        border-radius: 10px;
+        -webkit-border-radius: 10px;
         background: transparent;
+        color: #111418;
         text-align: left;
         cursor: pointer;
-        color: #333;
       }
       .playlist-item:hover,
       .playlist-item.active {
         background: #e9f5fd;
       }
       .playlist-item img {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        margin-top: -26px;
         width: 52px;
         height: 52px;
-        flex: 0 0 52px;
-        object-fit: cover;
-        border-radius: 5px;
-        background: #777777;
-        margin-right: 10px;
-      }
-      .playlist-meta,
-      .track-info {
-        min-width: 0;
+        border-radius: 8px;
+        -webkit-border-radius: 8px;
+        background: #eef0f4;
       }
       .playlist-meta {
-        flex: 1;
+        display: block;
+        padding-top: 4px;
       }
       .playlist-name,
+      .playlist-count,
       .track-name,
-      .track-artists,
-      .playlist-count {
+      .track-artists {
         display: block;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .playlist-name,
-      .track-name {
+      .playlist-name {
+        font-size: 16px;
         font-weight: 500;
-        color: #2c3e50;
+        line-height: 1.4;
+        color: #111418;
       }
-      .playlist-count,
-      .track-artists {
-        color: #7f8c8d;
-        font-size: 0.88em;
+      .playlist-count {
+        font-size: 14px;
+        line-height: 1.5;
+        color: #8a919e;
       }
+      /* 详情头部：封面左浮 */
       .detail-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 16px;
+        overflow: hidden;
+        margin-bottom: 14px;
       }
       .detail-cover {
-        width: 116px;
-        height: 116px;
-        object-fit: cover;
-        border-radius: 7px;
-        background: #777777;
-        margin-right: 16px;
+        float: left;
+        display: block;
+        width: 100px;
+        height: 100px;
+        margin-right: 14px;
+        border-radius: 10px;
+        -webkit-border-radius: 10px;
+        background: #eef0f4;
       }
       .detail-title {
-        min-width: 0;
-        flex: 1;
+        overflow: hidden;
       }
       .detail-title h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        font-weight: 600;
         text-align: left;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        margin: 0 0 6px;
-        font-size: 1.7em;
       }
       .detail-title p {
-        color: #7f8c8d;
-        margin: 0 0 10px;
+        margin: 0 0 6px;
+        font-size: 15px;
+        color: #8a919e;
+      }
+      #playAll {
+        padding: 8px 16px;
+        font-size: 15px;
       }
       .back-button {
         display: none;
         margin: 0 0 12px;
+        padding: 8px 14px;
+        font-size: 15px;
       }
-      .track-list {
-        flex: 1;
-      }
+      /* 歌曲列表：序号/标记左浮，信息区 BFC 吃掉剩余宽度 */
       .track-row {
-        display: flex;
-        align-items: center;
-        padding: 9px 12px;
-        border-bottom: 1px solid #edf0f2;
+        overflow: hidden;
+        padding: 9px 2px;
+        border-top: 1px solid #eef0f4;
+        cursor: pointer;
+      }
+      .track-row:first-child {
+        border-top: 0;
       }
       .track-row:hover {
-        background: #f7fbfd;
-      }
-      .track-play {
-        margin: 0;
-        min-width: 3.6em;
-        padding: 5px 8px;
-      }
-      .track-index {
-        width: 2em;
-        text-align: right;
-        color: #95a5a6;
+        background: #f6f8fc;
       }
       .playing-mark {
-        width: 1.1em;
+        float: left;
+        width: 18px;
+        font-size: 13px;
+        line-height: 1.9;
         color: #3498db;
         visibility: hidden;
       }
       .track-row.playing .playing-mark {
         visibility: visible;
       }
+      .track-index {
+        float: left;
+        width: 30px;
+        font-size: 14px;
+        line-height: 1.75;
+        color: #8a919e;
+        text-align: right;
+      }
       .track-info {
-        flex: 1;
-        margin-left: 10px;
+        /* 必须是块级，overflow 对 inline 元素无效，否则整块会被挤到序号下面 */
+        display: block;
+        overflow: hidden;
+        padding-left: 8px;
+      }
+      .track-name {
+        font-size: 16px;
+        line-height: 1.4;
+        color: #111418;
+      }
+      .track-artists {
+        font-size: 14px;
+        line-height: 1.5;
+        color: #8a919e;
       }
       .empty-state {
-        padding: 35px 18px;
+        padding: 28px 10px;
+        font-size: 15px;
         text-align: center;
-        color: #7f8c8d;
-      }
-      #message {
-        white-space: pre-line;
+        color: #8a919e;
       }
       [hidden] {
         display: none !important;
       }
+      /* 窄屏：两栏收成一栏，靠 JS 切 .mobile-hidden 翻页 */
       @media (max-width: 650px) {
         .main-container {
-          padding: 10px;
-        }
-        .music-shell {
-          display: block;
-          min-height: 0;
+          padding: 12px 10px 28px;
         }
         .library-panel,
         .detail-panel {
-          min-height: calc(100vh - 100px);
-        }
-        .detail-panel {
-          margin-left: 0;
-          padding: 14px;
-        }
-        .playlist-list,
-        .track-list {
-          max-height: none;
+          float: none;
+          width: auto;
+          margin: 0 0 12px;
         }
         .detail-panel.mobile-hidden,
         .library-panel.mobile-hidden {
@@ -236,90 +292,59 @@
           display: inline-block;
         }
         .detail-cover {
-          width: 82px;
-          height: 82px;
+          width: 76px;
+          height: 76px;
+          margin-right: 12px;
         }
         .detail-title h1 {
-          font-size: 1.35em;
+          font-size: 20px;
         }
       }
       @media (prefers-color-scheme: dark) {
-        .account,
-        .detail-panel,
-        .playlist-list,
-        .track-list {
-          background: #2c2c2c;
-        }
-        .account {
-          background: #333;
-        }
-        .playlist-item,
-        .track-row {
-          color: #777777;
-          border-color: #444;
-        }
-        .playlist-item:hover,
-        .playlist-item.active,
-        .track-row:hover {
-          background: #383838;
-        }
-        .panel-heading h2,
-        .track-name,
-        .playlist-name {
-          color: #f0f0f0;
-        }
-      }
-      .main-container {
-        max-width: none;
-        width: 100%;
-        min-height: 100vh;
-      }
-      .music-shell {
-        min-height: 0;
-      }
-      .playlist-list,
-      .track-list {
-        overflow: visible;
-        max-height: none;
-      }
-      .account {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .account > #accountLabel {
-        flex: 1;
-        margin-right: 8px;
-      }
-      .account > #loginButton {
-        margin-left: auto;
-      }
-      .account > #cookieEditor {
-        width: 100%;
-        margin-top: 8px;
-      }
-      .playlist-item {
-        border-radius: 6px;
-        margin: 0 0 2px;
-        border-bottom: 0;
-      }
-      .track-id {
-        display: none;
-      }
-      .track-play {
-        display: none;
-      }
-      .track-row {
-        cursor: pointer;
-      }
-      .playing-mark {
-        width: 0;
-        overflow: visible;
-      }
-      @media (max-width: 650px) {
         .library-panel,
         .detail-panel {
-          min-height: 0;
+          background: #1a1d23;
+          border-color: #2b2f37;
+        }
+        .account {
+          background: #14171c;
+        }
+        #accountLabel,
+        .playlist-item,
+        .playlist-name,
+        .track-name,
+        .detail-title h1,
+        .panel-heading h2 {
+          color: #e9eaee;
+        }
+        .playlist-count,
+        .track-artists,
+        .track-index,
+        .detail-title p,
+        #message,
+        .empty-state,
+        .muted {
+          color: #9aa1ad;
+        }
+        .panel-heading img,
+        .playlist-item img,
+        .detail-cover {
+          background: #22262e;
+        }
+        .playlist-item:hover,
+        .playlist-item.active {
+          background: #1e2a44;
+        }
+        .track-row {
+          border-top-color: #2b2f37;
+        }
+        .track-row:hover {
+          background: #20242b;
+        }
+        #cookieInput {
+          background: #14171c;
+          border-color: #333945;
+          color: #e9eaee;
         }
       }
     </style>

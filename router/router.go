@@ -885,7 +885,16 @@ func Init(urlPrefix string) *gin.Engine {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, p)
+		// App 里没法自己装 Release 的安装包，交给 App 弹自己的更新提示，
+		// 网页这边只负责告诉用户去 App 菜单里点更新
+		if conf.IsApp && p.HasUpdate {
+			app.Send("HASUPDATE")
+		}
+		// 平铺 Plan 的所有字段，额外带上 isApp，前端据此决定提示文案
+		c.JSON(http.StatusOK, struct {
+			*update.Plan
+			IsApp bool `json:"isApp"`
+		}{p, conf.IsApp})
 	})
 
 	// 更新到最新版本：下载替换后重启自己，所以要先把结果回给浏览器
@@ -894,7 +903,9 @@ func Init(urlPrefix string) *gin.Engine {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>"+s+"</h1>"+js2home))
 		}
 		if conf.IsApp {
-			msg("Android 版请在 App 内更新")
+			// App 里装不了 Release 的安装包，让 App 自己弹更新
+			app.Send("HASUPDATE")
+			msg("请到App的菜单中点击「立即更新」来进行更新")
 			return
 		}
 		p, err := update.Check()

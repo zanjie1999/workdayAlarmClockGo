@@ -1,543 +1,1147 @@
-/* 重写一个新的样式吧 20250601 */
+/* 工作咩闹钟 前端样式
 
+   兼容目标：iOS 7 Safari，以及极老浏览器（README 承诺关掉 JS 也能用）
+   因此这里刻意不用：CSS 变量 / flex / grid / gap / @supports / position:sticky /
+   object-fit / 8 位十六进制色。布局只用三样最古老也最稳的东西：
+     display:table + table-cell  → 左标签右控件、等宽分栏
+     float + overflow:hidden     → 等分按钮行、两列复选框、图文混排
+     position:absolute           → 列表缩略图
+   任何一条失效时都只是退化成竖向堆叠，仍然可点可提交。
 
-.main-container {
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 20px;
-    background-color: #ffffff;
-    box-shadow: 0 0 15px rgba(0,0,0,0.05); 
-    border-radius: 8px;
-}
+   分组：1 基础 / 2 骨架 / 3 卡片与行 / 4 控件 / 5 表格与导航 / 6 存量元素 / 7 暗色
+*/
 
-* {
-    margin: 0;
-    padding: 0;
+/* ========== 1 基础 ========== */
+*,
+*:before,
+*:after {
     box-sizing: border-box;
 }
 
+html {
+    -webkit-text-size-adjust: 100%;
+    /* 告诉浏览器页面当前是浅色皮肤：滑块、下拉、滚动条这些原生控件
+       否则会按系统（可能是暗色）画，浅色页上会出现一条深灰的滑块轨道。
+       老浏览器不认这条，直接跳过。 */
+    color-scheme: light;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    line-height: 1.6;
-    color: #333;
-    background-color: #f4f7f6;
-    padding-top: 10px;
-    padding-bottom: 50px;
+    margin: 0;
+    padding: 0;
+    background-color: #f2f3f7;
+    color: #111418;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Helvetica, Arial, sans-serif;
     font-size: 16px;
+    line-height: 1.6;
 }
 
-/* 标题 */
-h1, h3 {
-    color: #2c3e50;
-    margin-bottom: 15px;
-    text-align: center;
-    font-weight: 300;
+/* 旧页面靠 [hidden] + JS 切显隐，必须压过下面给 button 设的 display */
+[hidden] {
+    display: none !important;
 }
 
-h1 {
-    font-size: 2.2em;
-    margin-top: 0;
+h1, h2, h3 {
+    margin: 0;
+    font-weight: 600;
+    line-height: 1.35;
 }
 
-h3 {
-    font-size: 1.6em;
-    border-bottom: 1px solid #bdc3c7;
-    padding-bottom: 8px;
+img {
+    border: 0;
 }
 
-/* 超链接 */
 a {
-    display: inline-block; /* 为了让margin-top和bottom生效 */
     color: #3498db;
     text-decoration: none;
-    margin-top: 10px;
-    margin-bottom: 10px;
-    margin-left: 5px;
-    margin-right: 5px;
-    transition: color 0.2s ease-in-out;
 }
 
-a:hover, a:focus {
-    color: #2980b9;
+a:hover,
+a:focus {
     text-decoration: underline;
 }
 
-/* 表单 box */
-form, .box {
-    background-color: #ffffff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    margin-bottom: 25px;
+a, button, label, select, input {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
-/* 兼容上古浏览器的表单调用api */
-.linemode .linemode form {
-    padding: 0;
-    border-radius: unset;
-    box-shadow: unset;
-    background-color: unset;
-    border:0;
+/* ========== 2 骨架 ========== */
+.main-container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 16px 16px 40px;
 }
 
-/* 居中 */
-.main-container > form {
-    margin-left: auto;
-    margin-right: auto;
+.page-head {
+    overflow: hidden;
+    padding: 2px 2px 12px;
 }
 
-label {
+.page-head .brand {
+    float: left;
     display: block;
-    margin-bottom: 8px;
-    color: #34495e;
-    font-weight: 500;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    -webkit-border-radius: 12px;
+    background-color: #e9ebf1;
 }
 
-/* 输入框 */
-input[type="text"],
-input[type="number"],
-input[type="file"],
-select,
-textarea {
-    /* width: 100%; */
-    padding: 12px 15px;
-    border: 1px solid #dce4ec;
-    border-radius: 6px;
-    font-size: 0.95em;
+.page-head-text {
+    margin-left: 58px;
+}
+
+.page-title .ver {
+    font-weight: 400;
+    font-size: 14px;
+    color: #6b7280;
+    margin-left: 5px;
+}
+
+/* 复选框后面的补充说明 */
+.hint {
+    font-size: 15px;
+    color: #6b7280;
+}
+
+/* ========== 3 卡片与行 ========== */
+.card,
+.box {
+    background-color: #ffffff;
+    border: 1px solid #e3e5ea;
+    border-radius: 14px;
+    -webkit-border-radius: 14px;
+    padding: 14px 16px;
+    margin: 0 0 14px;
+}
+
+/* 只放按钮行时不要内边距 */
+.card-flush {
+    padding: 6px;
+}
+
+.group-title {
+    margin: 0;
+    padding: 8px 0 6px;
+    font-size: 19px;
+    font-weight: 600;
+    color: #111418;
+}
+
+/* 同一张卡片里的分组分隔线 */
+.ui-row + .group-title,
+.ui-hint + .group-title,
+.ui-sep + .group-title {
+    margin-top: 10px;
+    padding-top: 14px;
+    border-top: 1px solid #eef0f4;
+}
+
+.ui-hint {
+    margin: 8px 0 0;
+    font-size: 15px;
+    line-height: 1.75;
+    color: #6b7280;
+}
+
+.ui-hint a {
+    color: #3498db;
+    /* 链接文字别被拆到两行 */
+    white-space: nowrap;
+}
+
+.ui-sep {
+    height: 0;
+    margin: 12px 0;
+    border: 0;
+    border-top: 1px solid #eef0f4;
+}
+
+/* 左标签右控件：table-cell 天然垂直居中，老浏览器退化为上下堆叠 */
+.ui-row {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    margin: 6px 0;
+}
+
+.ui-row > .ui-label {
+    display: table-cell;
+    width: 38%;
+    vertical-align: middle;
+    padding-right: 12px;
+    font-size: 16px;
     line-height: 1.5;
-    color: #2c3e50;
-    background-color: #fdfdfe;
-    margin-bottom: 15px;
-    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    color: #384250;
+}
+
+.ui-row > .ui-ctl {
+    display: table-cell;
+    vertical-align: middle;
+}
+
+.ui-row-top > .ui-label,
+.ui-row-top > .ui-ctl {
+    vertical-align: top;
+}
+
+/* 控件需要整行宽度时用这个：标签在上，控件在下 */
+.ui-row-stack {
+    display: block;
+}
+
+.ui-row-stack > .ui-label {
+    display: block;
+    width: auto;
+    padding: 0;
+    margin-bottom: 8px;
+    font-size: 16px;
+    color: #384250;
+}
+
+.ui-row-stack > .ui-ctl {
+    display: block;
+    width: auto;
+}
+
+.ui-row-end {
+    margin: 12px 0 2px;
+}
+
+.ui-row-end > .ui-ctl {
+    text-align: right;
+}
+
+/* 输入框要和单位文字/小按钮同排时用它，避免 block 级输入框把单位挤到下一行 */
+.ui-inline > .ui-ctl > input[type="text"],
+.ui-inline > .ui-ctl > input[type="number"],
+.ui-inline > .ui-ctl > select {
+    display: inline-block;
+    width: 52%;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.unit {
+    font-size: 15px;
+    color: #6b7280;
+}
+
+/* 没有标签、单独占一行的控件（文件选择） */
+.field {
+    margin: 6px 0;
+}
+
+.btn-below {
+    margin-top: 8px;
+}
+
+/* 播放控制按钮：一行 4 个，跟原版一致，一屏能放完 */
+.btn-row {
+    overflow: hidden;
+    margin: 0 -5px;
+}
+
+.btn-row > form {
+    float: left;
+    width: 25%;
+    padding: 0 5px;
+    margin: 0 0 10px;
+    border: 0;
+    background: transparent;
+}
+
+/* 第一排只有 3 颗（停止 / 暂停 / 恢复播放），宽度跟第二排的 4 颗保持一致，
+   整排居中留白，不拉宽铺满 */
+.btn-row-3 > form {
+    width: 25%;
+}
+
+.btn-row-3 > form:first-child {
+    margin-left: 12.5%;
+}
+
+.btn-row > form > button {
+    display: block;
+    width: 100%;
+    min-height: 46px;
+    padding: 10px 3px;
+    font-size: 15px;
+    white-space: nowrap;
+}
+
+/* ===== 首页的紧凑行：按钮 / 输入框 / 尾部说明 挤在同一行 =====
+   表格布局让中间那格吃掉剩余宽度，两边按内容收缩（width:1% + nowrap 的经典写法），
+   这样一行就能放完，不会像「标签一行、控件一行、按钮一行」那样把页面拉长。 */
+.line-card {
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.line {
+    display: table;
+    width: 100%;
+    /* 必须 fixed：auto 布局下输入框会按内容长度算最小宽度，把整行撑出屏幕 */
+    table-layout: fixed;
+}
+
+.line > .line-btn,
+.line > .line-input,
+.line > .line-tail {
+    display: table-cell;
+    vertical-align: middle;
+}
+
+.line > .line-btn {
+    width: 96px;
+    padding-right: 8px;
+    white-space: nowrap;
+}
+
+.line > .line-input {
+    width: auto;
+}
+
+.line > .line-tail {
+    width: 74px;
+    padding-left: 8px;
+    font-size: 15px;
+    white-space: nowrap;
+    color: #4b5563;
+}
+
+/* 歌单那行尾部是下拉框，要宽一点 */
+.line > .line-tail-wide {
+    width: 108px;
+}
+
+.line > .line-btn > button {
+    display: block;
+    width: 100%;
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
+}
+
+.line > .line-input > input {
+    width: 100%;
+}
+
+.line > .line-tail label {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.line > .line-tail select {
+    width: auto;
+    min-width: 92px;
+}
+
+/* 平板/桌面够宽时恢复成一排 3 个 + 一排 4 个 */
+@media (min-width: 560px) {
+    .btn-row > form {
+        width: 25%;
+    }
+
+    /* 第一排 3 颗用和第二排完全一样的宽度，不跟着撑满 */
+    .btn-row-3 > form {
+        width: 25%;
+    }
+
+    /* 宽屏下标签列固定宽度，短标签不会把控件推得太远 */
+    .ui-row > .ui-label {
+        width: 150px;
+    }
+
+    /* 上下结构的行仍然占满整行 */
+    .ui-row-stack > .ui-label {
+        width: auto;
+    }
+}
+
+.status {
+    background-color: #ffffff;
+    border: 1px solid #e3e5ea;
+    border-radius: 14px;
+    -webkit-border-radius: 14px;
+    padding: 12px 16px;
+    margin: 0 0 14px;
+    min-height: 44px;
+    font-size: 16px;
+    line-height: 1.7;
+    word-wrap: break-word;
+}
+
+.status a {
+    color: #3498db;
+}
+
+/* 没有状态可显示时（比如关了 JS）不要留一张空卡片 */
+.status:empty {
+    display: none;
+}
+
+/* ========== 4 控件 ========== */
+button,
+.btn {
+    display: inline-block;
+    min-height: 46px;
+    margin: 0;
+    padding: 11px 18px;
+    border: 0;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    background-color: #3498db;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+}
+
+button:active,
+.btn:active {
+    opacity: 0.72;
+}
+
+button.ghost,
+.btn-ghost {
+    background-color: #e9ebf1;
+    color: #111418;
+}
+
+button.red,
+.btn-danger,
+.red {
+    background-color: #e5484d;
+    color: #ffffff;
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+}
+
+.btn-sm {
+    padding: 8px 14px;
+    font-size: 15px;
+}
+
+/* 输入框字号必须 >= 16px，否则 iOS 聚焦时会自动放大整个页面 */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="email"],
+textarea {
+    display: block;
+    width: 100%;
+    height: 40px;
+    margin: 0;
+    padding: 0 10px;
+    border: 1px solid #dfe3ea;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    background-color: #fbfbfd;
+    color: #111418;
+    font-family: inherit;
+    font-size: 16px;
+    -webkit-appearance: none;
+    vertical-align: middle;
+}
+
+textarea {
+    height: auto;
+    min-height: 88px;
+    padding: 8px 10px;
+    line-height: 1.5;
+}
+
+select {
+    display: block;
+    width: 100%;
+    height: 40px;
+    max-width: 100%;
+    margin: 0;
+    padding: 0 8px;
+    border: 1px solid #dfe3ea;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    background-color: #fbfbfd;
+    color: #111418;
+    font-family: inherit;
+    font-size: 16px;
+    vertical-align: middle;
+}
+
+input[type="file"] {
+    max-width: 100%;
+    font-family: inherit;
+    font-size: 15px;
 }
 
 input[type="text"]:focus,
+input[type="password"]:focus,
 input[type="number"]:focus,
-input[type="file"]:focus,
-select:focus,
-textarea:focus {
+input[type="search"]:focus,
+input[type="url"]:focus,
+textarea:focus,
+select:focus {
     border-color: #3498db;
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+    background-color: #ffffff;
     outline: none;
 }
 
-input::placeholder, textarea::placeholder {
-    color: #95a5a6;
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+    color: #9aa1ad;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #9aa1ad;
     opacity: 1;
 }
 
-/* 按钮 */
-button {
-    min-height: 2.5em;
-    min-width: 5em;
-    padding: 10px 20px;
-    background-color: #3498db;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 500;
-    transition: background-color 0.2s ease-in-out, transform 0.1s ease;
-    margin: 0.5em;
-}
-
-button:hover {
-    background-color: #2980b9;
-    transform: translateY(-1px);
-}
-
-button:active {
-    transform: translateY(0px);
-}
-
-.red {
-    background-color: #e74c3c;
-}
-.red:hover {
-    background-color: #c0392b;
-}
-
-/* 横向布局 */
-.linemode {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-    /* margin: 1.5em 0; */
-    padding: 15px;
-    /* background-color: #ecf0f1; */
-    border-radius: 8px;
-}
-
-/* 嵌套去除多余大小 */
-.linemode .linemode {
-    padding: 0;
-    border: 0;
-    margin: 0;
-}
-
-/* 直接子元素 */
-.linemode > * {
-    margin: 0.5em;
-}
-
-.linemode h1 {
-    margin: 0.5em;
-    width: 100%;
-    text-align: center;
-}
-
-.me-title {
-    width: auto !important;
-}
-
-.checkbox-group label {
-    display: inline-flex;
-    align-items: center;
-    font-weight: normal;
-    margin-bottom: 0;
-    color: #34495e;
-}
-
-/* 勾选框 */
+/* 复选框统一自绘：22px 方块 + 选中时白勾。
+   勾用内联 SVG 背景图而不是 ::before，旧 WebKit 对 input 的伪元素支持不稳；
+   万一连 SVG 都不认，选中态还有实心蓝底，状态仍然看得出来。 */
 input[type="checkbox"] {
-    width: auto;
-    margin-left: 8px;
-    margin-right: 8px;
-    margin-bottom: 0;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    width: 1.5em;
-    height: 1.5em;
-    border: 1px solid #bdc3c7;
-    border-radius: 3px;
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    margin: 0 8px 0 0;
+    padding: 0;
+    border: 1px solid #c9ced8;
+    border-radius: 6px;
+    -webkit-border-radius: 6px;
+    background-color: #fbfbfd;
+    background-repeat: no-repeat;
+    background-position: center;
     vertical-align: middle;
     cursor: pointer;
-    position: relative;
-    top: -1px;
+    outline: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
 }
 
 input[type="checkbox"]:checked {
-    background-color: #3498db;
     border-color: #3498db;
+    background-color: #3498db;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.4 8.6l3.1 3.1 6.1-6.2'/%3E%3C/svg%3E");
+    background-size: 15px 15px;
 }
 
-input[type="checkbox"]:checked::before {
-    content: '\2714'; /* 对勾符号 */
-    display: block;
-    text-align: center;
-    color: white;
-    font-size: 1.5em;
-    line-height: 1em;
+.check-group {
+    overflow: hidden;
 }
 
-/* 表格 */
-table#alarms {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-    border-radius: 8px;
-    overflow: hidden; /* 为了让border-radius 裁剪th/td */
+.check-group label {
+    float: left;
+    width: 50%;
+    padding-right: 8px;
+    margin: 0 0 10px;
+    font-size: 16px;
+    line-height: 22px;
+    color: #111418;
 }
 
-table#alarms th,
-table#alarms td {
-    border: 1px solid #e0e0e0;
-    padding: 12px 15px;
-    text-align: left;
+input[type="range"] {
+    width: 60%;
+    max-width: 280px;
+    margin: 0 8px 0 0;
     vertical-align: middle;
 }
 
-table#alarms th {
-    background-color: #f2f5f7;
-    color: #34495e;
-    font-weight: 500;
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+/* ========== 5 表格与导航 ========== */
+/* 闹钟表由 JS 拼 innerHTML 生成，只能靠这些结构性选择器 */
+table {
+    border-collapse: collapse;
 }
 
-/* 斑马条纹行 */
-table#alarms tr:nth-child(even) td { 
-    background-color: #fbfcfc;
+#alarms {
+    width: 100%;
+    margin: 0 0 14px;
+    background-color: #ffffff;
+    border: 1px solid #e3e5ea;
+    border-radius: 14px;
+    -webkit-border-radius: 14px;
+    overflow: hidden;
+    font-size: 16px;
 }
 
-table#alarms tr:hover td {
+#alarms th,
+#alarms td {
+    padding: 11px 12px;
+    border-bottom: 1px solid #eef0f4;
+    text-align: left;
+    vertical-align: middle;
+    font-size: 16px;
+}
+
+#alarms th {
+    background-color: #f6f7fa;
+    color: #4b5563;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#alarms tr:last-child td {
+    border-bottom: 0;
+}
+
+/* 表还没被 JS 填内容时不要留一个空壳边框 */
+#alarms:empty {
+    display: none;
+}
+
+/* 单元格里那坨删除按钮的 form 不能再显示成卡片 */
+#alarms form {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+#alarms td button {
+    padding: 8px 14px;
+    font-size: 15px;
+}
+
+.page-nav {
+    overflow: hidden;
+    padding: 2px 0 0;
+}
+
+.page-nav a {
+    float: left;
+    margin: 0 8px 8px 0;
+    padding: 9px 16px;
+    border: 1px solid #e3e5ea;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    background-color: #ffffff;
+    color: #3498db;
+    font-size: 16px;
+    text-decoration: none;
+}
+
+.page-nav a:active {
     background-color: #e9f5fd;
 }
 
-/* 重置表格单元格内的表单样式 */
-table#alarms form { 
-    background-color: transparent;
-    padding: 0;
-    border-radius: 0;
-    box-shadow: none;
-    margin-bottom: 0;
+/* ========== 6 存量元素（内容由 JS 用 innerHTML + <br> 拼出来，必须保持块级流式排版） ========== */
+#info,
+#weatherMsg {
+    margin: 10px 0 0;
+    padding: 12px 14px;
+    background-color: #f6f7fa;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    font-size: 15px;
+    line-height: 1.85;
+    color: #4b5563;
+    word-wrap: break-word;
 }
 
-/* 确保表格内的输入框不受常规表单输入框最大宽度的影响 */
-table#alarms form input[type="text"] { 
-    max-width: none;
-}
-
-
-/* Logo */
-img[src="/favicon.ico"] {
-    margin-bottom: 10px;
-    display: block;
-}
-
-/* 提示信息框 */
-#info, #weatherMsg, #statusMsg {
-    padding: 15px;
-    margin-top: 20px;
-    margin-bottom: 20px;
-    background-color: #e9ecef;
-    border: 1px solid #ced4da;
-    border-radius: 6px;
-    font-size: 0.95em;
-    line-height: 1.7;
-    color: #495057;
-}
-
-/* 为了在不支持css的设正常显示 */
 #info br {
     display: none;
 }
 
 #info a {
     display: block;
-    margin-bottom: 5px;
+    color: #3498db;
 }
 
-.ctrlbox {
-    background-color: #ffffff !important;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    margin-bottom: 25px;
-}
-
-.ctrlbox .linemode {
-    background-color: #ffffff !important;
-}
-
-#playUrlForm,
-#playlistForm,
-#playmusicForm {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5em;
-}
-
-#playUrl,
-#playlistId,
-#playmusicId {
-    flex: 1 1 0;
-    min-width: 8em;
-    width: auto;
-    margin-bottom: 0;
-}
-
-
-@media (max-width: 600px) {
-    body {
-        padding: 0;
-    }
-
-    form {
-        padding: 10px;
-    }
-
-    button {
-        padding: 5px 10px;
-    }
-
-    .linemode {
-        padding: 0;
-    }
-
-    input[type="text"], input[type="number"], input[type="file"] {
-        width: 12em;
-    }
-
-    #playUrl,
-    #playlistId,
-    #playmusicId {
-        width: auto;
-    }
-}
-
-@media (max-width: 500px) {
-    .linemode .linemode form {
-        margin: 0;
-    }
-
-    .main-container {
-        padding: 10px;
-    }
-
-    input[type="text"], input[type="number"], input[type="file"] {
-        width: 9em;
-    }
-
-    #playUrl,
-    #playlistId,
-    #playmusicId {
-        flex-basis: 0;
-        min-width: 7em;
-        width: auto;
-    }
-}
-
-@media (max-width: 420px) {
-    button {
-        min-width: 4em;
-    }
-}
-
+/* ========== 7 暗色 ========== */
 @media (prefers-color-scheme: dark) {
+    html {
+        color-scheme: dark;
+    }
+
     body {
-        color: #e0e0e0;
-        background-color: #121212;
+        background-color: #0f1115;
+        color: #e9eaee;
     }
 
-    .main-container {
-        background-color: #1e1e1e;
+    a,
+    .ui-hint a,
+    .status a,
+    #info a,
+    .page-nav a {
+        color: #1282da;
     }
 
-    h1, h3 {
-        color: #f0f0f0;
-        border-bottom-color: #444;
+    .card,
+    .box,
+    .status,
+    #alarms {
+        background-color: #1a1d23;
+        border-color: #2b2f37;
     }
 
-    a {
-        color: #5dade2;
+    .page-head .brand {
+        background-color: #22262e;
     }
 
-    a:hover, a:focus {
-        color: #85c1e9;
+    .page-title .ver,
+    .ui-hint,
+    .unit,
+    .hint {
+        color: #9aa1ad;
     }
 
-    form, .box {
-        background-color: #2c2c2c;
+    .line > .line-tail {
+        color: #9aa1ad;
     }
 
-    label {
-        color: #d0d0d0;
+    .group-title {
+        color: #e9eaee;
+    }
+
+    .ui-row > .ui-label,
+    .ui-row-stack > .ui-label {
+        color: #c9d0da;
+    }
+
+    .ui-row + .group-title,
+    .ui-hint + .group-title,
+    .ui-sep + .group-title {
+        border-top-color: #2b2f37;
+    }
+
+    .ui-sep {
+        border-top-color: #2b2f37;
+    }
+
+    button,
+    .btn {
+        background-color: #1282da;
+        color: #ffffff;
+    }
+
+    button.ghost,
+    .btn-ghost {
+        background-color: #262a32;
+        color: #e9eaee;
     }
 
     input[type="text"],
+    input[type="password"],
     input[type="number"],
-    input[type="file"],
-    select,
-    textarea {
-        color: #e0e0e0;
-        background-color: #333333;
-        border-color: #555555;
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    textarea,
+    select {
+        border-color: #333945;
+        background-color: #14171c;
+        color: #e9eaee;
     }
 
     input[type="text"]:focus,
+    input[type="password"]:focus,
     input[type="number"]:focus,
-    input[type="file"]:focus,
-    select:focus,
-    textarea:focus {
-        border-color: #5dade2;
-        box-shadow: 0 0 0 2px rgba(93, 173, 226, 0.25);
-        background-color: #3a3a3a;
+    input[type="search"]:focus,
+    input[type="url"]:focus,
+    textarea:focus,
+    select:focus {
+        border-color: #1282da;
+        background-color: #171b21;
     }
 
-    input::placeholder, textarea::placeholder {
-        color: #888888;
+    input::-webkit-input-placeholder,
+    textarea::-webkit-input-placeholder,
+    input::placeholder,
+    textarea::placeholder {
+        color: #6b7280;
     }
 
-    button {
-        background-color: #4a90e2;
-        color: #ffffff;
+    .check-group label {
+        color: #e9eaee;
     }
 
-    button:hover {
-        background-color: #3c7ac0;
-    }
-
-    .red {
-        background-color: #e74c3c;
-        color: white;
-    }
-    .red:hover {
-        background-color: #c0392b;
-    }
-
-    .linemode {
-        /* background-color: #282828; */
-        border: none;
-    }
-
-    .checkbox-group label {
-        color: #d0d0d0;
+    .hint {
+        color: #9aa1ad;
     }
 
     input[type="checkbox"] {
-        border: 1px solid #777777;
-        background-color: #333333;
+        border-color: #3a4049;
+        background-color: #14171c;
     }
 
     input[type="checkbox"]:checked {
-        background-color: #4a90e2;
-        border-color: #4a90e2;
+        border-color: #1282da;
+        background-color: #1282da;
     }
 
-    input[type="checkbox"]:checked::before {
-        color: #ffffff;
+    .page-nav a {
+        background-color: #1a1d23;
+        border-color: #2b2f37;
     }
 
-    table#alarms {
-        border: 1px solid #383838;
+    .page-nav a:active {
+        background-color: #1e2a44;
     }
 
-    table#alarms th,
-    table#alarms td {
-        border: 1px solid #444444;
+    #alarms th {
+        background-color: #20242b;
+        color: #9aa1ad;
     }
 
-    table#alarms th {
-        background-color: #3a3a3a;
-        color: #d0d0d0;
+    #alarms th,
+    #alarms td {
+        border-bottom-color: #2b2f37;
     }
 
-    table#alarms tr:nth-child(even) td {
-        background-color: #2f2f2f;
+    #info,
+    #weatherMsg {
+        background-color: #14171c;
+        color: #b9c0cb;
+    }
+}
+
+/* 窄屏微调：4 键一行时把字号压一点，保证「恢复播放」不换行 */
+@media (max-width: 380px) {
+    .main-container {
+        padding: 12px 10px 32px;
     }
 
-    table#alarms tr:hover td {
-        background-color: #3c3c3c;
+    .card,
+    .box {
+        padding: 12px 12px;
     }
 
-    #info, #weatherMsg, #statusMsg {
-        background-color: #222222;
-        border: none;
-        color: #c0c0c0;
+    .ui-inline > .ui-ctl > input[type="text"],
+    .ui-inline > .ui-ctl > input[type="number"],
+    .ui-inline > .ui-ctl > select {
+        width: 46%;
     }
 
-    #info a {
-        color: #5dade2;
+    input[type="range"] {
+        width: 54%;
     }
-    #info a:hover {
-        color: #85c1e9;
+}
+
+/* ========== 8 现代浏览器增强（flex） ==========
+   上面所有布局都是 table / float 写的，旧浏览器能用但不够灵活。
+   这一段用 @supports 包起来做渐进增强：
+     支持 flex 的浏览器（iOS 9+、Chrome 29+、现代桌面）→ 走 flex，按钮等分、
+       输入框自动吃掉剩余宽度、标签与控件真正垂直居中；
+     不认识 @supports 的浏览器（iOS 7/8、Android 4.x、IE11）→ 整块跳过，
+       完全保持上面的 table/float 布局，一个字节都不受影响。
+   这里只改布局，字号、颜色、文案一律不碰。 */
+@supports (display: flex) {
+
+    /* --- 页头：图标与标题作为一组水平居中 --- */
+    .page-head {
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
-    .ctrlbox {
-        background-color: #2c2c2c !important;
-        border: none;
+    .page-head .brand {
+        float: none;
+        flex: 0 0 auto;
+        margin: 0 12px 0 0;
     }
 
-    .ctrlbox .linemode {
-        background-color: #2c2c2c !important;
-        border: none;
+    .page-head-text {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin-left: 0;
     }
 
+    .page-title {
+        line-height: 1.25;
+    }
+
+    /* --- 状态卡里的文字居中 --- */
+    .status {
+        text-align: center;
+    }
+
+    /* --- 按钮：一行等分、同高同宽、文字水平垂直都居中 --- */
+    button,
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-block {
+        display: flex;
+    }
+
+    /* 每颗按钮占四分之一行宽，所以两排按钮永远一样大；
+       第一排只有 3 颗时靠 justify-content 居中，第二排 4 颗正好铺满 */
+    .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin: 0;
+    }
+
+    .btn-row > form {
+        float: none;
+        display: flex;
+        width: 23%;
+        flex: 0 0 auto;
+        min-width: 0;
+        margin: 0 1% 10px;
+        padding: 0;
+    }
+
+    /* 基础布局里给第一排首颗加了偏移用于居中，flex 下由 justify-content 负责，
+       这里清掉，否则第一排会整体右移 */
+    .btn-row-3 > form:first-child {
+        margin-left: 1%;
+    }
+
+    .btn-row > form > button {
+        display: inline-flex;
+        width: 100%;
+        flex: 1 1 auto;
+        min-height: 44px;
+        padding: 0 4px;
+        font-size: 16px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* 宽屏按钮不跟着屏幕无限变宽：整组最多 520px 居中。
+       每一颗仍然固定占组宽的四分之一，第一排 3 颗按同样宽度居中，
+       所以两排的按钮永远一样大，第一排也不会被拉开铺满 */
+    @media (min-width: 560px) {
+        .btn-row {
+            max-width: 520px;
+            margin: 0 auto;
+        }
+    }
+
+    /* 极窄屏（320 那种）每颗只有 60 多 px，「恢复播放」四个字会顶出按钮，
+       这时把字号和内边距收一点，两排仍然是同一个尺寸 */
+    @media (max-width: 360px) {
+        .btn-row > form > button {
+            padding: 0 2px;
+            font-size: 14px;
+        }
+    }
+
+    /* --- 首页单行表单：按钮自适应内容宽，输入框吃掉剩余宽度 --- */
+    .line {
+        display: flex;
+        align-items: center;
+    }
+
+    .line > .line-btn {
+        display: flex;
+        flex: 0 0 auto;
+        width: auto;
+    }
+
+    .line > .line-btn > button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: auto;
+        min-width: 96px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .line > .line-input {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .line > .line-input > input {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .line > .line-tail {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+        width: auto;
+    }
+
+    /* 「循环 ☐」：文字与勾选框按中心线对齐，勾选框换到文字右边补间距 */
+    .line > .line-tail label {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .line > .line-tail input[type="checkbox"] {
+        margin: 0 0 0 8px;
+    }
+
+    /* --- 左标签右控件：控件那一列才真正居中 --- */
+    .ui-row {
+        display: flex;
+        align-items: center;
+    }
+
+    .ui-row > .ui-label {
+        display: block;
+        flex: 0 0 38%;
+        width: auto;
+        max-width: 38%;
+    }
+
+    .ui-row > .ui-ctl {
+        display: block;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .ui-row-top {
+        align-items: flex-start;
+    }
+
+    /* 上下结构的行保持占满整行 */
+    .ui-row-stack {
+        display: block;
+    }
+
+    .ui-row-stack > .ui-label,
+    .ui-row-stack > .ui-ctl {
+        display: block;
+        flex: 0 0 auto;
+        width: auto;
+        max-width: none;
+    }
+
+    /* 输入框 +「分钟后」这类同一行的组合，交给控件那一格做 flex */
+    .ui-inline > .ui-ctl {
+        display: flex;
+        align-items: center;
+    }
+
+    .ui-inline > .ui-ctl > input[type="text"],
+    .ui-inline > .ui-ctl > input[type="number"],
+    .ui-inline > .ui-ctl > select {
+        width: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        margin-right: 8px;
+    }
+
+    /* 单位文字不能被输入框挤成竖排 */
+    .ui-inline > .ui-ctl > .unit {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    /* --- 复选框组：勾选框与文字按中心线对齐 --- */
+    .check-group {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    .check-group label {
+        float: none;
+        display: flex;
+        align-items: center;
+        flex: 0 0 50%;
+        width: 50%;
+        max-width: 50%;
+    }
+
+    /* --- 底部导航 --- */
+    .page-nav {
+        display: flex;
+        flex-wrap: wrap;
+        margin-right: -8px;
+    }
+
+    .page-nav a {
+        float: none;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    /* 宽屏：标签列改成固定宽度，短标签不会把控件推太远 */
+    @media (min-width: 560px) {
+        .ui-row > .ui-label {
+            flex-basis: 150px;
+            max-width: 150px;
+        }
+    }
+}
+
+/* ========== 9 滑块换掉浏览器默认的艳蓝 ==========
+   浏览器给 range 用的强调色是自家的高饱和蓝，跟这里的天蓝 #3498db 不是一回事。
+   加 accent-color 虽然能改，但 Chrome 会顺带把轨道画成深灰（浅色页上很脏），
+   所以干脆自己画轨道和圆点。
+   用 @supports 兜住：iOS 7/8、老 Android 不认识这个 at-rule，整块跳过，
+   继续用系统原生滑块，照样能拖动。 */
+@supports (-webkit-appearance: none) {
+
+    input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 26px;
+        background-color: transparent;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 3px;
+        background-color: #dfe3ea;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        margin-top: -6px;
+        border: 0;
+        border-radius: 50%;
+        background-color: #3498db;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        input[type="range"]::-webkit-slider-runnable-track {
+            background-color: #2b2f37;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            background-color: #1282da;
+        }
+    }
+}
+
+/* ========== 10 需要独占整行的长标签 ==========
+   「时间（24小时制 时时分分）：」「或者指定日期（月月日日,分隔录入多个）：」
+   这类标签太长，宽屏下和控件并排时会被 38% / 150px 的标签列挤成两三行。
+   给这一行加 .ui-row-stack（标签一行、控件一行），这里用 .ui-row.ui-row-stack
+   把优先级抬到那些宽屏规则之上，保证标签真的占满整行。 */
+.ui-row.ui-row-stack {
+    display: block;
+}
+
+.ui-row.ui-row-stack > .ui-label {
+    display: block;
+    width: auto;
+    max-width: none;
+    flex: 0 0 auto;
+    padding-right: 0;
+    margin-bottom: 8px;
+}
+
+.ui-row.ui-row-stack > .ui-ctl {
+    display: block;
+    width: auto;
+    max-width: none;
+    flex: 0 0 auto;
 }
