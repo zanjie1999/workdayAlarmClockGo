@@ -1318,6 +1318,10 @@ button.cal-nav[disabled] {
         color: #e9eaee;
     }
 
+    .cal-grid td.cal-we {
+        color: #3498db;
+    }
+
     .cal-grid td.cal-sel {
         background-color: #1282da;
         border-color: #1282da;
