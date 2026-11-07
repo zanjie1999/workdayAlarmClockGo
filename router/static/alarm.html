@@ -48,6 +48,33 @@
                 <label class="ui-label" for="datemmdd">或者指定日期（月月日日,分隔录入多个）：</label>
                 <div class="ui-ctl">
                     <input type="text" name="datemmdd" id="datemmdd" placeholder="mmdd,mmdd">
+                    <a href="javascript:;" class="cal-toggle" id="calToggle" onclick="calToggle();return false;">点击展开日历</a>
+                    <div class="cal-panel" id="calPanel" style="display:none">
+                        <div class="cal-head">
+                            <div class="cal-head-side">
+                                <button type="button" class="ghost cal-nav" id="calPrev" onclick="calNav(-1)">上月</button>
+                            </div>
+                            <div class="cal-head-title" id="calTitle">-</div>
+                            <div class="cal-head-side cal-head-side-r">
+                                <button type="button" class="ghost cal-nav" id="calNext" onclick="calNav(1)">下月</button>
+                            </div>
+                        </div>
+                        <table class="cal-grid">
+                            <thead>
+                                <tr>
+                                    <th class="cal-we">日</th><th>一</th><th>二</th><th>三</th>
+                                    <th>四</th><th>五</th><th class="cal-we">六</th>
+                                </tr>
+                            </thead>
+                            <tbody id="calBody"></tbody>
+                        </table>
+                        <div class="cal-foot">
+                            <button type="button" class="ghost" onclick="calInvert()">反选</button>
+                            <button type="button" class="ghost" onclick="calClear()">清空</button>
+                            <span class="cal-count" id="calCount"></span>
+                        </div>
+                        <p class="cal-note" id="calNote"></p>
+                    </div>
                 </div>
             </div>
             <input type="hidden" name="type" id="alarmtype">
@@ -280,8 +307,9 @@
                 checkboxes[i].checked = false;
             }
 
-            // 如果有日期输入，添加到值中
+            // 如果有日期输入，添加到值中（提交以输入框为准，先规范化成 mmdd 四位）
             var dateInput = document.querySelector('input[name="datemmdd"]');
+            dateInput.value = calNormalize(dateInput.value);
             if (dateInput.value) {
                 selectedValues.push(dateInput.value);
                 dateInput.value = '';
@@ -289,6 +317,8 @@
 
             // 将值用逗号连接并设置到隐藏字段
             document.getElementById('alarmtype').value = selectedValues.join(',');
+            // /addAlarm 会 history.go(-1) 回来，可能命中 bfcache，把日历状态一起清掉
+            calReset();
         });
         function getCityCode() {
             var xhr = new XMLHttpRequest();
@@ -301,6 +331,278 @@
             }
             xhr.send();
         }
+        /* ---------- 指定日期日历（纯 ES5，兼容 iOS 7） ----------
+           选中的日期一律用 4 位 MMDD 存，和 Go 侧 now.Format("0102") 对齐 */
+        var calSel = {};        // {'1105': true} 以 MMDD 为 key，天生去重
+        var calLockMonth = 0;   // 0 = 未锁月，点了第一个日期后锁定
+        var calLockYear = 0;    // 锁定的年份，只影响标题显示
+        var calViewYear = 0;
+        var calViewMonth = 0;   // 1-12（Date.getMonth() 是 0-11）
+        var calOpen = false;
+
+        function calPad2(n) {
+            return n < 10 ? '0' + n : '' + n;
+        }
+
+        function calDaysInMonth(y, m) {
+            if (m === 2) {
+                return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 29 : 28;
+            }
+            if (m === 4 || m === 6 || m === 9 || m === 11) { return 30; }
+            return 31;
+        }
+
+        // 文本 -> 去重排序后的合法 MMDD 数组
+        function calParse(s) {
+            if (!s) { return []; }
+            // 所有非数字（，、/ - 空格 ； 等）统一当分隔符，顺带省掉 trim
+            var parts = String(s).replace(/[^0-9]+/g, ',').split(',');
+            var seen = {};
+            var out = [];
+            for (var i = 0; i < parts.length; i++) {
+                var t = parts[i];
+                if (!t) { continue; }
+                if (t.length === 8) { t = t.substr(4); }        // 20260803 -> 0803
+                else if (t.length === 3) { t = '0' + t; }       // 803 -> 0803
+                if (t.length !== 4) { continue; }               // 1-2 位分不清是月还是日，丢弃
+                var mm = parseInt(t.substr(0, 2), 10);          // radix 必填，老浏览器会把 '08' 当八进制
+                var dd = parseInt(t.substr(2, 2), 10);
+                if (mm < 1 || mm > 12) { continue; }
+                if (dd < 1 || dd > calDaysInMonth(2000, mm)) { continue; }  // 按闰年校验，允许 0229
+                if (seen[t]) { continue; }
+                seen[t] = true;
+                out.push(t);
+            }
+            out.sort();     // 4 位定长，字典序即时间序
+            return out;
+        }
+
+        function calNormalize(s) {
+            return calParse(s).join(',');
+        }
+
+        function calCount() {
+            return Object.keys(calSel).length;
+        }
+
+        // 这个 MMDD 该落在哪一年显示：平年装不下 0229 就往后找闰年
+        function calYearFor(m, maxDay) {
+            var y = new Date().getFullYear();
+            for (var i = 0; i < 8; i++) {
+                if (maxDay <= calDaysInMonth(y, m)) { return y; }
+                y++;
+            }
+            return new Date().getFullYear();
+        }
+
+        function calRender() {
+            var y = calViewYear, m = calViewMonth;
+            var days = calDaysInMonth(y, m);
+            var lead = new Date(y, m - 1, 1).getDay();  // 0=周日，正好对上首列表头
+            var pre = calPad2(m);
+            var html = '';
+            var now = new Date(), tY = now.getFullYear(), tM = now.getMonth() + 1, tD = now.getDate();
+            // 固定 6 行 = 42 格，翻月时面板高度恒定，按钮不会在手指底下跳走
+            for (var r = 0; r < 6; r++) {
+                html += '<tr>';
+                for (var c = 0; c < 7; c++) {
+                    var d = r * 7 + c - lead + 1;
+                    if (d < 1 || d > days) { html += '<td class="cal-pad"></td>'; continue; }
+                    var mmdd = pre + calPad2(d), cls = 'cal-day';
+                    if (c === 0 || c === 6) { cls += ' cal-we'; }
+                    if (calSel[mmdd]) { cls += ' cal-sel'; }
+                    if (y === tY && m === tM && d === tD) { cls += ' cal-today'; }
+                    html += '<td class="' + cls + '" data-mmdd="' + mmdd + '">' + d + '</td>';
+                }
+                html += '</tr>';
+            }
+            document.getElementById('calBody').innerHTML = html;
+            document.getElementById('calTitle').innerHTML = y + '年' + m + '月';
+        }
+
+        function calWriteBack() {
+            document.getElementById('datemmdd').value = Object.keys(calSel).sort().join(',');
+        }
+
+        function calUpdateNav() {
+            var locked = calLockMonth > 0;
+            document.getElementById('calPrev').disabled = locked;
+            document.getElementById('calNext').disabled = locked;
+        }
+
+        function calUpdateCount() {
+            var c = calCount();
+            document.getElementById('calCount').innerHTML = c > 0 ? '已选 ' + c + ' 天' : '';
+        }
+
+        function calSetNotice(msg) {
+            document.getElementById('calNote').innerHTML = msg || '';
+        }
+
+        // 只重画，不写回输入框（手输同步时用，避免自己改自己）
+        function calRefresh() {
+            calRender();
+            calUpdateNav();
+            calUpdateCount();
+            document.getElementById('calToggle').innerHTML = calOpen ? '收起日历' : '点击展开日历';
+        }
+
+        function calAfterChange() {
+            calWriteBack();
+            calRefresh();
+        }
+
+        function calPick(mmdd) {
+            var m = parseInt(mmdd.substr(0, 2), 10);
+            if (!calLockMonth) {
+                calLockMonth = m;
+                calLockYear = calViewYear;
+            }
+            if (m !== calLockMonth) { return; }     // 双保险：锁月后不该出现别的月份
+            if (calSel[mmdd]) { delete calSel[mmdd]; } else { calSel[mmdd] = true; }
+            if (calCount() === 0) { calLockMonth = 0; }     // 全取消即自动解锁
+            calSetNotice('');
+            calAfterChange();
+        }
+
+        function calInvert() {
+            var days = calDaysInMonth(calViewYear, calViewMonth);
+            var pre = calPad2(calViewMonth);
+            for (var d = 1; d <= days; d++) {
+                var k = pre + calPad2(d);
+                if (calSel[k]) { delete calSel[k]; } else { calSel[k] = true; }
+            }
+            if (calCount() > 0) {
+                calLockMonth = calViewMonth;
+                calLockYear = calViewYear;
+            } else {
+                calLockMonth = 0;
+            }
+            calSetNotice('');
+            calAfterChange();
+        }
+
+        function calClear() {
+            document.getElementById('datemmdd').value = '';
+            calSel = {};
+            calLockMonth = 0;
+            calLockYear = 0;
+            calSetNotice('');
+            calAfterChange();
+        }
+
+        // 清空选择、解锁、收起面板（提交后也调，防 bfcache 带着旧高亮回来）
+        function calReset() {
+            var now = new Date();
+            calSel = {};
+            calLockMonth = 0;
+            calLockYear = 0;
+            calOpen = false;
+            calViewYear = now.getFullYear();
+            calViewMonth = now.getMonth() + 1;
+            document.getElementById('datemmdd').value = '';
+            document.getElementById('calPanel').style.display = 'none';
+            calSetNotice('');
+            calRefresh();
+        }
+
+        function calNav(step) {
+            if (calLockMonth) { return; }
+            var y = calViewYear, m = calViewMonth + step;
+            if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+            if (y < 1970 || y > 2100) { return; }
+            calViewYear = y;
+            calViewMonth = m;
+            calRefresh();
+        }
+
+        function calToggle() {
+            calOpen = !calOpen;
+            document.getElementById('calPanel').style.display = calOpen ? 'block' : 'none';
+            if (calOpen) {
+                var inp = document.getElementById('datemmdd');
+                calSyncText(inp.value);
+                if (inp.blur) { inp.blur(); }   // 先收键盘，免得第一次点击被系统吞掉
+            }
+            calRefresh();
+        }
+
+        // 从输入框文本反推状态：只读，绝不回写
+        function calSyncText(s) {
+            var list = calParse(s);
+            calSel = {};
+            if (!list.length) {
+                calLockMonth = 0;
+                calLockYear = 0;
+                calSetNotice('');
+                calRefresh();
+                return;
+            }
+            var m0 = parseInt(list[0].substr(0, 2), 10);
+            var same = true, maxDay = 0;
+            for (var i = 0; i < list.length; i++) {
+                if (parseInt(list[i].substr(0, 2), 10) !== m0) { same = false; }
+                var d = parseInt(list[i].substr(2, 2), 10);
+                if (d > maxDay) { maxDay = d; }
+            }
+            if (!same) {
+                // 日历一次只能显示一个月：不动输入框，只提示，避免静默抹掉别的月份
+                calLockMonth = 0;
+                calLockYear = 0;
+                calViewYear = new Date().getFullYear();
+                calViewMonth = m0;
+                calSetNotice('输入里有多个不同月份，日历一次只能显示一个月；点日历会用日历的选择覆盖输入框');
+                calRefresh();
+                return;
+            }
+            for (var j = 0; j < list.length; j++) { calSel[list[j]] = true; }
+            calLockMonth = m0;
+            calLockYear = calYearFor(m0, maxDay);
+            calViewYear = calLockYear;
+            calViewMonth = m0;
+            calSetNotice('');
+            calRefresh();
+        }
+
+        function calOnInput(e) {
+            var inp = document.getElementById('datemmdd');
+            var type = e && e.type, bad = '';
+            if (type === 'blur' || type === 'change') {
+                var norm = calNormalize(inp.value);
+                if (norm) { inp.value = norm; }
+                else if (inp.value) { bad = '无法识别的日期（需要 mmdd 四位）：' + inp.value; }
+            }
+            if (!calOpen) { return; }
+            calSyncText(inp.value);
+            if (bad) { calSetNotice(bad); }
+        }
+
+        function calBodyClick(e) {
+            var ev = e || window.event;
+            var t = ev.target || ev.srcElement;
+            while (t && t !== this) {
+                if (t.tagName && t.tagName.toUpperCase() === 'TD') {
+                    var mmdd = t.getAttribute('data-mmdd');
+                    if (mmdd) { calPick(mmdd); }
+                    return;
+                }
+                t = t.parentNode;
+            }
+        }
+
+        function calInit() {
+            var now = new Date();
+            calViewYear = now.getFullYear();
+            calViewMonth = now.getMonth() + 1;
+            document.getElementById('calBody').addEventListener('click', calBodyClick, false);
+            var inp = document.getElementById('datemmdd');
+            inp.addEventListener('input', calOnInput, false);
+            inp.addEventListener('change', calOnInput, false);
+            inp.addEventListener('blur', calOnInput, false);
+            calRefresh();
+        }
+        calInit();
+
         // 打开页面后请求cfg.json，获取闹钟列表
         function getAlarms() {
             var xhr = new XMLHttpRequest();

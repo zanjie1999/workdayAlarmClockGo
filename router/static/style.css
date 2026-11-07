@@ -1145,3 +1145,199 @@ table {
     max-width: none;
     flex: 0 0 auto;
 }
+
+/* ========== 11 简易日历（指定日期用） ==========
+   依旧是老三样：table 排 7 列、float 排按钮行。
+   这里的暗色块放在文件最后，靠「同特异性 + 源码在后」覆盖上面的浅色，
+   所以新增选择器一律用 class，不要用 id，否则会压过暗色规则。 */
+.cal-toggle {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 15px;
+    color: #3498db;
+    text-decoration: none;
+}
+
+.cal-panel {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid #e3e5ea;
+    border-radius: 10px;
+    -webkit-border-radius: 10px;
+    background-color: #fbfbfd;
+}
+
+/* 头部：左右按钮定宽，标题居中吃掉剩余宽度 */
+.cal-head {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.cal-head-side,
+.cal-head-title {
+    display: table-cell;
+    vertical-align: middle;
+}
+
+.cal-head-side {
+    width: 66px;
+}
+
+.cal-head-side-r {
+    text-align: right;
+}
+
+.cal-head-title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111418;
+    white-space: nowrap;
+}
+
+/* 压掉全局 button 的 46px 最小高，日历头才不至于占掉半屏 */
+button.cal-nav {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+button.cal-nav[disabled] {
+    opacity: 0.4;
+}
+
+.cal-grid {
+    width: 100%;
+    margin: 4px 0 0;
+    /* 7 列等宽，两位数不会把列撑歪 */
+    table-layout: fixed;
+    /* 必须：全局 table 是 collapse，collapse 下 td 的圆角不裁切 */
+    border-collapse: separate;
+    border-spacing: 2px;
+    -webkit-border-horizontal-spacing: 2px;
+    -webkit-border-vertical-spacing: 2px;
+}
+
+.cal-grid th {
+    padding: 2px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    text-align: center;
+}
+
+.cal-grid td.cal-day,
+.cal-grid td.cal-pad {
+    height: 36px;
+    line-height: 34px;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 16px;
+}
+
+.cal-grid td.cal-day {
+    color: #111418;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    -webkit-border-radius: 8px;
+    /* iOS 7 只给「看起来可点」的元素派发冒泡 click，这行是功能不是装饰 */
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    -webkit-user-select: none;
+}
+
+.cal-grid td.cal-we {
+    color: #3498db;
+}
+
+.cal-grid td.cal-sel {
+    background-color: #3498db;
+    border-color: #3498db;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.cal-grid td.cal-today {
+    border-color: #3498db;
+}
+
+.cal-grid td.cal-sel.cal-today {
+    border-color: #ffffff;
+}
+
+.cal-foot {
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.cal-foot button {
+    float: left;
+    min-height: 34px;
+    margin-right: 8px;
+    padding: 6px 14px;
+    font-size: 15px;
+}
+
+.cal-count {
+    float: right;
+    font-size: 14px;
+    line-height: 34px;
+    color: #6b7280;
+    white-space: nowrap;
+}
+
+.cal-note {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #c0392b;
+}
+
+.cal-note:empty {
+    display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .cal-panel {
+        background-color: #14171c;
+        border-color: #2b2f37;
+    }
+
+    .cal-head-title {
+        color: #e9eaee;
+    }
+
+    .cal-grid th {
+        color: #9aa1ad;
+    }
+
+    .cal-grid td.cal-day {
+        color: #e9eaee;
+    }
+
+    .cal-grid td.cal-sel {
+        background-color: #1282da;
+        border-color: #1282da;
+        color: #ffffff;
+    }
+
+    .cal-grid td.cal-today {
+        border-color: #1282da;
+    }
+
+    .cal-grid td.cal-sel.cal-today {
+        border-color: #ffffff;
+    }
+
+    .cal-count {
+        color: #9aa1ad;
+    }
+
+    .cal-note {
+        color: #e5484d;
+    }
+}
+
