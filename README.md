@@ -8,7 +8,7 @@
 
 这是一个服务端程序，交互将通过8080端口的Web服务在浏览器完成，尽量减少ram占用，以便运行在骁龙210的随身WiFi上（包括Android端仅占用47M的Ram），使用蓝牙音响播放闹钟声音
 
-<img width="766" height="944"  src="https://github.com/user-attachments/assets/1674c248-de45-44a3-9696-8791179c0667" />
+<img width="700" alt="image" src="https://github.com/user-attachments/assets/f4a2a611-f8cc-4765-8978-5b811d867dda" />
 
 这个程序将解决传统闹钟的几个问题：
 1. 在节假日调休的情况下，该响的时候不响不该响的时候响
@@ -19,6 +19,121 @@
 6. 随机播放重复概率过高
 7. 无法设置指定日期的闹钟
 8. 无大小周支持
+
+## 功能介绍
+### 闹钟设置
+设置选项都很直观，如果没搞懂，可以看[哔哩哔哩 郑羊羊 的视频](https://space.bilibili.com/9992930/lists/9305328)  
+<img width="700" alt="image" src="https://github.com/user-attachments/assets/30dd302e-1fd0-4f35-aa72-2d2386aa485f" />
+
+#### 关于“上一首”按钮的特殊说明
+在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
+在有播放记录时，会播放上一首，再按一次播放设置的默认歌单，再按一次则随机播放  
+在Android支持多媒体物理按键控制，逻辑相同  
+其中一说宝宝的鼻子是停止按钮，叮咚play的勿扰按钮短按暂停长按停止
+
+#### 天气播报
+会在每次闹钟停止后（手动停止或播放完自动停止），播报今天的天气和前一天的温度差，以便决定穿什么衣服  
+你需要手动在闹钟设置中输入天气代码的框中输入你的区/市，并点击右边的查询按钮，保存设置后尝试点击“测试获取天气”来检查是否能正常使用  
+因配额资源有限，请勿将我的语音合成api用于其他用途，谢谢合作，否则将会取消这一功能
+
+#### 音频缓存
+可以在没有网络的时候播放之前播放过的歌曲  
+设置了缓存目录后，并且重启启动后，可以在 `/music` 对缓存进行浏览  
+可以在闹钟设置中配置缓存上限（默认1024MB），如果缓存达到上限，会先删除最旧的一个mp3
+歌单会优先使用网络的，歌曲则会优先播放缓存的，在切换音质后需要清理缓存才能播放目标音质的音频  
+另外增加了 `/sdcard` 路径，用于访问Android设备的sdcard中的文件  
+
+#### 播放本地文件
+歌单输入框除了可以填歌单id，也可以填 `./` 或 `/` 开头的路径（Windows 盘符如 `C:/` 也行）
+填目录就扫描该目录（含子目录）下的所有文件当作歌单，填文件路径就只放那一个
+
+#### 全屋同步播放
+实现了一个很酷的功能，可以让局域网所有工作咩闹钟设备同时放一样的音乐，也可以叫UDP广播群控  
+只需要在闹钟设置中想作为主机的设备上勾选 `全屋同步播放主机` 即刻  
+由于配置不一样的配置的设备处理的速度不一样，所以你可能需要在闹钟设置中配置 `同步偏移`  
+单位是ms毫秒（1秒=1000毫秒），数字越大，将越早开始播放，数字越小（可以为负数）  
+说小米垃圾是有原因的，os1系统的k60pro播放音频的速度居然比骁龙625 miui10的红米note4x还慢了710ms  
+
+### 我的歌单
+可以用Cookie登录各平台账户，实现点击即放的播放控制  
+<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/40ef7d94-d976-49d2-bcc7-8df90c97ad1e" />
+
+### WebDAV
+`/music` 和 `/sdcard` 支持简易WebDAV，可以当小网盘用，直接挂载后拖文件进去  
+支持 `OPTIONS`、`PROPFIND`、`MKCOL`、`PUT`、`DELETE`、`MOVE`、`COPY`  
+```
+# 上传
+curl -T 歌曲.mp3 http://127.0.0.1:8080/music/歌曲.mp3
+# 删除
+curl -X DELETE http://127.0.0.1:8080/music/歌曲.mp3
+# 建目录
+curl -X MKCOL http://127.0.0.1:8080/music/sub/
+# 重命名/移动（Windows新建文件夹很抽象，是先创建再重命名的）
+curl -X MOVE -H "Destination: http://127.0.0.1:8080/music/新名字.mp3" http://127.0.0.1:8080/music/歌曲.mp3
+# 复制
+curl -X COPY -H "Destination: http://127.0.0.1:8080/music/歌曲2.mp3" http://127.0.0.1:8080/music/歌曲.mp3
+# 看目录（Depth 0 只看自己，Depth 1 列一层）
+curl -X PROPFIND -H "Depth: 1" http://127.0.0.1:8080/music/
+```  
+Windows可以直接在资源管理器地址栏输入比如 `\\192.168.1.152@8080\music` 访问，macOS等则需要挂载 `http://192.168.1.152:8080/music` 映射网络驱动器时也需要使用http开头的
+
+注意写入 `/music` 的文件同样参与缓存上限淘汰，可能被自动清理  
+
+### Linux和Android端当电脑的音箱(就像AirPlay那样)
+Linux 上可以向 `/aplay` 发送原始 `s16le` PCM 音频，支持`POST`和`PUT`和`GET`。并用`aplay`播放。默认格式为44100Hz、双声道，也可通过 `rate` 和 `channels` 参数指定
+
+Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackPost)  
+macOS直接用上位机 [loopbackPost-mac]([https://github.com/zanjie1999/loopbackPost](https://github.com/zanjie1999/loopbackPost-mac))  
+延迟比雷鸟显示器的耳机孔延迟还低  
+
+或者用ffmpeg和curl（采集设备名按本机情况替换）：
+```cmd
+ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8080/aplay?rate=44100&channels=2"
+```
+
+### Linux和Android端当电脑的显示器
+其实就是把画面刷到fb0，简单粗暴，无需任何依赖就能直接显示，缺点是没有硬件加速，比较吃音箱CPU，支持双缓冲，小分辨率下丝滑  
+只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
+
+如果设备的fb尺寸大于屏幕尺寸，可以用 `FB_WIDTH` 和 `FB_HEIGHT` 覆盖分辨率。例如fb0为1280x600但屏幕为1280x480时，可设置：  
+```sh
+FB_WIDTH=1280 FB_HEIGHT=480 ./workdayAlarmClock-linux-arm
+```
+显示端mjpg与fb尺寸相同将直接显示，否则将居中显示  
+
+Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
+无需计算再手动计算分辨率，延迟更低（本来还有虚拟显示器的设计但又懒得写了，你可以自己用lddDisplay虚拟一个）  
+
+<details>
+<summary>或者用ffmpeg和curl</summary>
+    
+在macOS下，你需要先获取当前要采集设备的列表：  
+```
+ffmpeg -f avfoundation -list_devices true -i ""
+```
+然后找到你要的设备，换掉-i的4，以及改下这里272x272的分辨率和ip：  
+```
+ffmpeg -f avfoundation -thread_queue_size 128 -framerate 10 -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -i "4:none" -vf "scale=272:272:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=272:272:(ow-iw)/2:(oh-ih)/2:black" -vsync passthrough -q:v 8 -flush_packets 1 -avioflags direct -f mpjpeg pipe:1 | curl --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.165:8880/fb"
+```
+
+在Windows下：
+使用DXGI采集 `output_idx=0` 就是第1个显示器，有两处分辨率需要修改 `scale=480:320` 和 `pad=480:320`  
+
+比如任你说音箱这个480x320的屏:  
+```
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
+```
+比如AKU的屏128x160转90度
+```
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=160:128:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=160:128:(ow-iw)/2:(oh-ih)/2:black,transpose=2" -q:v 8 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.144/fb"
+```
+比如Kindle Voyage等高分屏机器
+```
+ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
+```
+
+</details>
+
 
 ## 如何使用
 #### 如果你想在没有nohup的系统下在后台运行，你需要这样启动，不然会被系统杀掉
@@ -127,120 +242,6 @@ checkupdate
 # 更新到最新版本（下载替换后自动重启）
 update
 ```
-
-### Linux端作为电脑的音箱(就像AirPlay那样)
-Linux 上可以向 `/aplay` 发送原始 `s16le` PCM 音频，支持`POST`和`PUT`和`GET`。并用`aplay`播放。默认格式为44100Hz、双声道，也可通过 `rate` 和 `channels` 参数指定
-
-Windows直接用上位机 [loopbackPost](https://github.com/zanjie1999/loopbackPost)  
-延迟比雷鸟显示器的耳机孔延迟还低  
-
-或者用ffmpeg和curl（采集设备名按本机情况替换）：
-```cmd
-ffmpeg -f dshow -i audio="立体声混音 (Realtek High Definition Audio)" -acodec pcm_s16le -ar 44100 -ac 2 -f s16le - | curl.exe -T - "http://192.168.1.147:8080/aplay?rate=44100&channels=2"
-```
-
-### Linux端作为电脑的显示器
-其实就是把画面刷到fb0，简单粗暴，无需任何依赖就能直接显示，缺点是没有硬件加速，比较吃音箱CPU，支持双缓冲，小分辨率下丝滑  
-只要把mjpg的画面推到 `/fb` 就可以了，fb0的详细信息可以通过 `/fbinfo` 获取到  
-
-如果设备的fb尺寸大于屏幕尺寸，可以用 `FB_WIDTH` 和 `FB_HEIGHT` 覆盖分辨率。例如fb0为1280x600但屏幕为1280x480时，可设置：  
-```sh
-FB_WIDTH=1280 FB_HEIGHT=480 ./workdayAlarmClock-linux-arm
-```
-显示端mjpg与fb尺寸相同将直接显示，否则将居中显示  
-
-Windows直接用上位机 [displayPost](https://github.com/zanjie1999/displayPost)  
-无需计算再手动计算分辨率，延迟更低（本来还有虚拟显示器的设计但又懒得写了，你可以自己用lddDisplay虚拟一个）  
-
-<details>
-<summary>或者用ffmpeg和curl</summary>
-    
-在macOS下，你需要先获取当前要采集设备的列表：  
-```
-ffmpeg -f avfoundation -list_devices true -i ""
-```
-然后找到你要的设备，换掉-i的4，以及改下这里272x272的分辨率和ip：  
-```
-ffmpeg -f avfoundation -thread_queue_size 128 -framerate 10 -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -i "4:none" -vf "scale=272:272:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=272:272:(ow-iw)/2:(oh-ih)/2:black" -vsync passthrough -q:v 8 -flush_packets 1 -avioflags direct -f mpjpeg pipe:1 | curl --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.165:8880/fb"
-```
-
-在Windows下：
-使用DXGI采集 `output_idx=0` 就是第1个显示器，有两处分辨率需要修改 `scale=480:320` 和 `pad=480:320`  
-
-比如任你说音箱这个480x320的屏:  
-```
-ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=480:320:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=480:320:(ow-iw)/2:(oh-ih)/2:black" -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.154/fb"
-```
-比如AKU的屏128x160转90度
-```
-ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,scale=160:128:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=160:128:(ow-iw)/2:(oh-ih)/2:black,transpose=2" -q:v 8 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.1.144/fb"
-```
-比如Kindle Voyage等高分屏机器
-```
-ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownload,format=bgra,transpose=1,scale=1072:1448:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1072:1448:(ow-iw)/2:(oh-ih)/2:black,format=gray" -pix_fmt gray -q:v 8 -flush_packets 1 -f mpjpeg pipe:1 | curl.exe --http1.1 -H "Content-Type: multipart/x-mixed-replace; boundary=ffmpeg" -T - "http://192.168.2.195:8080/fb"
-```
-
-</details>
-    
-### 关于“上一首”按钮的特殊说明
-在没有播放记录时，会播放设置的默认歌单，再按一次则随机播放  
-在有播放记录时，会播放上一首，再按一次播放设置的默认歌单，再按一次则随机播放  
-在Android支持多媒体物理按键控制，逻辑相同  
-其中一说宝宝的鼻子是停止按钮，叮咚play的勿扰按钮短按暂停长按停止
-
-## 闹钟设置
-设置选项都很直观，如果没搞懂，可以看哔哩哔哩 郑羊羊 的视频  
-<img width="735" height="925" alt="image" src="https://github.com/user-attachments/assets/b9476533-649f-4f5d-b907-45ef098741c6" />
-
-### 天气播报
-会在每次闹钟停止后（手动停止或播放完自动停止），播报今天的天气和前一天的温度差，以便决定穿什么衣服  
-你需要手动在闹钟设置中输入天气代码的框中输入你的区/市，并点击右边的查询按钮，保存设置后尝试点击“测试获取天气”来检查是否能正常使用  
-因配额资源有限，请勿将我的语音合成api用于其他用途，谢谢合作，否则将会取消这一功能
-
-### 音频缓存
-可以在没有网络的时候播放之前播放过的歌曲  
-设置了缓存目录后，并且重启启动后，可以在 `/music` 对缓存进行浏览  
-可以在闹钟设置中配置缓存上限（默认1024MB），如果缓存达到上限，会先删除最旧的一个mp3
-歌单会优先使用网络的，歌曲则会优先播放缓存的，在切换音质后需要清理缓存才能播放目标音质的音频  
-另外增加了 `/sdcard` 路径，用于访问Android设备的sdcard中的文件  
-
-### WebDAV
-`/music` 和 `/sdcard` 支持简易WebDAV，可以当小网盘用，直接挂载后拖文件进去  
-支持 `OPTIONS`、`PROPFIND`、`MKCOL`、`PUT`、`DELETE`、`MOVE`、`COPY`  
-```
-# 上传
-curl -T 歌曲.mp3 http://127.0.0.1:8080/music/歌曲.mp3
-# 删除
-curl -X DELETE http://127.0.0.1:8080/music/歌曲.mp3
-# 建目录
-curl -X MKCOL http://127.0.0.1:8080/music/sub/
-# 重命名/移动（Windows新建文件夹很抽象，是先创建再重命名的）
-curl -X MOVE -H "Destination: http://127.0.0.1:8080/music/新名字.mp3" http://127.0.0.1:8080/music/歌曲.mp3
-# 复制
-curl -X COPY -H "Destination: http://127.0.0.1:8080/music/歌曲2.mp3" http://127.0.0.1:8080/music/歌曲.mp3
-# 看目录（Depth 0 只看自己，Depth 1 列一层）
-curl -X PROPFIND -H "Depth: 1" http://127.0.0.1:8080/music/
-```  
-Windows可以直接在资源管理器地址栏输入比如 `\\192.168.1.152@8080\music` 访问，macOS等则需要挂载 `http://192.168.1.152:8080/music` 映射网络驱动器时也需要使用http开头的
-
-注意写入 `/music` 的文件同样参与缓存上限淘汰，可能被自动清理  
-
-### 播放本地文件
-歌单输入框除了可以填歌单id，也可以填 `./` 或 `/` 开头的路径（Windows 盘符如 `C:/` 也行）
-填目录就扫描该目录（含子目录）下的所有文件当作歌单，填文件路径就只放那一个
-
-### 全屋同步播放
-实现了一个很酷的功能，可以让局域网所有工作咩闹钟设备同时放一样的音乐，也可以叫UDP广播群控  
-只需要在闹钟设置中想作为主机的设备上勾选 `全屋同步播放主机` 即刻  
-由于配置不一样的配置的设备处理的速度不一样，所以你可能需要在闹钟设置中配置 `同步偏移`  
-单位是ms毫秒（1秒=1000毫秒），数字越大，将越早开始播放，数字越小（可以为负数）  
-说小米垃圾是有原因的，os1系统的k60pro播放音频的速度居然比骁龙625 miui10的红米note4x还慢了710ms  
-
-## 我的歌单
-可以登录网易云音乐账号（登录Cookie保存在浏览器中），实现点击即放的播放控制  
-<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/40ef7d94-d976-49d2-bcc7-8df90c97ad1e" />
-
-### 重启、亮屏、熄屏、查看摄像头 为Android独享功能
 
 ## 特殊设备适配
 ### 作业帮w80博学版等Linux词典笔
