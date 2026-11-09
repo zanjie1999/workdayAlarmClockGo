@@ -57,6 +57,10 @@ func timeJob() {
 	}
 	lasthhmm = hhmm
 
+	// LVGL定时获取天气 1小时一次
+	if conf.WorkDayApiErr || conf.IsLvgl && hhmm[2:] == "00" {
+		weather.GetWeather("")
+	}
 	// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
 	if conf.WorkDayApiErr || hhmm == "0000" {
 		conf.WorkDayApi()
@@ -153,6 +157,7 @@ func shellInput() {
 				fmt.Println("savepath", conf.Cfg.SavePath)
 			case "ip":
 				ip, _ := app.GetLocalIP()
+				app.Send("ECHO " + ip)
 				fmt.Println(ip)
 			case "play":
 				// 没有参数时一键播放
@@ -165,21 +170,8 @@ func shellInput() {
 				}
 			case "weather":
 				weather.GetWeather("")
-			case "checkupdate":
-				p, err := update.Check()
-				if err != nil {
-					fmt.Println("检查更新失败", err)
-				} else if p.HasUpdate {
-					fmt.Println("发现新版本 v" + p.Latest + "，更新内容：" + p.Release)
-					if p.Asset != "" {
-						fmt.Println("输入 update 更新到该版本")
-					}
-				} else {
-					fmt.Println("当前已是最新版本 v" + VERSION)
-				}
 			case "update":
-				// 会替换并重启自己，放goroutine里先把日志吐出去
-				go selfUpdate()
+				go checkUpdate()
 			default:
 				if strings.HasPrefix(cmd, "play ") {
 					player.PlayUrl(cmd[5:])
@@ -364,7 +356,7 @@ func main() {
 	log.SetOutput(os.Stderr)
 	gin.SetMode(gin.ReleaseMode)
 	// LVGL的时候不输出gin日志
-	if !conf.IsLvgl {
+	if conf.IsLvgl {
 		gin.DefaultWriter = io.Discard
 	}
 	// 全局禁用TLS验证 兼容老系统
