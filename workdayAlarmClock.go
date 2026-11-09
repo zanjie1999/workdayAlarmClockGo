@@ -58,7 +58,7 @@ func timeJob() {
 	lasthhmm = hhmm
 
 	// LVGL定时获取天气 1小时一次
-	if conf.WorkDayApiErr || conf.IsLvgl && hhmm[2:] == "00" {
+	if conf.WorkDayApiErr || conf.AppProto() && hhmm[2:] == "00" {
 		weather.GetWeather("")
 	}
 	// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
@@ -388,6 +388,9 @@ func main() {
 	log.Println("工作咩闹钟 v" + VERSION)
 	log.Println("当前时区", time.Local, conf.Cfg.Tz)
 	conf.WorkDayApi()
+	if conf.AppProto() {
+		weather.GetWeather("")
+	}
 	if !conf.IsApp || conf.IsApp && conf.Cfg.Wakelock {
 		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
 		log.Println("内置定时器已启用")
