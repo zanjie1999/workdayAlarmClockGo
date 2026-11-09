@@ -208,6 +208,8 @@ var (
 	IsWorkDay = false
 	// 配合Android App使用
 	IsApp = false
+	// 配合 LVGL 外壳使用（argv[1] == "lvgl"）：本地播放 + 往 stdout 上报进度/音量
+	IsLvgl = false
 	// 获取工作日信息出错
 	WorkDayApiErr = false
 	// 实际端口
@@ -394,4 +396,11 @@ func WorkDayApi() {
 			log.Println("根据大小周设置，今天是小周工作日")
 		}
 	}
+}
+
+// AppProto 表示"有宿主在盯着 stdout 看"：Android App 或 LVGL 外壳。
+// 只用于决定要不要往 stdout 发事件。
+// 委派播放、Android 专属路径仍然只能看 IsApp —— lvgl 是本地进程，必须自己放。
+func AppProto() bool {
+	return IsApp || IsLvgl
 }

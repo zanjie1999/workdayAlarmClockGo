@@ -100,7 +100,7 @@ func Prev() string {
 		// 不清空的话会永远在这一首和上一首循环 变相清空PrevUrl
 		NowUrl = ""
 		NowId = ""
-		if PrevId != "" && conf.IsApp {
+		if PrevId != "" && conf.AppProto() {
 			app.Send("SONGID " + PrevId)
 		}
 		PlayUrl(PrevUrl)
@@ -155,7 +155,7 @@ func Next() string {
 				PlayUrl(now)
 				return now
 			} else {
-				if conf.IsApp {
+				if conf.AppProto() {
 					app.Send("SONGID " + now)
 				}
 				u := nemusic.MusicUrl(now)
@@ -224,7 +224,7 @@ func PlayNeMusic(id string, loopMode bool) {
 	// 在播放任意歌单后，按上一首来随机
 	PrevRdmFlag = true
 	LoopMode = loopMode
-	if conf.IsApp {
+	if conf.AppProto() {
 		app.Send("SONGID " + id)
 	}
 	url := nemusic.MusicUrl(id)
@@ -247,6 +247,8 @@ func DownWeather() {
 
 // 播放url音乐
 func PlayUrl(url string) {
+	// 进度是按"曲"算的：StartUnix 是整个会话的起点，切歌和单曲循环都不会重置它
+	ResetProgress()
 	if StartUnix == 0 {
 		StartUnix = time.Now().Unix()
 		if conf.Cfg.MuteWhenStop && !IsPlayWeather && !IsAlarm {
@@ -275,6 +277,7 @@ func Stop() {
 	PlayListId = ""
 	StartUnix = 0
 	StopUnix = 0
+	ResetProgress()
 	// 保存闹钟播放记录
 	if IsAlarm && NowId != "" {
 		if len(conf.Cfg.NePlayed) < 1 || conf.Cfg.NePlayed[len(conf.Cfg.NePlayed)-1] != NowId {
@@ -287,9 +290,10 @@ func Stop() {
 	NowId = ""
 	PlayList = []string{}
 	IsPaused = false
-	if conf.IsApp {
+	if conf.AppProto() {
 		app.Send("STOP")
-	} else {
+	}
+	if !conf.IsApp {
 		cancelPlatformPlayback()
 		killUnixCmd()
 	}
@@ -326,7 +330,7 @@ func Stop() {
 			SetVol(conf.Cfg.VolDefault)
 		}
 		PrevUrl = ""
-		if conf.IsApp {
+		if conf.AppProto() {
 			app.Send("ALARMSTOP")
 		}
 	} else if conf.Cfg.MuteWhenStop {
@@ -340,8 +344,18 @@ func SetVol(per string) {
 	log.Println("设置音量", per, "%")
 	if conf.IsApp {
 		app.SendLocal("VOL " + per)
-	} else if err := setPlatformVolume(per); err != nil {
+		if v, err := strconv.Atoi(per); err == nil {
+			setNowVol(v)
+		}
+		return
+	}
+	if err := setPlatformVolume(per); err != nil {
 		log.Println("设置音量失败", err)
+		return
+	}
+	// 本地音量改成功后记下来：lvgl 模式要让外壳回显，暂停恢复也要用
+	if v, err := strconv.Atoi(per); err == nil {
+		setNowVol(v)
 	}
 }
 
@@ -355,10 +369,14 @@ func Pause() {
 		return
 	}
 	IsPaused = true
-	if conf.IsApp {
+	notePause()
+	if conf.AppProto() {
 		app.Send("PAUSE")
-	} else if err := pausePlatformPlayback(); err != nil {
-		log.Println("暂停播放失败", err)
+	}
+	if !conf.IsApp {
+		if err := pausePlatformPlayback(); err != nil {
+			log.Println("暂停播放失败", err)
+		}
 	}
 }
 
@@ -372,27 +390,45 @@ func Resume() {
 		return
 	}
 	IsPaused = false
-	if conf.IsApp {
+	noteResume()
+	if conf.AppProto() {
 		app.Send("RESUME")
-	} else if err := resumePlatformPlayback(); err != nil {
-		log.Println("恢复播放失败", err)
+	}
+	if !conf.IsApp {
+		if err := resumePlatformPlayback(); err != nil {
+			log.Println("恢复播放失败", err)
+		}
 	}
 }
 
 func VolUp() {
-	if conf.IsApp {
+	if conf.AppProto() {
 		app.Send("VOLP")
-	} else if err := changePlatformVolume("5%+"); err != nil {
-		log.Println("增加音量失败", err)
 	}
+	if conf.IsApp {
+		setNowVol(NowVol + 1)
+		return
+	}
+	if err := changePlatformVolume("5%+"); err != nil {
+		log.Println("增加音量失败", err)
+		return
+	}
+	setNowVol(NowVol + 5)
 }
 
 func VolDown() {
-	if conf.IsApp {
+	if conf.AppProto() {
 		app.Send("VOLM")
-	} else if err := changePlatformVolume("5%-"); err != nil {
-		log.Println("降低音量失败", err)
 	}
+	if conf.IsApp {
+		setNowVol(NowVol - 1)
+		return
+	}
+	if err := changePlatformVolume("5%-"); err != nil {
+		log.Println("降低音量失败", err)
+		return
+	}
+	setNowVol(NowVol - 5)
 }
 
 // 去重
@@ -440,7 +476,7 @@ func PlayAlarm() {
 		return
 	}
 	IsAlarm = true
-	if conf.IsApp {
+	if conf.AppProto() {
 		app.Send("ALARM")
 	}
 	SetVol(conf.Cfg.VolAlarm)

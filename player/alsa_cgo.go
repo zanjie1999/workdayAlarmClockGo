@@ -344,6 +344,7 @@ func alsaPlayURL(url string) error {
 	if err != nil {
 		return fmt.Errorf("decode mp3: %w", err)
 	}
+	SetPCMRate(decoder.SampleRate())
 
 	var openErr C.int
 	device := C.CString(alsaDevice())
@@ -539,6 +540,8 @@ func alsaWritePCM(pcm *C.wa_alsa_pcm, eq *EQ, data []byte, frameBytes int) error
 	if written < 0 {
 		return fmt.Errorf("alsa write: %s", C.GoString(C.wa_alsa_error(C.long(written))))
 	}
+	// 进度按"真正交给声卡的字节数"算，暂停时写循环会停，计数自然停
+	AddPlayedBytes(int64(len(data)))
 	return nil
 }
 

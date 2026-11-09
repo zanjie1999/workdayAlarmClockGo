@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -22,11 +23,12 @@ import (
 	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
 
+	"github.com/gin-gonic/gin"
 	"github.com/zanjie1999/httpme"
 )
 
 var (
-	VERSION  = "49.0"
+	VERSION  = "50.0"
 	lasthhmm = ""
 )
 
@@ -344,12 +346,26 @@ func main() {
 			httpme.SetDns("223.6.6.6:53")
 			// 全屋同步补偿ms
 			app.SendLocal("DSEEK " + conf.Cfg.DefSeek)
+		} else if os.Args[1] == "lvgl" {
+			// LVGL 外壳拉起：本地播放 + 往 stdout 上报进度/音量
+			// 播放器名顺延到 argv[2]，不传就交给 InitDefaultShellPlayer 自动探测
+			conf.IsLvgl = true
+			if len(os.Args) > 2 {
+				player.ShellPlayer = os.Args[2]
+			}
 		} else {
 			player.ShellPlayer = os.Args[1]
 		}
 	}
 	if !conf.IsApp {
 		player.InitDefaultShellPlayer()
+	}
+	// 把日志输出到stderr
+	log.SetOutput(os.Stderr)
+	gin.SetMode(gin.ReleaseMode)
+	// LVGL的时候不输出gin日志
+	if !conf.IsLvgl {
+		gin.DefaultWriter = io.Discard
 	}
 	// 全局禁用TLS验证 兼容老系统
 	httpme.SetSkipVerify(true)
@@ -369,10 +385,10 @@ func main() {
 	if player.EQActive() {
 		log.Println("均衡器已启用")
 	}
-	if conf.IsApp && conf.Cfg.Wakelock {
+	if conf.AppProto() && conf.Cfg.Wakelock {
 		app.SendLocal("WAKELOCK")
 	}
-	if conf.IsApp && len(conf.Cfg.Alarm) > 0 {
+	if conf.AppProto() && len(conf.Cfg.Alarm) > 0 {
 		app.SendLocal("ALARMON")
 	}
 	// 设置时区
@@ -386,6 +402,8 @@ func main() {
 		go timer()
 	}
 	go shellInput()
+	// LVGL 模式：每秒往 stdout 报 POS/DUR/VOL（内部自己判断 IsLvgl）
+	player.StartReporter()
 	timeJob()
 	go checkUpdate()
 	run := router.Init("/")
@@ -396,7 +414,8 @@ func main() {
 		if conf.IsApp {
 			fmt.Println("ECHO 访问http://" + ip + conf.Port)
 		}
-		fmt.Println("\n使用浏览器访问 http://" + ip + conf.Port + " 进入后台\n")
+		// 人类可读的提示走 stderr，别污染 stdout 的事件流
+		log.Println("使用浏览器访问 http://" + ip + conf.Port + " 进入后台")
 		// 用 http.Server 是为了 ConnState：播放实时流时要拿 net.Conn
 		// 去查内核接收缓冲里还压着多少没读的旧音频，也能顺手收紧这个缓冲
 		srv := &http.Server{

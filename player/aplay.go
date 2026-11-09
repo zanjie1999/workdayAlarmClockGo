@@ -3,6 +3,7 @@
 package player
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -48,6 +49,13 @@ func newReconnectingHTTPStream(url string) (*reconnectingHTTPStream, error) {
 		body:          resp.Body,
 		contentLength: responseTotalLength(resp),
 	}, nil
+}
+
+// TotalSize 供 streamSize 用：CBR 估算总时长要靠它（-1 表示服务端没给）
+func (s *reconnectingHTTPStream) TotalSize() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.contentLength
 }
 
 func (s *reconnectingHTTPStream) Read(p []byte) (int, error) {
@@ -221,10 +229,15 @@ func pcmURL(url string) error {
 		return fmt.Errorf("playback canceled")
 	}
 
-	decoder, err := mp3.NewDecoder(stream)
+	// 时长要在解码前探：Peek 不消费流，探完把同一个 reader 交给解码器
+	br := bufio.NewReaderSize(stream, 64*1024)
+	SetDurationMs(probeStream(br, streamSize(stream)))
+
+	decoder, err := mp3.NewDecoder(br)
 	if err != nil {
 		return fmt.Errorf("decode mp3: %w", err)
 	}
+	SetPCMRate(decoder.SampleRate())
 	cmd := pcmCommand(decoder.SampleRate())
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -263,7 +276,8 @@ func pcmURL(url string) error {
 		_, copyErr = stdin.Write(header)
 	}
 	if copyErr == nil {
-		copyErr = copyWithEQ(stdin, decoder, decoder.SampleRate())
+		// 包一层计数器：写进管道的字节数就是播放位置（暂停时管道堵塞，计数自然停）
+		copyErr = copyWithEQ(&pcmCounter{w: stdin}, decoder, decoder.SampleRate())
 	}
 	closeErr := stdin.Close()
 	waitErr := cmd.Wait()
