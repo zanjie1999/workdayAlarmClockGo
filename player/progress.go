@@ -149,6 +149,7 @@ func StartReporter() {
 		lastVol = NowVol
 
 		for range ticker.C {
+			// 停止：只在第一次发 POS 0 归零，之后静默
 			if IsStop {
 				if !stopSent {
 					app.SendLocal("POS 0")
@@ -157,6 +158,12 @@ func StartReporter() {
 				continue
 			}
 			stopSent = false
+
+			// 暂停：不发 POS，外壳靠 PAUSE 事件已经把状态切到暂停，进度天然停住。
+			// 恢复后下一轮 ticker 会重新发 POS 校准，误差最多 1 秒。
+			if IsPaused {
+				continue
+			}
 
 			// 先发 DUR 再发 POS：外壳拿到位置时已经知道总长，不会闪一帧不确定态
 			if dur := DurationMs(); dur != lastDur {
