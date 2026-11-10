@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"workdayAlarmClock/app"
+	"workdayAlarmClock/conf"
 	"workdayAlarmClock/player"
 
 	"github.com/gin-gonic/gin"
@@ -1174,16 +1176,43 @@ func replaceFBStream(body io.ReadCloser) *fbStreamSession {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	// 屏幕现在归我：让 LVGL 外壳停掉自己的刷新，否则两边互相覆盖
+	notifyLvglFBStream(true)
+
 	return session
 }
 
 func finishFBStream(session *fbStreamSession) {
 	fbStreamMu.Lock()
-	if activeFBStream == session {
+	wasActive := activeFBStream == session
+	if wasActive {
 		activeFBStream = nil
 	}
 	fbStreamMu.Unlock()
+
+	// 只有当前会话结束才通知恢复；被新流顶掉的旧会话不发，否则会把画面还给 LVGL 一瞬
+	if wasActive {
+		notifyLvglFBStream(false)
+	}
+
 	close(session.done)
+}
+
+// notifyLvglFBStream 只在被 LVGL 外壳拉起时往 stdout 发事件：
+//
+//	FBSTART  外壳暂停整屏输出（lv_timer_enable(false)），屏幕交给本进程
+//	FBEND    外壳恢复输出并重绘整屏
+//
+// 非 lvgl 模式下 stdout 是终端，不能污染，所以直接不打印。
+func notifyLvglFBStream(active bool) {
+	if !conf.IsLvgl {
+		return
+	}
+	if active {
+		app.SendLocal("FBSTART")
+	} else {
+		app.SendLocal("FBEND")
+	}
 }
 
 func fbStream(c *gin.Context) {
