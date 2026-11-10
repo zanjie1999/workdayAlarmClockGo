@@ -67,7 +67,7 @@ a, button, label, select, input {
 
 /* ========== 2 骨架 ========== */
 .main-container {
-    max-width: 680px;
+    max-width: 690px;
     margin: 0 auto;
     padding: 16px 16px 40px;
 }

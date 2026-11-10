@@ -45,6 +45,7 @@ var (
 	PrevUrl       = ""
 	NowId         = ""
 	PrevId        = ""
+	NowPlaying    = ""
 	LoopMode      = false
 	// 开始播放和定时结束时间
 	StartUnix int64 = 0
@@ -72,11 +73,12 @@ func InitDefaultShellPlayer() {
 // echoSong 把当前曲目名推给外壳显示（外壳的时钟页那行就是 ECHO 的内容）。
 // 查不到名字时发 fallback，保证那行永远有东西显示：
 func echoSong(id string, fallback string) {
-	if name := nemusic.SongName(id); name != "" {
-		app.Send("ECHO " + name)
+	NowPlaying = strings.TrimSpace(nemusic.SongName(id))
+	if NowPlaying == "" {
+		app.Send("ECHO " + fallback)
 		return
 	}
-	app.Send("ECHO " + fallback)
+	app.Send("ECHO " + NowPlaying)
 }
 
 // 上一首 或一键者播放指定歌单
@@ -173,6 +175,7 @@ func Next() string {
 				fallback = "待播放 " + strconv.Itoa(len(PlayList))
 			}
 			if nowName != "" {
+				NowPlaying = nowName
 				app.Send("ECHO " + nowName)
 			} else {
 				echoSong(now, fallback)
@@ -311,6 +314,7 @@ func PlayUrl(url string) {
 
 func Stop() {
 	app.Send("ECHO 工作咩闹钟")
+	NowPlaying = ""
 	LoopMode = false
 	PrevRdmFlag = false
 	PrevId = NowId

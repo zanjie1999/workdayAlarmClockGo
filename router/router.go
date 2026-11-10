@@ -847,6 +847,7 @@ func Init(urlPrefix string) *gin.Engine {
 			"prevUrl":    player.PrevUrl,
 			"batLevel":   string(batLevel),
 			"nowId":      player.NowId,
+			"nowPlaying": player.NowPlaying,
 			"startUnix":  player.StartUnix,
 			"stopUnix":   player.StopUnix,
 			"skipAlarm":  player.SkipAlarm,
