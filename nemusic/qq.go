@@ -146,22 +146,22 @@ func qqSongURL(mid, quality, uin string) (string, error) {
 	return sip + item.Purl, nil
 }
 
-func (qqSource) PlayList(id string) ([]string, string, bool) {
-	ids, name, err := qqPlayListIDs(id)
+func (qqSource) PlayList(id string) ([]string, []string, string, bool) {
+	ids, names, name, err := qqPlayListIDs(id)
 	if err == nil && len(ids) > 0 {
 		saveListCache(id, ids)
-		return ids, name, false
+		return ids, names, name, false
 	}
 	if err != nil {
 		log.Println("QQ音乐获取歌单出错", err)
 	}
 	if cached, ok := loadListCache(id); ok {
-		return cached, "缓存", true
+		return cached, nil, "缓存", true
 	}
 	if name != "" {
-		return []string{}, name, false
+		return []string{}, nil, name, false
 	}
-	return []string{}, "无法播放", false
+	return []string{}, nil, "无法播放", false
 }
 
 type qqCDInfo struct {
@@ -170,13 +170,14 @@ type qqCDInfo struct {
 		DissName string `json:"dissname"`
 		SongNum  int    `json:"songnum"`
 		SongList []struct {
-			SongMid string `json:"songmid"`
+			SongMid  string `json:"songmid"`
+			SongName string `json:"songname"`
 		} `json:"songlist"`
 	} `json:"cdlist"`
 }
 
-// qqPlayListIDs 歌单详情，流式解码只取歌曲 mid
-func qqPlayListIDs(id string) ([]string, string, error) {
+// qqPlayListIDs 歌单详情，流式解码取歌曲 mid 和歌名
+func qqPlayListIDs(id string) ([]string, []string, string, error) {
 	target := qqPlaylistAPI + "?type=1&json=1&utf8=1&onlysong=0&format=json&disstid=" + url.QueryEscape(id) +
 		"&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0"
 	resp, err := httpme.Httpme().GetStream(target, httpme.Header{
@@ -184,27 +185,30 @@ func qqPlayListIDs(id string) ([]string, string, error) {
 		"Cookie":  conf.Cfg.Cookie,
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	defer resp.R.Body.Close()
 	if resp.R.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("接口状态异常: %s", resp.R.Status)
+		return nil, nil, "", fmt.Errorf("接口状态异常: %s", resp.R.Status)
 	}
 	var j qqCDInfo
 	if err := json.NewDecoder(resp.R.Body).Decode(&j); err != nil {
-		return nil, "", fmt.Errorf("解析歌单失败: %w", err)
+		return nil, nil, "", fmt.Errorf("解析歌单失败: %w", err)
 	}
 	if len(j.CDList) == 0 {
-		return nil, "", fmt.Errorf("歌单不存在或没有权限 code=%d", j.Code)
+		return nil, nil, "", fmt.Errorf("歌单不存在或没有权限 code=%d", j.Code)
 	}
 	cd := j.CDList[0]
 	ids := make([]string, 0, len(cd.SongList))
+	names := make([]string, 0, len(cd.SongList))
 	for _, s := range cd.SongList {
-		if s.SongMid != "" {
-			ids = append(ids, s.SongMid)
+		if s.SongMid == "" {
+			continue
 		}
+		ids = append(ids, s.SongMid)
+		names = append(names, s.SongName)
 	}
-	return ids, cd.DissName, nil
+	return ids, names, cd.DissName, nil
 }
 
 // QQCookieUin 从 cookie 里取QQ号，取不到返回空串

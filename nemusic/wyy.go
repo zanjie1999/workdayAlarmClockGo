@@ -16,6 +16,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -238,18 +239,58 @@ func (neteaseSource) MusicURL(id, quality string) (string, error) {
 	return wyySongURL(httpme.Httpme(), id, quality)
 }
 
-func (neteaseSource) PlayList(id string) ([]string, string, bool) {
+func (neteaseSource) PlayList(id string) ([]string, []string, string, bool) {
 	ids, name, err := wyyPlayListIDs(id)
 	if err == nil {
 		saveListCache(id, ids)
-		return ids, name, false
+		// 网易云歌单接口不带歌名，这里 names 填空，歌名走 SongNamer 单独查
+		return ids, nil, name, false
 	}
 	log.Println("获取歌单信息出错", err)
 	// 接口不通时放缓存，断网闹钟也能响
 	if cached, ok := loadListCache(id); ok {
-		return cached, "缓存", true
+		return cached, nil, "缓存", true
 	}
-	return []string{}, "无法播放", false
+	return []string{}, nil, "无法播放", false
+}
+
+// SongName 查歌名。查不到返回空串而不是错误，调用方据此退回老文案
+func (neteaseSource) SongName(id string) (string, error) {
+	req := httpme.Httpme()
+	// 只等 3 秒：这个名字用来刷屏，卡住会拖慢切歌
+	req.SetTimeout(3)
+	defer req.Close()
+
+	resp, err := req.Get("http://music.163.com/api/song/detail?ids=" + url.QueryEscape("["+id+"]"))
+	if err != nil {
+		return "", fmt.Errorf("请求歌曲详情出错: %w", err)
+	}
+	var j wyySongDetail
+	if err := resp.Json(&j); err != nil {
+		return "", fmt.Errorf("解析歌曲详情失败: %w", err)
+	}
+	if j.Code != 200 {
+		return "", fmt.Errorf("接口返回异常: %d", j.Code)
+	}
+	if len(j.Songs) == 0 {
+		return "", fmt.Errorf("接口没有返回歌曲信息")
+	}
+	return j.Songs[0].Name, nil
+}
+
+// song/detail 的歌名在 songs[0].name，
+// 歌手字段有两个版本：老接口叫 artists，v3 叫 ar，都收着
+type wyySongDetail struct {
+	Code  int `json:"code"`
+	Songs []struct {
+		Name    string `json:"name"`
+		Artists []struct {
+			Name string `json:"name"`
+		} `json:"artists"`
+		Ar []struct {
+			Name string `json:"name"`
+		} `json:"ar"`
+	} `json:"songs"`
 }
 
 // wyyPlayListIDs 歌单详情接口

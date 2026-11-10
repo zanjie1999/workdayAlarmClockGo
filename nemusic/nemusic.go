@@ -12,13 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 )
 
-// 歌单列表                歌单id   歌单名  是否缓存
-func PlayList(id string) ([]string, string, bool) {
+// 歌单列表
+func PlayList(id string) ([]string, []string, string, bool) {
 	// 填的是路径就当本地歌单，不请求接口也不写 .list 缓存，各平台通用
 	if isLocalPath(id) {
 		return LocalPlayList(id)
@@ -124,10 +125,50 @@ func PlaylistDownload(id string) {
 		log.Println("你还没配置缓存目录")
 		return
 	}
-	ids, name, _ := PlayList(id)
+	ids, _, name, _ := PlayList(id)
 	log.Println("开始下载列表", id, name)
 	for i, v := range ids {
 		log.Println(len(ids), "/", i+1, v)
 		MusicUrl(v)
 	}
+}
+
+// ---------------------------------------------------------------- 曲名
+
+// songNameCache 曲名缓存：一次会话里同一首只查一次（查成功才缓存，失败下次还能重试）。
+// 循环播放同一首时不会重复发请求。
+var songNameCache sync.Map // id -> string
+
+// SongName 取当前来源的曲名，供外壳的 ECHO 显示。
+// 来源不支持 / 查询失败 / 本地路径 / 直链一律返回空串，调用方据此退回老文案
+// （"待播放 N" / "正在播放"），不能因为查不到名字影响播放。
+func SongName(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || isLocalPath(id) || strings.HasPrefix(id, "http") {
+		return ""
+	}
+	if v, ok := songNameCache.Load(id); ok {
+		return v.(string)
+	}
+	namer, ok := Current().(SongNamer)
+	if !ok {
+		return "" // 这个平台没实现
+	}
+	name, err := namer.SongName(id)
+	if err != nil {
+		log.Println("获取歌曲名出错", id, err)
+		return ""
+	}
+	if name != "" {
+		songNameCache.Store(id, name)
+	}
+	return name
+}
+
+func trimLabel(s string, maxRunes int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= maxRunes {
+		return string(r)
+	}
+	return string(r[:maxRunes])
 }

@@ -31,18 +31,20 @@ func isLocalPath(p string) bool {
 }
 
 // LocalPlayList 把本地路径展开成播放列表
-// 返回的路径保留传入时的 ./ 或 / 或盘符前缀，player.Next 靠这个前缀判断直连播放
-func LocalPlayList(p string) ([]string, string, bool) {
+// 返回的路径保留传入时的 ./ 或 / 或盘符前缀，player.Next 靠这个前缀判断直连播放。
+// names 存纯文件名（含扩展名），和 ids 同下标，供外壳直接显示。
+func LocalPlayList(p string) ([]string, []string, string, bool) {
 	info, err := os.Stat(p)
 	if err != nil {
 		log.Println("本地歌单路径打不开", p, err)
-		return []string{}, "路径不存在", false
+		return []string{}, nil, "路径不存在", false
 	}
 	if !info.IsDir() {
-		return []string{p}, filepath.Base(p), false
+		return []string{p}, []string{filepath.Base(p)}, filepath.Base(p), false
 	}
 	prefix := strings.TrimRight(filepath.ToSlash(p), "/")
 	var list []string
+	var names []string
 	err = filepath.WalkDir(p, func(target string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Println("扫描本地歌单出错", target, err)
@@ -63,6 +65,7 @@ func LocalPlayList(p string) ([]string, string, bool) {
 			return nil
 		}
 		list = append(list, prefix+"/"+filepath.ToSlash(rel))
+		names = append(names, d.Name())
 		if len(list) >= localPlayListLimit {
 			log.Println("本地歌单文件太多，只取前", localPlayListLimit, "个")
 			return fs.SkipAll
@@ -72,7 +75,18 @@ func LocalPlayList(p string) ([]string, string, bool) {
 	if err != nil {
 		log.Println("扫描本地歌单失败", p, err)
 	}
-	sort.Strings(list)
-	log.Println("本地歌单", p, "共", len(list), "个文件")
-	return list, filepath.Base(prefix), false
+	// 按路径排序，names 和 list 同步换位保证同下标对应
+	idx := make([]int, len(list))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.Slice(idx, func(a, b int) bool { return list[idx[a]] < list[idx[b]] })
+	sortedList := make([]string, len(list))
+	sortedNames := make([]string, len(list))
+	for i, j := range idx {
+		sortedList[i] = list[j]
+		sortedNames[i] = names[j]
+	}
+	log.Println("本地歌单", p, "共", len(sortedList), "个文件")
+	return sortedList, sortedNames, filepath.Base(prefix), false
 }

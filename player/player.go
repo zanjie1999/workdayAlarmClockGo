@@ -33,8 +33,10 @@ var (
 	// 是否暂停播放
 	IsPaused = false
 	// 当前的播放列表
-	PlayListId    = ""
-	PlayList      = []string{}
+	PlayListId = ""
+	PlayList   = []string{}
+	// 播放列表对应的歌名，和 PlayList 同下标一一对应，没名字的位置是空串
+	PlayNames     = []string{}
 	IsAlarm       = false
 	IsPlayWeather = false
 	UnixCmd       *exec.Cmd
@@ -67,6 +69,16 @@ func InitDefaultShellPlayer() {
 	log.Println("ALSA device:", alsaDevice())
 }
 
+// echoSong 把当前曲目名推给外壳显示（外壳的时钟页那行就是 ECHO 的内容）。
+// 查不到名字时发 fallback，保证那行永远有东西显示：
+func echoSong(id string, fallback string) {
+	if name := nemusic.SongName(id); name != "" {
+		app.Send("ECHO " + name)
+		return
+	}
+	app.Send("ECHO " + fallback)
+}
+
 // 上一首 或一键者播放指定歌单
 // 第一次按上一首键会放上一曲（如果有)，第二次会顺序播放歌单，第三次会随机播放歌单（如果没有放完一首）
 func Prev() string {
@@ -89,7 +101,8 @@ func Prev() string {
 		Next()
 		return "随机播放列表"
 	} else if PrevUrl != "" {
-		app.Send("ECHO 上一首")
+		// 回上一首：能查到名字就显示名字，查不到还是"上一首"
+		echoSong(PrevId, "上一首")
 		if len(PlayList) == 0 {
 			PlayList = []string{NowUrl}
 		} else if NowId != "" {
@@ -142,14 +155,27 @@ func Next() string {
 		if len(PlayList) > 0 {
 			now := PlayList[0]
 			PlayList = append([]string(nil), PlayList[1:]...)
+			// 歌名列表和 PlayList 同下标，同步弹掉
+			nowName := ""
+			if len(PlayNames) > 0 {
+				nowName = PlayNames[0]
+				PlayNames = append([]string(nil), PlayNames[1:]...)
+			}
 			if now == "" {
 				log.Println("不是播放列表怎么有空的播放项目？")
 				continue
 			}
+			// 外壳那行显示曲名，取代原来的"待播放 N"/"正在播放"。
+			// 歌单接口自带的歌名优先（QQ/酷狗），没有再单独查（网易云），
+			// 都拿不到由 echoSong 退回老文案。
+			fallback := "正在播放"
 			if len(PlayList) > 0 {
-				app.Send("ECHO 待播放 " + strconv.Itoa(len(PlayList)))
+				fallback = "待播放 " + strconv.Itoa(len(PlayList))
+			}
+			if nowName != "" {
+				app.Send("ECHO " + nowName)
 			} else {
-				app.Send("ECHO 正在播放")
+				echoSong(now, fallback)
 			}
 			if len(now) > 3 && (now[:4] == "http" || now[0] == '.' || now[0] == '/' || now[1] == ':') {
 				PlayUrl(now)
@@ -189,15 +215,25 @@ func PlayNePlaylist(id string, random bool) string {
 	PrevRdmFlag = true
 	LoopMode = false
 	PlayListId = id
-	ids, name, _ := nemusic.PlayList(id)
+	ids, names, name, _ := nemusic.PlayList(id)
 	if random {
-		// 打乱歌单
+		// 打乱歌单，名字列表和 id 列表在同一个 swap 里同步换位，保证同下标对应
 		rand.Seed(time.Now().UnixNano())
-		rand.Shuffle(len(ids), func(i, j int) {
-			ids[i], ids[j] = ids[j], ids[i]
-		})
+		if len(names) == len(ids) {
+			rand.Shuffle(len(ids), func(i, j int) {
+				ids[i], ids[j] = ids[j], ids[i]
+				names[i], names[j] = names[j], names[i]
+			})
+		} else {
+			// 名字列表对不齐就只打乱 id，歌名交给单独查兜底
+			rand.Shuffle(len(ids), func(i, j int) {
+				ids[i], ids[j] = ids[j], ids[i]
+			})
+			names = nil
+		}
 	}
 	PlayList = ids
+	PlayNames = names
 	Next()
 	return name
 }
@@ -209,13 +245,14 @@ func PlayNeMusicList(ids []string, id string, random bool) {
 	LoopMode = false
 	PlayListId = id
 	if random {
-		// 打乱歌单
+		// 打乱歌单，这里没有对应歌名，清空名字列表交给单独查
 		rand.Seed(time.Now().UnixNano())
 		rand.Shuffle(len(ids), func(i, j int) {
 			ids[i], ids[j] = ids[j], ids[i]
 		})
 	}
 	PlayList = ids
+	PlayNames = nil
 	Next()
 }
 
@@ -227,6 +264,7 @@ func PlayNeMusic(id string, loopMode bool) {
 	if conf.AppProto() {
 		app.Send("SONGID " + id)
 	}
+	echoSong(id, "正在播放")
 	url := nemusic.MusicUrl(id)
 	if url != "" {
 		PlayUrl(url)
@@ -488,7 +526,7 @@ func PlayAlarm() {
 		PlayUrl(conf.Cfg.NePlayListId)
 		return
 	}
-	ids, _, isCache := nemusic.PlayList(conf.Cfg.NePlayListId)
+	ids, _, _, isCache := nemusic.PlayList(conf.Cfg.NePlayListId)
 	// 定时停止闹钟
 	StopUnix = time.Now().Unix() + int64(conf.Cfg.AlarmTime*60)
 	if len(ids) == 0 {
@@ -530,6 +568,8 @@ func PlayAlarm() {
 		})
 		// 万一歌单里的歌曲都放不了呢
 		PlayList = append(ids, "http://127.0.0.1"+conf.Port+"/music.mp3")
+		// 闹钟场景有筛选和随机，名字列表对不上，清空交给回退文案
+		PlayNames = nil
 		if len(PlayList) == 0 {
 			// 你该不是在拿咩咩寻开心吧
 			log.Println("这歌单没一首能放的！你该不是在拿咩咩寻开心吧！")

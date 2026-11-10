@@ -406,22 +406,22 @@ func kugouBackupURLs(raw json.RawMessage) []string {
 	return urls
 }
 
-func (kugouSource) PlayList(id string) ([]string, string, bool) {
-	ids, name, err := kugouPlayListIDs(id)
+func (kugouSource) PlayList(id string) ([]string, []string, string, bool) {
+	ids, names, name, err := kugouPlayListIDs(id)
 	if err == nil && len(ids) > 0 {
 		saveListCache(id, ids)
-		return ids, name, false
+		return ids, names, name, false
 	}
 	if err != nil {
 		log.Println("酷狗获取歌单出错", err)
 	}
 	if cached, ok := loadListCache(id); ok {
-		return cached, "缓存", true
+		return cached, nil, "缓存", true
 	}
 	if name != "" {
-		return []string{}, name, false
+		return []string{}, nil, name, false
 	}
-	return []string{}, "无法播放", false
+	return []string{}, nil, "无法播放", false
 }
 
 type kugouSongResp struct {
@@ -437,7 +437,7 @@ type kugouSongResp struct {
 }
 
 // kugouPlayListIDs 取歌单名和歌曲列表，歌单名取不到不影响播放
-func kugouPlayListIDs(id string) ([]string, string, error) {
+func kugouPlayListIDs(id string) ([]string, []string, string, error) {
 	// 账号里的歌单多是新版 collection_ 的 id，老接口只认数字，只能走网关
 	if strings.HasPrefix(id, kugouCollectionPrefix) {
 		return kugouCollectionListIDs(id)
@@ -449,19 +449,22 @@ func kugouPlayListIDs(id string) ([]string, string, error) {
 	target := kugouSongAPI + "?specialid=" + url.QueryEscape(id) + "&page=1&pagesize=-1&plat=0&version=9108" +
 		"&appid=1005&clientver=9108&mid=" + kugouCookieMid(conf.Cfg.Cookie)
 	if err := kugouGet(target, &songs); err != nil {
-		return nil, name, err
+		return nil, nil, name, err
 	}
 	if len(songs.Data.Info) == 0 {
-		return nil, name, fmt.Errorf("歌单没有歌曲")
+		return nil, nil, name, fmt.Errorf("歌单没有歌曲")
 	}
 	ids := make([]string, 0, len(songs.Data.Info))
+	names := make([]string, 0, len(songs.Data.Info))
 	for _, s := range songs.Data.Info {
 		if s.Hash == "" {
 			continue
 		}
 		ids = append(ids, kugouSongID(s.Hash, int64(s.AlbumID)))
+		// filename 就是"歌手 - 歌名"，有什么显示什么，不额外拆
+		names = append(names, s.Filename)
 	}
-	return ids, name, nil
+	return ids, names, name, nil
 }
 
 // kugouGet 流式解码酷狗接口
@@ -568,15 +571,16 @@ func KugouCollectionSongs(id string) ([]byte, error) {
 }
 
 // kugouCollectionListIDs 分页取完整个新版歌单
-func kugouCollectionListIDs(id string) ([]string, string, error) {
+func kugouCollectionListIDs(id string) ([]string, []string, string, error) {
 	// 名称从接口的 list_info 里拿，拿不到就留空
 	name := ""
 	const pagesize = 300
 	var ids []string
+	var names []string
 	for begin := 0; ; begin += pagesize {
 		resp, err := kugouCollectionPage(id, begin, pagesize)
 		if err != nil {
-			return nil, name, err
+			return nil, nil, name, err
 		}
 		if resp.Data.ListInfo.Name != "" {
 			name = resp.Data.ListInfo.Name
@@ -586,6 +590,7 @@ func kugouCollectionListIDs(id string) ([]string, string, error) {
 				continue
 			}
 			ids = append(ids, kugouSongID(s.Hash, int64(s.AlbumID)))
+			names = append(names, s.Name)
 		}
 		// 这一页没取满或者已经凑够总数就结束
 		if len(resp.Data.Songs) < pagesize || len(ids) >= resp.Data.Count {
@@ -593,9 +598,9 @@ func kugouCollectionListIDs(id string) ([]string, string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, name, fmt.Errorf("歌单没有歌曲")
+		return nil, nil, name, fmt.Errorf("歌单没有歌曲")
 	}
-	return ids, name, nil
+	return ids, names, name, nil
 }
 
 // kugouUserListResp 账号歌单列表接口的返回，字段名各版本不一致，统一按 map 取

@@ -19,8 +19,10 @@ import (
 // Source 一个音乐平台需要提供的最小能力。
 // 只负责取歌单内的歌曲 id 和单曲播放地址，缓存与下载统一在 nemusic.go 里做。
 type Source interface {
-	// PlayList 返回歌单内的歌曲 id 列表、歌单名、是否来自本地缓存
-	PlayList(id string) ([]string, string, bool)
+	// PlayList 返回歌单内的歌曲 id 列表、歌单名、是否来自本地缓存。
+	// names 和 ids 同下标一一对应，是这首歌在歌单接口里自带的歌名；
+	// 接口没返回歌名时对应位置填空串，切歌时用名字为空再回退。
+	PlayList(id string) (ids []string, names []string, name string, isCache bool)
 	// MusicURL 按音质返回可直接播放的地址
 	MusicURL(id, quality string) (string, error)
 	// CachePrefix 缓存文件名前缀，避免不同平台的 id 撞名
@@ -28,6 +30,12 @@ type Source interface {
 	// ParsePlaylistID / ParseSongID 把分享链接或裸 id 归一化成平台 id
 	ParsePlaylistID(raw string) string
 	ParseSongID(raw string) string
+}
+
+// SongNamer 可选能力：能按 id 查曲名的来源实现它。
+// 没实现的来源照旧编译，调用方用类型断言判断能力，拿不到名字就用老文案。
+type SongNamer interface {
+	SongName(id string) (string, error)
 }
 
 // sources 注册表，新增平台在这里加一行即可
