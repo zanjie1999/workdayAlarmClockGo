@@ -301,6 +301,10 @@ func PlayUrl(url string) {
 	if conf.IsApp {
 		app.PlayUrl(url)
 	} else {
+		if conf.IsLvgl {
+			// LVGL得知道播放开始了
+			app.Send("RESUME")
+		}
 		go UnixPlayUrl(url)
 	}
 }
