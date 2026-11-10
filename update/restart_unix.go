@@ -11,7 +11,8 @@ import (
 
 // Restart 用新文件替换掉自己并重新执行，不会返回
 func Restart() error {
-	// 必须用启动时缓存下来的路径：更新时原文件已经被改名成 xxx.old，
+	// 必须用启动时缓存下来的路径：更新时原文件已经被删掉重写了，
+	// 再问系统要自身路径拿到的可能是已删除的旧文件
 	self, err := SelfExe()
 	if err != nil {
 		return err
