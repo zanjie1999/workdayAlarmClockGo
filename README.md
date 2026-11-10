@@ -144,6 +144,8 @@ ffmpeg -f lavfi -i "ddagrab=output_idx=0:framerate=30:draw_mouse=1" -vf "hwdownl
 
 Android使用 [App](https://github.com/zanjie1999/workdayAlarmClockAndroid)  
 
+[Linux LVGL界面](https://github.com/zanjie1999/workdayAlarmClock-lvgl) 支持按键和触摸屏  
+
 Linux 的 CGO 构建会优先使用直接 ALSA；纯 Go 构建使用 ALSA 的 `aplay`，找不到时自动回退到 TinyALSA 的 `tinyplay`。程序会流式解码 MP3。
 
 如果设备的音频输出设备不对，可通过环境变量指定 ALSA 设备，例如 `ALSA_DEVICE=sysdefault` 或 `ALSA_DEVICE=sysdefault:CARD=rv1106acodec`，可以通过 `aplay -L` 查看可用的设备列表
