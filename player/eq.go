@@ -11,9 +11,9 @@ package player
  *  3. 支持三种滤波器：低频 shelf(低音增强/衰减)、高频 shelf、peaking(任意频段)，
  *     另外内部还有低通/高通，给虚拟低音用。
  *  4. 全部用 float64 计算，S16 进出，内部不做重采样。
- *  5. 虚拟低音用带限谐波激励(missing fundamental)：把低频软饱和+整流成
- *     3f/5f/7f 谐波再混回去，并用带阈值的 AGC 压住动态。
- *     不需要 FFT 也不需要过采样，开销约等于多挂一个 EQ 段。
+ *  5. 虚拟低音用带限谐波激励(missing fundamental)：低频按包络归一化后
+ *     用切比雪夫多项式精确生成 2f/3f/4f，再按压缩后的电平混回去。
+ *     不需要 FFT 也不需要过采样，单声道 5 个 biquad，开销约等于多挂 2~3 个 EQ 段。
  *
  * 采样率必须在打开音频流时告诉 EQ：SetSampleRate。
  * 不同采样率的歌曲切换时会自动重算系数。
@@ -149,106 +149,157 @@ func (b *biquad) process(s *biquadState, x float64, ch int) float64 {
 // 低频路径按单声道处理：左右低频在录音里高度相关，合并后只跑一次滤波，
 // 生成的谐波等量混回两个声道，滤波开销直接减半。
 //
-// 只做 |x| 整流的话 60Hz 只会出 120Hz，小喇叭还是放不出来；这里用
-// 软饱和产生奇次谐波(3f/5f/7f…)，再叠一层整流补偶次，
-// 把能量堆到 200~600Hz 这段喇叭真正能响的频段。
-// 软饱和比硬削波的高次谐波少，拉高音量时不会变成一片沙沙声。
+// 处理流程(全部逐采样，没有按块跳变的增益)：
+//  1. 隔直 + 4 阶低通取出 cutoff 以下的低频。4 阶比 2 阶干净得多，
+//     人声/军鼓不会混进非线性环节里互调成一片浑浊。
+//  2. 峰值包络跟踪(瞬时起音、约 80ms 释放)，把低频除以包络归一化到 ±1 左右。
+//     这样谐波的"成分比例"与音量无关：小声和大声的贝斯音色一致，
+//     而且增益每个采样都在平滑变化，不会有块边界的拉链噪声。
+//  3. 用切比雪夫多项式 T2/T3/T4 生成谐波：对幅度 1 的正弦，Tn 恰好只产生 n 次谐波，
+//     不像软饱和/削波那样拖出无限多的高次谐波和互调，所以没有"沙沙"声。
+//     谐波相位与基频对齐，大脑会把 2f/3f/4f 还原成原来的低音音高。
+//  4. 乘回压缩后的包络电平：轻的低频适度抬高、重的低频压住，
+//     再经 4 阶高通(去掉基频和直流)+ 低通(压掉残余互调)混回左右声道。
 type virtualBass struct {
-	lp, hp, hp2, hp3, post, tilt biquad
-	out                          float64
+	lp, lp2, hp, hp2, post biquad
+	// dcR 一阶隔直系数；rel 包络释放系数
+	dcR, rel float64
+	out      float64
+	// sub 从原声里挖掉的基频比例，0~vbMaxSub
+	sub float64
 }
 
 // virtualBassState 虚拟低音的延迟线，只由音频线程访问。
 type virtualBassState struct {
-	lp, hp, hp2, hp3, post, tilt biquadState
-	// env 低频包络，用来做带阈值的 AGC：大音量低频压到统一强度，
-	// 小音量低频按比例缩小，免得把底噪也顶成满电平谐波
+	lp, lp2, hp, hp2, post biquadState
+	dcX, dcY               float64
+	// env 低频峰值包络
 	env float64
 }
 
 // vbGate 低于这个电平不做虚拟低音，避免把底噪放大成嗡嗡声。
-const vbGate = 128.0
+const vbGate = 96.0
 
-// vbRef 压缩阈值。低频峰值超过它才压到满，轻的低频按比例减小，
-// 这样小声的贝斯不会和大声的一样响，也不会把底噪顶成满电平谐波。
-const vbRef = 4096.0
+// vbRef 包络压缩的拐点。低于它谐波随低频线性增长(并抬高约一倍)，
+// 高于它逐渐饱和到 2*vbRef，既保留动态又不让大音量低频把谐波顶爆。
+const vbRef = 6000.0
 
-// vbFullScale 强度 100% 时谐波的满度。
-const vbFullScale = 30000.0
+// vbOutGain 内部单位强度时谐波相对压缩后电平的倍数。
+const vbOutGain = 4.0
+
+// vbMaxScale 界面强度 100 对应的内部强度倍数。
+const vbMaxScale = 2.5
+
+// vbSubPerAmount 每单位内部强度挖掉的基频比例，最多 vbMaxSub。
+// 不挖到 100%：喇叭多少还能放出一点基频的上沿，全挖掉会发虚。
+const (
+	vbSubPerAmount = 0.4
+	vbMaxSub       = 0.8
+)
+
+// vbDrive 归一化后软饱和的驱动量，越大谐波越稳但越"毛"。
+const vbDrive = 1.5
+
+// 谐波权重：2 次(八度，音高最稳)最重，3/4 次递减。
+const (
+	vbW2 = 1.0
+	vbW3 = 0.6
+	vbW4 = 0.3
+	// vbWNorm 让 x=±1 时多项式峰值约为 1
+	vbWNorm = 1 / (vbW2 + vbW3 + vbW4)
+)
 
 // setCoeffs 按低频上限 cutoff 生成系数。
-// 低通决定拿哪段低频去生成谐波；三级高通(6 阶)把基频和直流彻底去掉，
-// 只留 2f 以上的谐波——否则加回去的只是更响的、喇叭照样放不出的低音。
 func (v *virtualBass) setCoeffs(cutoff, sampleRate float64) {
-	v.lp.setCoeffs(EQBand{Type: "lowpass", Freq: cutoff, Q: 0.707}, sampleRate)
-	v.hp.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
-	v.hp2.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
-	v.hp3.setCoeffs(EQBand{Type: "highpass", Freq: 130, Q: 0.707}, sampleRate)
-	// 砍掉刺耳的高次谐波，把能量留在小喇叭的工作频段
-	v.post.setCoeffs(EQBand{Type: "lowpass", Freq: 800, Q: 0.707}, sampleRate)
-	// 小喇叭大多从 200~300Hz 才开始有输出，这里把谐波往这个频段提一点
-	v.tilt.setCoeffs(EQBand{Type: "peaking", Freq: 320, Gain: 5, Q: 0.9}, sampleRate)
+	lp := EQBand{Type: "lowpass", Freq: cutoff, Q: 0.707}
+	v.lp.setCoeffs(lp, sampleRate)
+	v.lp2.setCoeffs(lp, sampleRate)
+	// 高通放在 cutoff 附近：基频(≤cutoff)被去掉，2f 起的谐波保留。
+	// 最低 90Hz，再低小喇叭也放不出来，留着只会白占动态余量。
+	hpFreq := math.Max(cutoff, 90)
+	hp := EQBand{Type: "highpass", Freq: hpFreq, Q: 0.707}
+	v.hp.setCoeffs(hp, sampleRate)
+	v.hp2.setCoeffs(hp, sampleRate)
+	// 最高只用到 4 次谐波，再往上的都是互调产物，砍掉
+	postFreq := math.Max(cutoff*4.5, 500)
+	v.post.setCoeffs(EQBand{Type: "lowpass", Freq: postFreq, Q: 0.707}, sampleRate)
+	if sampleRate > 0 {
+		v.dcR = math.Exp(-2 * math.Pi * 20 / sampleRate)
+		v.rel = math.Exp(-1 / (0.08 * sampleRate))
+	}
 }
 
-// analyze 先扫一遍低频、更新包络，返回这一块要用的归一化增益。
-// 分两遍是为了用当前块的真实峰值做 AGC，而不是滞后一块。
-// 超过 vbRef 才压到满，低于它按比例减小，保留原曲的低频动态。
-func (v *virtualBass) analyze(s *virtualBassState, buf []byte, frames int, scratch []float64, rate float64) float64 {
-	peak := 0.0
-	for i := 0; i < frames; i++ {
-		j := i * 4
-		l := float64(int16(uint16(buf[j]) | uint16(buf[j+1])<<8))
-		r := float64(int16(uint16(buf[j+2]) | uint16(buf[j+3])<<8))
-		m := v.lp.process(&s.lp, (l+r)*0.5, 0)
-		scratch[i] = m
-		if a := math.Abs(m); a > peak {
-			peak = a
-		}
-	}
-	if rate <= 0 || frames <= 0 {
-		return 0
-	}
-	// 瞬时起音 + 250ms 释放
-	decay := math.Exp(-float64(frames) / rate / 0.25)
-	if peak > s.env {
-		s.env = peak
-	} else {
-		s.env *= decay
-	}
-	if s.env <= vbGate {
-		return 0
-	}
-	lvl := (s.env - vbGate) / (vbGate * 3)
-	if lvl > 1 {
-		lvl = 1
-	}
-	den := s.env
-	if den < vbRef {
-		den = vbRef
-	}
-	return lvl / den
-}
+// process 输入当前帧的左右声道，返回叠加谐波后的左右声道。
+func (v *virtualBass) process(s *virtualBassState, l, r float64) (float64, float64) {
+	x := (l + r) * 0.5
+	// 一阶隔直，防止直流偏置混进包络和多项式
+	y := x - s.dcX + v.dcR*s.dcY
+	s.dcX, s.dcY = x, y
+	m := v.lp.process(&s.lp, y, 0)
+	m = v.lp2.process(&s.lp2, m, 0)
 
-// process 把低频 m 变成谐波并混回左右声道。
-// 各次谐波的相位和基频一致，所以大脑会把它们融合回原来的低音音高。
-func (v *virtualBass) process(s *virtualBassState, m, l, r, g float64) (float64, float64) {
-	u := m * g
-	// 软饱和而不是硬削波：同样出 3f/5f，但高次谐波和互调少得多，
-	// 强度拉高时不会变成一片"沙沙"的杂音。
-	h := softClip(u * 5)
-	h += 0.5 * math.Abs(u) // 整流：补 2f/4f 偶次谐波
+	// 峰值包络：瞬时起音，指数释放
+	a := math.Abs(m)
+	env := s.env * v.rel
+	if a > env {
+		env = a
+	}
+	s.env = env
+	// 把喇叭放不出来的基频按比例挖掉：这部分能量只会占满动态余量、
+	// 逼着限幅器压缩，挖掉后谐波才有空间推到足够响。
+	// 原理同 MaxxBass：用听得见的谐波"替换"听不见的基频。
+	sub := v.sub * m
+	l -= sub
+	r -= sub
+
+	if env <= vbGate {
+		// 安静段落也要让滤波器状态继续衰减，否则下次起音会带出旧残留
+		h := v.hp.process(&s.hp, 0, 0)
+		h = v.hp2.process(&s.hp2, h, 0)
+		h = v.post.process(&s.post, h, 0) * v.out
+		return l + h, r + h
+	}
+
+	u := m / env // 归一化到 [-1,1]
+	// 包络释放期间 |u| 会小于 1，而 Tn 的输出按 |u|^n 衰减，
+	// 谐波会一下子弱下去。先做一次软饱和把 u 往 ±1 推，谐波强度更稳定。
+	u = u * (1 + vbDrive) / (1 + vbDrive*math.Abs(u))
+	u2 := u * u
+	t2 := 2*u2 - 1
+	t3 := u * (4*u2 - 3)
+	t4 := 2*u*t3 - t2
+	h := (vbW2*t2 + vbW3*t3 + vbW4*t4) * vbWNorm
+
+	// 门限附近线性淡入，避免底噪忽有忽无
+	gate := (env - vbGate) * (1 / (vbGate * 3))
+	if gate > 1 {
+		gate = 1
+	}
+	// 压缩后的电平：小信号约 2 倍，大信号饱和到 2*vbRef
+	lvl := env * (2 * vbRef) / (env + vbRef)
+	h *= lvl * gate
+
 	h = v.hp.process(&s.hp, h, 0)
 	h = v.hp2.process(&s.hp2, h, 0)
-	h = v.hp3.process(&s.hp3, h, 0)
-	h = v.post.process(&s.post, h, 0)
-	h = v.tilt.process(&s.tilt, h, 0) * v.out
+	h = v.post.process(&s.post, h, 0) * v.out
 	return l + h, r + h
 }
 
-// softClip 平滑饱和，输出始终在 (-1,1) 内。
-// 比 clamp 多了 1/n² 的高次衰减，听感更干净；代价是一次除法。
-func softClip(x float64) float64 {
-	return x / (1 + math.Abs(x))
+// softLimit 软拐点限幅：|v| 低于 vbKnee 原样通过，超过后平滑逼近满幅，
+// 叠加谐波后偶尔超出的峰值不会被硬削成刺耳的方波。
+const vbKnee = 26000.0
+
+func softLimit(v float64) float64 {
+	const span = 32767 - vbKnee
+	if v > vbKnee {
+		d := v - vbKnee
+		return vbKnee + d/(1+d/span)
+	}
+	if v < -vbKnee {
+		d := -v - vbKnee
+		return -vbKnee - d/(1+d/span)
+	}
+	return v
 }
 
 // eqFilter 一条挂进链路的频段：系数 + 它对应的频段下标。
@@ -286,9 +337,7 @@ type EQ struct {
 	// 参数热更新时只换系数，延迟线原样保留，才不会咔哒。
 	state     []biquadState
 	bassState virtualBassState
-	// 虚拟低音第一遍扫低频用的临时缓冲，音频线程独占，按需增长
-	vbBuf   []float64
-	curGen  uint64
+	curGen    uint64
 	nextGen uint64 // 仅 e.mu 保护
 }
 
@@ -381,12 +430,18 @@ func (e *EQ) rebuildLocked() {
 		if amount > 1 {
 			amount = 1
 		}
+		// 界面上的 0~100 映射到内部 0~vbMaxScale 倍
+		amount *= vbMaxScale
 		freq := e.cur.VirtualBassFreq
 		if freq <= 0 {
 			freq = conf.VBassDefaultFreq
 		}
 		// 谐波也跟着预增益缩放，否则压 preamp 压不住它
-		bass = &virtualBass{out: amount * vbFullScale * preamp}
+		// 谐波由预增益之后的信号生成，已经随 preamp 缩放，这里不再乘
+		bass = &virtualBass{
+			out: amount * vbOutGain,
+			sub: math.Min(amount*vbSubPerAmount, vbMaxSub),
+		}
 		bass.setCoeffs(freq, e.rate)
 	}
 	// 全部频段都是 0dB、预增益 0dB、又没开虚拟低音：整条链路等价于直通
@@ -465,18 +520,6 @@ func (e *EQ) Process(buf []byte) {
 	bassState := &e.bassState
 	frames := n / 4
 
-	// 虚拟低音要先扫一遍低频做 AGC，再回头处理：每块多一次解码，
-	// 换来大音量低频的谐波强度稳定，不用按录音电平调强度。
-	var vbGain float64
-	var scratch []float64
-	if bass != nil {
-		if cap(e.vbBuf) < frames {
-			e.vbBuf = make([]float64, frames)
-		}
-		scratch = e.vbBuf[:frames]
-		vbGain = bass.analyze(bassState, buf, frames, scratch, p.sampleRate)
-	}
-
 	for i := 0; i < n; i += 4 {
 		l := float64(int16(uint16(buf[i]) | uint16(buf[i+1])<<8))
 		r := float64(int16(uint16(buf[i+2]) | uint16(buf[i+3])<<8))
@@ -485,12 +528,16 @@ func (e *EQ) Process(buf []byte) {
 			r *= preamp
 		}
 		if bass != nil {
-			l, r = bass.process(bassState, scratch[i>>2], l, r, vbGain)
+			l, r = bass.process(bassState, l, r)
 		}
 		for fi := range filters {
 			f := &filters[fi]
 			l = f.coeffs.process(&state[f.band], l, 0)
 			r = f.coeffs.process(&state[f.band], r, 1)
+		}
+		if bass != nil {
+			l = softLimit(l)
+			r = softLimit(r)
 		}
 		dst := buf[i : i+4]
 		putS16LE(dst, l, r)
