@@ -18,26 +18,82 @@ import (
 	"github.com/zanjie1999/httpme"
 )
 
+// 没查到
+var errNoResult = errors.New("没有结果")
+
+// GetCityCode 用市/区名查询天气代码
 func GetCityCode(q string) (string, string, error) {
-	if q != "" {
-		resp, err := httpme.Get("https://toy1.weather.com.cn/search", httpme.Params{"cityname": q}, httpme.Header{"Referer": "http://www.weather.com.cn/"})
-		if err != nil {
-			log.Println("GetCityCode 请求出错", err)
-			return "", "", err
-		}
-		var j []map[string]string
-		t := resp.Text()
-		log.Println("GetCityCode:", t)
-		err = json.Unmarshal([]byte(t[1:len(t)-1]), &j)
-		if err != nil {
-			log.Println("GetCityCode json解析出错", err)
-			return "", "", err
-		}
-		if len(j) > 0 {
-			return strings.Split(j[0]["ref"], "~")[0], j[0]["ref"], nil
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", "", errNoResult
+	}
+	code, ref, err := searchCityCode(q)
+	if err == nil {
+		return code, ref, nil
+	}
+	if err != errNoResult {
+		return "", "", err
+	}
+	if s := strings.Trim(q, "区县市"); s != q && s != "" {
+		if code, ref, err = searchCityCode(s); err == nil {
+			return code, ref, nil
 		}
 	}
-	return "", "", errors.New("没有结果")
+	return "", "", errNoResult
+}
+
+// searchCityCode 查天气网的城市搜索接口
+func searchCityCode(q string) (string, string, error) {
+	resp, err := httpme.Get("https://toy1.weather.com.cn/search", httpme.Params{"cityname": q}, httpme.Header{"Referer": "http://www.weather.com.cn/"})
+	if err != nil {
+		log.Println("GetCityCode 请求出错", err)
+		return "", "", err
+	}
+	t := resp.Text()
+	log.Println("GetCityCode:", t)
+	j, err := parseCitySearch(t)
+	if err != nil {
+		log.Println("GetCityCode 解析出错", err)
+		return "", "", err
+	}
+	// 结果里混着街道/乡镇（12位）和景点（带字母），这些代码查不到天气，
+	// 所以取第一个9位的城市代码
+	for _, item := range j {
+		ref := item["ref"]
+		code := strings.Split(ref, "~")[0]
+		if isCityCode(code) {
+			return code, ref, nil
+		}
+	}
+	return "", "", errNoResult
+}
+
+// parseCitySearch 取出返回里的城市列表。
+// 正常返回是 ([{...}])，没结果或接口抽风时只有一个 () 或 ([])，
+// 以前按位置切 [1:len-1] 会切出空串，报 unexpected end of JSON input
+func parseCitySearch(t string) ([]map[string]string, error) {
+	start, end := strings.Index(t, "["), strings.LastIndex(t, "]")
+	if start == -1 || end <= start {
+		return nil, errNoResult
+	}
+	var j []map[string]string
+	if err := json.Unmarshal([]byte(t[start:end+1]), &j); err != nil {
+		return nil, err
+	}
+	return j, nil
+}
+
+// isCityCode 城市代码是9位数字；街道/乡镇12位、景点带字母，天气页都查不到
+func isCityCode(code string) bool {
+	if len(code) != 9 {
+		return false
+	}
+	for _, c := range code {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func GetWeatherApi(code string) (map[string]string, map[string]string, string, string, error) {
@@ -77,6 +133,9 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, string, s
 		// 名字 当前气温 天气 日期
 		indexStart = strings.Index(str, "dataSK =")
 		indexEnd = strings.Index(str, ";var dataZS")
+		if indexStart == -1 || indexEnd == -1 || indexEnd <= indexStart {
+			return nil, nil, "", "", errors.New("天气数据解析失败")
+		}
 		jsonDataSK := str[indexStart+8 : indexEnd]
 		log.Println("GetWeather sk", jsonDataSK)
 
@@ -84,6 +143,9 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, string, s
 		indexStart = strings.Index(str, "\"f\":[")
 		// jsonFC := str[indexStart+4 : len(str)-1]
 		indexEnd = strings.Index(str, ",{\"fa")
+		if indexStart == -1 || indexEnd == -1 || indexEnd <= indexStart {
+			return nil, nil, "", "", errors.New("天气数据解析失败")
+		}
 		jsonFC := str[indexStart+5 : indexEnd]
 		log.Println("GetWeather fc", jsonFC)
 
@@ -122,6 +184,9 @@ func GetWeatherApi(code string) (map[string]string, map[string]string, string, s
 			"30": "扬沙",
 			"31": "强沙尘暴",
 			"32": "霾",
+		}
+		if len(jsonFC) < 19 {
+			return nil, nil, "", "", errors.New("天气数据解析失败")
 		}
 		fa := jsonFC[7:9]
 		fb := jsonFC[17:19]
