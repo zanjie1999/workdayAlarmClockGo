@@ -1,4 +1,6 @@
 # 工作咩闹钟  
+社畜的一天从美好的音乐开始  
+
 <img width="240" height="240" src="https://github.com/user-attachments/assets/de4e9f0b-16ed-4e68-a8eb-b9f039b12f64" />
 
 **基于 Go 重构的跨平台智能工作日闹钟与局域网音视频服务。**  
