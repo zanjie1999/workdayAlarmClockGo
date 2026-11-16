@@ -170,6 +170,8 @@ func shellInput() {
 				}
 			case "weather":
 				weather.GetWeather("")
+			case "alarmlist":
+				alarmList()
 			case "update":
 				go checkUpdate()
 			default:
@@ -209,6 +211,12 @@ func shellInput() {
 						player.StopUnix = 0
 						fmt.Println("已取消定时停止")
 					}
+				} else if strings.HasPrefix(cmd, "alarmadd ") {
+					hhmm, typeS := alarmArgs(cmd[9:])
+					alarmAdd(hhmm, typeS)
+				} else if strings.HasPrefix(cmd, "alarmdel ") {
+					hhmm, typeS := alarmArgs(cmd[9:])
+					alarmDel(hhmm, typeS)
 				} else {
 					fmt.Println("未知命令", cmd)
 				}

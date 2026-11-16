@@ -1179,6 +1179,13 @@ func replaceFBStream(body io.ReadCloser) *fbStreamSession {
 	// 屏幕现在归我：让 LVGL 外壳停掉自己的刷新，否则两边互相覆盖
 	notifyLvglFBStream(true)
 
+	if conf.IsLvgl {
+		// 外壳收到 FBSTART 后要先 DROP_MASTER（它 20ms 轮询一次 stdout），
+		// 紧接着的 Open() 抢不到 master 就退回 /dev/fb0 —— 那个 buffer 不在
+		// 扫描输出上，投屏等于黑屏。等外壳把手松开。
+		time.Sleep(180 * time.Millisecond)
+	}
+
 	return session
 }
 
