@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	VERSION  = "50.4"
+	VERSION  = "51.3"
 	lasthhmm = ""
 )
 
@@ -172,6 +172,12 @@ func shellInput() {
 				weather.GetWeather("")
 			case "alarmlist":
 				alarmList()
+			case "nowplay":
+				if player.IsStop {
+					app.SendLocal("当前没有播放")
+					return
+				}
+				app.SendLocal("正在播放: " + player.NowPlaying)
 			case "update":
 				go checkUpdate()
 			default:
