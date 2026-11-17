@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"workdayAlarmClock/alarm"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/display"
@@ -640,41 +641,19 @@ func Init(urlPrefix string) *gin.Engine {
 
 	// 加闹钟
 	root.GET("/addAlarm", func(c *gin.Context) {
-		hhmm := c.Query("hhmm")
-		typeS := c.Query("type")
-		// 万一呢 顺手就输进去了 手贱过一次导致闹钟没响
-		hhmm = strings.ReplaceAll(strings.ReplaceAll(hhmm, "：", ""), ":", "")
-		if len(typeS) > 0 && typeS[len(typeS)-1] == ',' {
-			typeS = typeS[:len(typeS)-1]
-		}
-		if typeS == "" {
-			// 默认一次
-			typeS = "3"
-		}
-		if hhmm == "" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm is empty</h1>"+js2home))
+		if !alarm.Add(c.Query("hhmm"), c.Query("type")) {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>闹钟参数不合法</h1>"+js2home))
 			return
 		}
-		if typeList, exists := conf.Cfg.Alarm[hhmm]; exists {
-			conf.Cfg.Alarm[hhmm] = append(typeList, strings.Split(typeS, ",")...)
-		} else {
-			conf.Cfg.Alarm[hhmm] = strings.Split(typeS, ",")
-		}
-		conf.Save()
-		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
 	// 删闹钟
 	root.GET("/delAlarm", func(c *gin.Context) {
-		hhmm := c.Query("hhmm")
-		if hhmm == "" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>hhmm is empty</h1>"+js2home))
+		if !alarm.Del(c.Query("hhmm")) {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>闹钟时间不合法或不存在</h1>"+js2home))
 			return
 		}
-		delete(conf.Cfg.Alarm, hhmm)
-		conf.Save()
-		updateAppAlarmWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(js2back))
 	})
 
@@ -737,6 +716,8 @@ func Init(urlPrefix string) *gin.Engine {
 			} else {
 				conf.Cfg.Tz = tz
 				time.Local = time.FixedZone("UTC+", tz*3600)
+				// 时区变了，下一次唤醒的时间戳也要跟着重算
+				alarm.SendNextWake()
 			}
 		}
 		conf.Cfg.WeatherCityCode = WeatherCityCode
@@ -803,7 +784,7 @@ func Init(urlPrefix string) *gin.Engine {
 		// 重新加载配置
 		conf.Init()
 		conf.WorkDayApi()
-		updateAppAlarmWake()
+		alarm.SendNextWake()
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>上传成功</h1>"+js2home))
 	})
 
@@ -985,15 +966,4 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	return r
-}
-
-// 更新app中每分钟锁的开关状态
-func updateAppAlarmWake() {
-	if conf.IsApp {
-		if len(conf.Cfg.Alarm) > 0 {
-			app.Send("ALARMON")
-		} else {
-			app.Send("ALARMOFF")
-		}
-	}
 }

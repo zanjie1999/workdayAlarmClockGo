@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"workdayAlarmClock/alarm"
 	"workdayAlarmClock/app"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
@@ -28,7 +29,7 @@ import (
 )
 
 var (
-	VERSION  = "51.3"
+	VERSION  = "52.0"
 	lasthhmm = ""
 )
 
@@ -57,15 +58,15 @@ func timeJob() {
 	}
 	lasthhmm = hhmm
 
-	// LVGL定时获取天气 1小时一次
-	if conf.WorkDayApiErr || conf.AppProto() && hhmm[2:] == "00" {
+	// LVGL定时获取天气 1小时一次，Android亮屏时自己会请求，不走这里
+	if conf.WorkDayApiErr || (conf.IsLvgl && hhmm[2:] == "00") {
 		weather.GetWeather("")
 	}
 	// 如出错则每分钟重试 比如刚开机时间是1970-01-01或是压根没网
 	if conf.WorkDayApiErr || hhmm == "0000" {
 		conf.WorkDayApi()
 	}
-	if hhmm == conf.Cfg.WeatherUpdate {
+	if !conf.IsApp && hhmm == conf.Cfg.WeatherUpdate {
 		weather.GetWeather("")
 	}
 	if hhmm == "2233" {
@@ -95,13 +96,7 @@ func timeJob() {
 					}
 				}
 				conf.Save()
-				if conf.IsApp {
-					if len(conf.Cfg.Alarm) > 0 {
-						app.Send("ALARMON")
-					} else {
-						app.Send("ALARMOFF")
-					}
-				}
+				alarm.SendNextWake()
 				break
 			} else if dayType == mmdd {
 				// 月日
@@ -111,6 +106,8 @@ func timeJob() {
 			}
 		}
 	}
+	// 算下一次该醒的时间，通知 Android 壳排精确闹钟
+	alarm.SendNextWake()
 }
 
 // 处理shell输入 go shellInput()
@@ -171,7 +168,7 @@ func shellInput() {
 			case "weather":
 				weather.GetWeather("")
 			case "alarmlist":
-				alarmList()
+				alarm.List()
 			case "nowplay":
 				if player.IsStop {
 					app.SendLocal("当前没有播放")
@@ -218,11 +215,11 @@ func shellInput() {
 						fmt.Println("已取消定时停止")
 					}
 				} else if strings.HasPrefix(cmd, "alarmadd ") {
-					hhmm, typeS := alarmArgs(cmd[9:])
-					alarmAdd(hhmm, typeS)
+					hhmm, typeS := alarm.Args(cmd[9:])
+					alarm.Add(hhmm, typeS)
 				} else if strings.HasPrefix(cmd, "alarmdel ") {
-					hhmm, typeS := alarmArgs(cmd[9:])
-					alarmDel(hhmm, typeS)
+					hhmm, typeS := alarm.Args(cmd[9:])
+					alarm.DelTypes(hhmm, typeS)
 				} else {
 					fmt.Println("未知命令", cmd)
 				}
@@ -394,9 +391,6 @@ func main() {
 	if conf.AppProto() && conf.Cfg.Wakelock {
 		app.SendLocal("WAKELOCK")
 	}
-	if conf.AppProto() && len(conf.Cfg.Alarm) > 0 {
-		app.SendLocal("ALARMON")
-	}
 	// 设置时区
 	time.Local = time.FixedZone("UTC+", conf.Cfg.Tz*3600)
 	log.Println("工作咩闹钟 v" + VERSION)
@@ -406,7 +400,8 @@ func main() {
 		weather.GetWeather("")
 	}
 	if !conf.IsApp || conf.IsApp && conf.Cfg.Wakelock {
-		// Android在有闹钟时有每分钟的定时器，在启动Wakelock时将使用双重定时器保证一定会被调用
+		// Android 不开 Wakelock 时靠壳的精确闹钟唤醒，不需要内置定时器
+		// 开了 Wakelock 才有常驻 CPU 锁，用内置定时器兜底
 		log.Println("内置定时器已启用")
 		go timer()
 	}
