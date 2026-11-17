@@ -7,8 +7,8 @@ export CGO_ENABLED=0
 if [ "${1:-}" != "1" ]; then
     export GOARCH=arm
     export GOOS=linux
-    mkdir -p $AndroidProject/app/libs/armeabi
-    go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi/libWorkdayAlarmClock.so
+    mkdir -p $AndroidProject/app/libs/armeabi-v7a
+    go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/armeabi-v7a/libWorkdayAlarmClock.so
     export GOARCH=386
     mkdir -p $AndroidProject/app/libs/x86
     go build -tags app -ldflags="-w -s" -o $AndroidProject/app/libs/x86/libWorkdayAlarmClock.so
