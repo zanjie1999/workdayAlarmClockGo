@@ -202,6 +202,26 @@ func Next() string {
 	}
 }
 
+// 连按 next 时一次跳 n 首：中间 n-1 首直接弹出列表，不查URL不播放，最后一首走 Next()
+func NextN(n int) string {
+	if n < 2 {
+		return Next()
+	}
+	if LoopMode && NowUrl != "" {
+		// 单曲循环没有下一首，跳多少都是这首
+		return Next()
+	}
+	// 跳过的歌没真正播放，不记入闹钟的已播记录
+	for i := 0; i < n-1 && len(PlayList) > 0; i++ {
+		PlayList = append([]string(nil), PlayList[1:]...)
+		// 歌名列表和 PlayList 同下标，同步弹掉
+		if len(PlayNames) > 0 {
+			PlayNames = append([]string(nil), PlayNames[1:]...)
+		}
+	}
+	return Next()
+}
+
 // 一键急停按钮 自动控制播放停止
 func Me1Key() string {
 	if IsStop {

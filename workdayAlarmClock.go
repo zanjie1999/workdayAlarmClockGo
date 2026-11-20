@@ -7,6 +7,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -29,7 +30,7 @@ import (
 )
 
 var (
-	VERSION  = "52.0"
+	VERSION  = "52.2"
 	lasthhmm = ""
 )
 
@@ -136,7 +137,23 @@ func shellInput() {
 			case "volm":
 				player.VolDown()
 			case "next":
-				app.Send(player.Next())
+				// 防抖收集连按的next：按一下来一条，停手超过窗口期才一次跳到位
+				n := 1
+				last := time.Now()
+				for time.Since(last) < 200*time.Millisecond {
+					buf, _ := reader.Peek(reader.Buffered())
+					if i := bytes.IndexByte(buf, '\n'); i >= 0 {
+						if strings.TrimSpace(string(buf[:i])) != "next" {
+							break // 后面排着别的命令，先跳完这批再处理
+						}
+						reader.Discard(i + 1)
+						n++
+						last = time.Now() // 还在连按，窗口往后延
+						continue
+					}
+					time.Sleep(10 * time.Millisecond) // 等用户继续按
+				}
+				app.Send(player.NextN(n))
 			case "prev":
 				app.Send(player.Prev())
 			case "1key":
@@ -224,9 +241,19 @@ func shellInput() {
 					fmt.Println("未知命令", cmd)
 				}
 			}
-			// 丢掉在处理过程中输入的命令(比如疯狂的next会堆积起来)
-			if reader.Buffered() > 0 {
-				reader.Discard(reader.Buffered())
+			// 丢掉在处理过程中输入的其他命令(比如疯狂的pause会堆积起来)
+			// 堆积的next不能丢，要留给防抖统计，连按几下就跳几首
+			for reader.Buffered() > 0 {
+				buf, _ := reader.Peek(reader.Buffered())
+				i := bytes.IndexByte(buf, '\n')
+				if i < 0 {
+					// 不完整的半行可能是正在写入的next，不动它
+					break
+				}
+				if strings.TrimSpace(string(buf[:i])) == "next" {
+					break // 停在第一条next上，交给主循环防抖处理
+				}
+				reader.Discard(i + 1)
 			}
 		}
 	}
