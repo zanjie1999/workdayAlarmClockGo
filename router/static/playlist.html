@@ -662,6 +662,41 @@
           fail(e);
         }
       }
+      // postJSON 发 POST 请求，body 是可序列化对象（/playmusiclist 用，ids 太长不能走 GET）
+      function postJSON(url, data, done, failed) {
+        var xhr;
+        var finished = false;
+        failed = failed || function () {};
+        function fail(error) {
+          if (finished) return;
+          finished = true;
+          failed(error);
+        }
+        try {
+          xhr = window.XMLHttpRequest
+            ? new XMLHttpRequest()
+            : new ActiveXObject("Microsoft.XMLHTTP");
+          xhr.onreadystatechange = function () {
+            var status;
+            if (xhr.readyState !== 4 || finished) return;
+            status = xhr.status === 1223 ? 204 : xhr.status;
+            if (status >= 200 && status < 300) {
+              finished = true;
+              done(xhr.responseText);
+            } else {
+              fail(new Error(errorText(xhr.responseText) || "HTTP " + status));
+            }
+          };
+          xhr.onerror = function () {
+            fail(new Error("网络请求失败"));
+          };
+          xhr.open("POST", url, true);
+          xhr.setRequestHeader("Content-Type", "application/json");
+          xhr.send(JSON.stringify(data));
+        } catch (e) {
+          fail(e);
+        }
+      }
       // errorText 取后端错误响应里的 error 字段，取不到返回空串
       function errorText(text) {
         var data;
@@ -1078,13 +1113,12 @@
         if (!ids.length || !state.selected) return;
         updatePlaying(ids[0]);
         if (state.selected.id !== DAILY_ID) addHistory(String(state.selected.id));
-        request(
-          "/playmusiclist?ids=" +
-            encodeURIComponent(ids.join(",")) +
-            "&id=" +
-            encodeURIComponent(
-              state.selected.id === DAILY_ID ? "" : state.selected.id
-            ),
+        postJSON(
+          "/playmusiclist",
+          {
+            ids: ids,
+            id: state.selected.id === DAILY_ID ? "" : String(state.selected.id),
+          },
           function () {
             msg("播放 " + ids.length + " 首歌曲");
           },

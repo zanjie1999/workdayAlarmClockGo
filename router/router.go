@@ -431,14 +431,18 @@ func Init(urlPrefix string) *gin.Engine {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>播放歌单 "+player.PlayNePlaylist(id, c.Query("random") == "1")+"</h1>"+js2home))
 	})
 
-	// 由前端解析播放列表
-	root.GET("/playmusiclist", func(c *gin.Context) {
-		ids := c.Query("ids")
-		if ids == "" {
+	// 由前端解析播放列表。改成 POST JSON：几百个 id 拼在 GET 的 URL 上会超长，
+	// body 传数组也省了服务端拆字符串
+	root.POST("/playmusiclist", func(c *gin.Context) {
+		var body struct {
+			IDs []string `json:"ids"`
+			ID  string   `json:"id"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil || len(body.IDs) == 0 {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>ids is empty</h1>"+js2home))
 			return
 		}
-		player.PlayNeMusicList(strings.Split(ids, ","), c.Query("id"), c.Query("random") == "1")
+		player.PlayNeMusicList(body.IDs, body.ID, c.Query("random") == "1")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
 	})
 
