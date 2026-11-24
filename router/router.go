@@ -915,13 +915,9 @@ func Init(urlPrefix string) *gin.Engine {
 		go func() {
 			// 留点时间把响应发出去，exec 会直接接管进程
 			time.Sleep(2 * time.Second)
+			// Apply 成功时进程已经被新版本接管（exec 过去），不会返回
 			if err := update.Apply(p); err != nil {
 				log.Println("更新失败", err)
-				return
-			}
-			log.Println("更新完成，正在重启")
-			if err := update.Restart(); err != nil {
-				log.Println("重启失败，请手动重启程序", err)
 			}
 		}()
 	})
@@ -934,7 +930,7 @@ func Init(urlPrefix string) *gin.Engine {
 			os.Exit(0)
 		} else {
 			// 统一用 update.Restart，它执行的是启动时缓存的路径，
-			// 不会因为更新时把程序改名成 .old 而跑回旧版本
+			// 不会因为更新过程中进程 exec 到过别处而找错目标
 			if err := update.Restart(); err != nil {
 				log.Println("重启失败", err)
 				c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h1>重启失败</h1>"+js2home))

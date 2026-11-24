@@ -1,24 +1,26 @@
 /*
  * 自动更新：从 GitHub Release 检查新版本并下载替换自身
  *
- * 运行中的可执行文件在 Linux 上不能直接以写方式打开（ETXTBSY），
- * 但可以删掉目录项后再写同一个路径：代码段和数据段已经映射进内存，
- * 删文件不会影响正在运行的进程，之后 exec 一次自己就完成升级了。
+ * 运行中的可执行文件在 Linux 上既不能以写方式打开（ETXTBSY），
+ * 也不能靠「删掉它」来腾空间：代码段还映射在进程里，inode 引用没归零，
+ * 块要等进程 exec 到别的镜像上、或者退出之后才真正还给文件系统。
  *
- * 磁盘空间吃紧的设备上，同时存在「旧版 + 新版 + 备份」很容易把分区写满，
- * 所以升级流程改成：
- *  1. 先把当前版本 gzip 压缩备份（优先 /tmp，没有 /tmp 再放程序所在目录），
- *     压缩后通常只有原文件的三分之一左右；
- *  2. 删掉正在运行的旧文件，把空间彻底让出来；
- *  3. 再下载新版本，落到同一个路径上。
- * 下载/校验/替换任何一步失败，都会用备份把旧版本解压回去，不会留下一台没有程序的设备。
+ * 所以空间吃紧的设备上走「内存接力」：
+ *  1. 新版本先下载进 memfd（只占内存），校验通过；
+ *  2. exec 到内存里的新版本，参数带上真实路径和原有参数（PID 不变），
+ *     这一刻旧文件的引用归零，删掉就真能释放空间；
+ *  3. 内存里那一份删掉旧文件、把自己写到 真实路径.new、rename 落位；
+ *  4. 再 exec 回真实路径，内存那一份随 exec 自动消失。
+ * 磁盘上任何时刻最多只有一份程序，断电窗口只有最后那一下 rename。
+ *
+ * 走不了内存（内存不够 / 内核限制 / 非 Linux）就退回旁路方案：
+ * 新版本下载到程序旁边的 .new，校验后 rename 覆盖，峰值需要两份空间。
+ * 两条路线都在动手之前按 Release 里的大小算一次空间，不够就不更新。
  */
 
 package update
 
 import (
-	"compress/gzip"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,14 +41,28 @@ import (
 
 const (
 	// DefaultProxy GitHub 下载加速前缀，留空则直连
-	DefaultProxy = "https://ghproxy.net/"
+	DefaultProxy = "https://gh-proxy.com/"
 	// 检查更新的缓存时间，避免频繁请求 api.github.com 被限流
 	checkCacheTime = 5 * time.Minute
-	// 首选的备份目录：大多数 Linux 设备上 /tmp 是 tmpfs，不占用户分区
-	preferBackupDir = "/tmp"
-	// 备份文件后缀
-	backupSuffix = ".old.gz"
+	// 空间检查留的余量：新版本大小 / spaceSlack，给 fsync 和文件系统元数据
+	spaceSlack = 20
+	// relaySuffix 接力副本的文件名后缀，放在临时目录里，用完即删
+	relaySuffix = ".run"
 )
+
+// errNoRelay 当前环境没有可用的接力方式（内核没 memfd、临时目录用不了、非 Linux），
+// 调用方退回旁路方案
+var errNoRelay = errors.New("没有可用的接力方式")
+
+// tmpCandidates 接力副本可以放的临时目录，优先 /tmp（多数设备上是 tmpfs，
+// 不占程序所在分区），没有再用 $TMPDIR
+func tmpCandidates() []string {
+	dirs := []string{"/tmp"}
+	if d := strings.TrimSpace(os.Getenv("TMPDIR")); d != "" && filepath.Clean(d) != "/tmp" {
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
 
 // Asset Release 里的一个文件
 type Asset struct {
@@ -103,8 +119,8 @@ func Init(version, repoName string) {
 	repo = strings.Trim(strings.TrimSpace(repoName), "/")
 	proxy = DefaultProxy
 	// 必须在任何更新动作之前把自身路径缓存下来：
-	// 更新时会先删掉正在运行的文件再写新文件，之后 /proc/self/exe
-	// 指向的是一个已经删除的旧 inode，路径不能再信
+	// 更新过程中当前进程会被换成别的镜像，之后 /proc/self/exe
+	// 指向的可能是一个已经删除的旧 inode，路径不能再信
 	if _, err := selfPath(); err != nil {
 		log.Println("缓存程序路径失败", err)
 	}
@@ -299,7 +315,9 @@ func Check() (*Plan, error) {
 
 /* ---------------- 下载替换 ---------------- */
 
-// Apply 按计划下载并替换当前可执行文件，成功后需要调用 Restart 重启
+// Apply 按计划下载并替换当前可执行文件。
+// 成功时进程会被新版本接管（exec 过去），不会返回；
+// 返回 error 表示没换成，磁盘上的旧版本原封不动。
 func Apply(p *Plan) error {
 	if p == nil || !p.HasUpdate {
 		return errors.New("当前已是最新版本")
@@ -308,7 +326,7 @@ func Apply(p *Plan) error {
 		return fmt.Errorf("Release 里没有 %s/%s 的可用文件，请手动下载", runtime.GOOS, runtime.GOARCH)
 	}
 	if runtime.GOOS == "windows" {
-		// Windows 不允许重命名正在运行的 exe，只能手动替换
+		// Windows 不允许删除或替换正在运行的 exe，只能手动替换
 		return errors.New("Windows 下无法替换正在运行的程序，请手动下载更新")
 	}
 	exe, err := selfPath()
@@ -318,45 +336,127 @@ func Apply(p *Plan) error {
 	return applyTo(exe, p)
 }
 
-// applyTo 下载并替换指定的文件，单独拆出来方便测试。
+// target 一次替换要用到的旧文件信息
+type target struct {
+	exe    string
+	mode   os.FileMode
+	size   int64  // 旧文件大小，删掉后能腾出这么多空间
+	need   uint64 // 新版本要占的空间（含余量），Release 没给大小时为 0
+	free   uint64 // 当前可用空间
+	freeOK bool   // 查不到可用空间时为 false，跳过空间检查
+}
+
+// newTarget 收集旧文件信息和所在分区的可用空间
+func newTarget(exe string) target {
+	t := target{exe: exe, mode: 0755}
+	if fi, err := os.Stat(exe); err == nil {
+		t.mode = fi.Mode().Perm()
+		t.size = fi.Size()
+	}
+	free, err := freeSpace(filepath.Dir(exe))
+	t.free, t.freeOK = free, err == nil
+	if err != nil {
+		log.Println("查询", filepath.Dir(exe), "的可用空间失败，跳过空间检查")
+	}
+	return t
+}
+
+// notEnough 判断 avail 字节够不够放新版本，返回空串表示够
+func (t target) notEnough(avail uint64) string {
+	if !t.freeOK || t.need == 0 {
+		return ""
+	}
+	if avail >= t.need {
+		return ""
+	}
+	return fmt.Sprintf("空间不足，本次不更新：可用 %s，新版本需要 %s", humanSize(avail), humanSize(t.need))
+}
+
+// applyTo 选一条路线把新版本换上去。
 //
-// 为了省空间，顺序是「压缩备份旧版 → 删掉旧版 → 下载新版」，
-// 峰值占用只有一个压缩包 + 一个新文件，而不是「旧版 + 新版 + 副本」。
+// 优先级：接力路线（内存文件 → 临时目录）→ 旁路路线。
+// 接力的好处是旧文件先被删掉再写新的，磁盘上任何时刻只占一份；
+// 旁路要旧文件还在的时候再写一份新的，峰值是两倍。
 func applyTo(exe string, p *Plan) error {
-	if p == nil || !p.HasUpdate {
-		return errors.New("当前已是最新版本")
-	}
-	if p.Asset == "" {
-		return fmt.Errorf("Release 里没有 %s/%s 的可用文件，请手动下载", runtime.GOOS, runtime.GOARCH)
-	}
 	applyMu.Lock()
 	defer applyMu.Unlock()
 
-	// 记住原来的权限位，后面写到同一个路径上时保持一致
-	mode := os.FileMode(0755)
-	if fi, err := os.Stat(exe); err == nil {
-		mode = fi.Mode().Perm()
-	}
+	t := newTarget(exe)
+	t.need = withSlack(p.Size)
 
-	// 1. 先把当前版本 gzip 压缩备份出去（优先 /tmp）。
-	//    备份不成功就到此为止，绝不能在没有退路的情况下删掉正在运行的程序。
-	backup, err := backupCurrent(exe)
+	// 成功时不会返回
+	err := applyViaRelay(t, p)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, errNoRelay) {
+		return err
+	}
+	log.Println("改用旁路方案：", err)
+
+	if msg := t.notEnough(t.free); msg != "" {
+		return errors.New(msg)
+	}
+	return applyBeside(t, p)
+}
+
+// applyBeside 把新版本下载到程序旁边的 .new，校验后 rename 覆盖并重启。
+// 峰值要「旧 + 新」两份空间，但不需要额外内存。
+func applyBeside(t target, p *Plan) error {
+	f, err := createNew(t)
 	if err != nil {
 		return err
 	}
-	log.Println("当前版本已压缩备份到", backup)
-
-	// 2. 删掉正在运行的旧文件，把空间让给新版本。
-	//    代码段已经映射进内存，删掉目录项当前进程照跑，后面再往同一个路径写新文件即可。
-	if err := os.Remove(exe); err != nil {
-		return errors.New("删除旧版本文件失败（目录可能没有写权限）：" + err.Error())
+	size, err := downloadPlan(p, f)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return err
 	}
+	return finishBeside(t, f, size)
+}
 
-	// 3. 下载到同目录的临时文件，校验通过再改名成正式文件名。
-	//    用临时文件是为了保证正式路径上不会出现半截文件。
-	tmp := exe + ".new"
+// createNew 建好程序旁边的 .new 临时文件。
+// 用读写方式打开：下载完要 ReadAt 校验文件头，只写的 fd 读不了。
+func createNew(t target) (*os.File, error) {
+	tmp := t.exe + ".new"
 	os.Remove(tmp)
-	// 优先用加速地址，失败再退回 GitHub 原始地址
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+	if err != nil {
+		return nil, errors.New("创建临时文件失败（目录可能没有写权限）：" + err.Error())
+	}
+	return f, nil
+}
+
+// finishBeside 把已经写好的 .new 收尾：刷盘、权限、改名、重启
+func finishBeside(t target, f *os.File, size int64) error {
+	tmp := f.Name()
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Chmod(tmp, t.mode); err != nil {
+		os.Remove(tmp)
+		return errors.New("设置执行权限失败：" + err.Error())
+	}
+	if err := os.Rename(tmp, t.exe); err != nil {
+		os.Remove(tmp)
+		return errors.New("替换程序失败：" + err.Error())
+	}
+	if err := checkReplaced(t.exe, size); err != nil {
+		return err
+	}
+	log.Println("新版本已落位，正在重启：", t.exe)
+	return Restart()
+}
+
+// downloadPlan 依次尝试加速地址和 GitHub 原始地址，写进 f 并校验文件头，返回实际字节数
+func downloadPlan(p *Plan, f *os.File) (int64, error) {
 	candidates := []string{}
 	if p.URL != "" {
 		candidates = append(candidates, p.URL)
@@ -367,221 +467,102 @@ func applyTo(exe string, p *Plan) error {
 	var lastErr error
 	for _, u := range candidates {
 		log.Println("开始下载更新", p.Latest, u)
-		if err := download(u, tmp, p.Size); err != nil {
+		// 换下一个地址之前要清掉上一次留下的半截内容
+		if err := f.Truncate(0); err != nil {
+			return 0, err
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return 0, err
+		}
+		n, err := downloadTo(u, f, p.Size)
+		if err != nil {
 			lastErr = err
 			log.Println("下载失败", err)
-			os.Remove(tmp)
 			continue
 		}
-		if err := verify(tmp); err != nil {
+		if err := checkELF(f); err != nil {
 			lastErr = err
 			log.Println("文件校验失败", err)
-			os.Remove(tmp)
 			continue
 		}
-		lastErr = nil
-		break
-	}
-	if lastErr != nil {
-		os.Remove(tmp)
-		return withRestore(exe, backup, lastErr)
-	}
-
-	// 4. 落地：任何一步失败都用备份把旧版本解压回去
-	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
-		return withRestore(exe, backup, errors.New("设置执行权限失败："+err.Error()))
-	}
-	if err := os.Rename(tmp, exe); err != nil {
-		os.Remove(tmp)
-		return withRestore(exe, backup, errors.New("替换程序失败："+err.Error()))
-	}
-	// 替换完成后再确认一次，避免把空文件或半截文件留在原路径上
-	if err := checkReplaced(exe, p.Size); err != nil {
-		os.Remove(exe)
-		return withRestore(exe, backup, err)
-	}
-	log.Println("更新完成，旧版本压缩备份在", backup)
-	return nil
-}
-
-// withRestore 更新失败时用备份把旧版本解压回原路径，再带着原始错误返回
-func withRestore(exe, backup string, cause error) error {
-	if err := restoreFrom(exe, backup); err != nil {
-		return fmt.Errorf("%w；从备份 %s 恢复也失败了：%v，请手动解压该文件改名回 %s", cause, backup, err, exe)
-	}
-	return fmt.Errorf("%w；已从备份恢复旧版本", cause)
-}
-
-/* ---------------- 压缩备份 / 恢复 ---------------- */
-
-// backupDirs 备份目录候选：优先 /tmp（多数设备上是 tmpfs，不占用户分区），
-// 没有 /tmp 或者写不进去时退回程序所在目录
-func backupDirs(exe string) []string {
-	dirs := []string{preferBackupDir}
-	if dir := filepath.Dir(exe); filepath.Clean(dir) != filepath.Clean(preferBackupDir) {
-		dirs = append(dirs, dir)
-	}
-	return dirs
-}
-
-// backupPath 备份文件路径，统一用 gzip 压缩，比原来的 .old 全量副本省一大半空间
-func backupPath(exe, dir string) string {
-	return filepath.Join(dir, filepath.Base(exe)+backupSuffix)
-}
-
-// backupCurrent 把正在运行的 exe gzip 压缩备份下来，返回备份文件路径
-func backupCurrent(exe string) (string, error) {
-	var lastErr error
-	for _, dir := range backupDirs(exe) {
-		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-			continue
-		}
-		dst := backupPath(exe, dir)
-		// 上一轮留下的同名备份先删掉，避免同时存在两份
-		os.Remove(dst)
-		if err := gzipFile(exe, dst); err != nil {
-			lastErr = err
-			log.Println("压缩备份到", dst, "失败", err)
-			os.Remove(dst)
-			continue
-		}
-		if err := checkBackup(exe, dst); err != nil {
-			lastErr = err
-			log.Println("备份校验失败", dst, err)
-			os.Remove(dst)
-			continue
-		}
-		return dst, nil
+		return n, nil
 	}
 	if lastErr == nil {
-		lastErr = errors.New("/tmp 和程序目录都不存在或不可写")
+		lastErr = errors.New("没有可用的下载地址")
 	}
-	return "", errors.New("备份当前版本失败：" + lastErr.Error())
+	return 0, lastErr
 }
 
-// gzipFile 把 src 压缩写到 dst
-func gzipFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	zw, err := gzip.NewWriterLevel(out, gzip.BestCompression)
-	if err != nil {
-		out.Close()
-		return err
-	}
-	zw.Name = filepath.Base(src)
-	zw.ModTime = time.Now()
-	buf := make([]byte, 256*1024)
-	if _, err := io.CopyBuffer(zw, in, buf); err != nil {
-		zw.Close()
-		out.Close()
-		return err
-	}
-	if err := zw.Close(); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
-}
-
-// checkBackup 粗校验备份：能解开、开头是可执行文件、解压后长度和原文件一致
-func checkBackup(exe, backup string) error {
-	srcInfo, err := os.Stat(exe)
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(backup)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	zr, err := gzip.NewReader(f)
-	if err != nil {
-		return errors.New("备份文件无法解开：" + err.Error())
-	}
-	defer zr.Close()
-	head := make([]byte, 4)
-	if _, err := io.ReadFull(zr, head); err != nil {
-		return errors.New("备份内容不完整：" + err.Error())
-	}
-	if err := checkMagic(head); err != nil {
-		return errors.New("备份内容不是当前系统的可执行文件")
-	}
-	// gzip 尾部的 ISIZE 记录原文件长度，用它快速排掉写了一半的备份
-	if isize, err := gzipISize(f); err == nil && int64(isize) != srcInfo.Size() {
-		return fmt.Errorf("备份长度不符，期望 %d 实际 %d", srcInfo.Size(), isize)
-	}
-	return nil
-}
-
-// gzipISize 读 gzip 尾部记录的原文件长度
-func gzipISize(f *os.File) (uint32, error) {
-	fi, err := f.Stat()
+// downloadTo 把 url 的内容流式写进 w，wantSize>0 时校验长度并打印进度
+func downloadTo(url string, w io.Writer, wantSize int64) (int64, error) {
+	req := httpme.Httpme()
+	// 单位是秒，给小水管留 30 分钟
+	req.SetTimeout(1800)
+	// 要的是可执行的原始字节，明确不要压缩：
+	// 带了 Accept-Encoding 后 net/http 不会再自动加 gzip，httpme 也不会走解压分支
+	resp, err := req.GetStream(url, httpme.Header{"Accept-Encoding": "identity"})
 	if err != nil {
 		return 0, err
 	}
-	if fi.Size() < 18 {
-		return 0, errors.New("备份文件过小")
+	defer resp.R.Body.Close()
+	if resp.R.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("下载返回 %s", resp.R.Status)
 	}
-	var b [4]byte
-	if _, err := f.ReadAt(b[:], fi.Size()-4); err != nil {
-		return 0, err
+
+	var written int64
+	buf := make([]byte, 64*1024)
+	lastLog := 0
+	for {
+		n, rerr := resp.R.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return written, werr
+			}
+			written += int64(n)
+			// 每 20% 打一条日志，方便在串口/日志里看进度
+			if wantSize > 0 {
+				if pct := int(written * 100 / wantSize); pct/20 > lastLog/20 {
+					lastLog = pct
+					log.Printf("已下载 %d%% (%d/%d)", pct, written, wantSize)
+				}
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return written, rerr
+		}
 	}
-	return binary.LittleEndian.Uint32(b[:]), nil
+	if wantSize > 0 && written != wantSize {
+		return written, fmt.Errorf("文件大小不符，期望 %d 实际 %d", wantSize, written)
+	}
+	if written < 512*1024 {
+		return written, fmt.Errorf("下载内容过小（%d 字节），可能下载到了错误页面", written)
+	}
+	return written, nil
 }
 
-// restoreFrom 用 gzip 备份把 exe 解压回原路径，更新失败时兜底
-func restoreFrom(exe, backup string) error {
-	f, err := os.Open(backup)
-	if err != nil {
-		return err
+// withSlack 给新版本大小留一点余量，0 表示大小未知
+func withSlack(size int64) uint64 {
+	if size <= 0 {
+		return 0
 	}
-	defer f.Close()
-	zr, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer zr.Close()
-	tmp := exe + ".restore"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-	if err != nil {
-		return err
-	}
-	buf := make([]byte, 256*1024)
-	if _, err := io.CopyBuffer(out, zr, buf); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	os.Chmod(tmp, 0755)
-	if err := os.Rename(tmp, exe); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	log.Println("已从备份恢复旧版本到", exe)
-	return nil
+	return uint64(size) + uint64(size/spaceSlack)
 }
 
+// humanSize 把字节数写成人看的大小
+func humanSize(n uint64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1fGB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0fKB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%dB", n)
+}
 
 // checkReplaced 校验替换后的文件大小与执行权限
 func checkReplaced(exe string, wantSize int64) error {
@@ -613,103 +594,11 @@ func SelfUpdate() (*Plan, error) {
 	return p, Apply(p)
 }
 
-func download(url, dst string, wantSize int64) error {
-	req := httpme.Httpme()
-	// 单位是秒，给小水管留 30 分钟
-	req.SetTimeout(1800)
-	// 要的是可执行的原始字节，明确不要压缩：
-	// 带了 Accept-Encoding 后 net/http 不会再自动加 gzip，httpme 也不会走解压分支
-	resp, err := req.GetStream(url, httpme.Header{"Accept-Encoding": "identity"})
-	if err != nil {
-		return err
-	}
-	defer resp.R.Body.Close()
-	if resp.R.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载返回 %s", resp.R.Status)
-	}
-
-	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	var written int64
-	buf := make([]byte, 64*1024)
-	lastLog := 0
-	for {
-		n, rerr := resp.R.Body.Read(buf)
-		if n > 0 {
-			if _, werr := f.Write(buf[:n]); werr != nil {
-				return werr
-			}
-			written += int64(n)
-			// 每 20% 打一条日志，方便在串口/日志里看进度
-			if wantSize > 0 {
-				if pct := int(written * 100 / wantSize); pct/20 > lastLog/20 {
-					lastLog = pct
-					log.Printf("已下载 %d%% (%d/%d)", pct, written, wantSize)
-				}
-			}
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return rerr
-		}
-	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	if wantSize > 0 && written != wantSize {
-		return fmt.Errorf("文件大小不符，期望 %d 实际 %d", wantSize, written)
-	}
-	if written < 512*1024 {
-		return fmt.Errorf("下载内容过小（%d 字节），可能下载到了错误页面", written)
-	}
-	return nil
-}
-
-// verify 检查下载下来的文件是不是当前系统的可执行文件
-func verify(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	head := make([]byte, 4)
-	if _, err := io.ReadFull(f, head); err != nil {
-		return err
-	}
-	return checkMagic(head)
-}
-
-// checkMagic 判断文件头是不是当前系统的可执行文件
-func checkMagic(head []byte) error {
-	var ok bool
-	switch runtime.GOOS {
-	case "windows":
-		ok = head[0] == 'M' && head[1] == 'Z'
-	case "darwin":
-		// Mach-O 64（含 arm64）以及 fat 二进制
-		ok = (head[0] == 0xcf && head[1] == 0xfa && head[2] == 0xed && head[3] == 0xfe) ||
-			(head[0] == 0xca && head[1] == 0xfe && head[2] == 0xba && head[3] == 0xbe)
-	default:
-		ok = head[0] == 0x7f && head[1] == 'E' && head[2] == 'L' && head[3] == 'F'
-	}
-	if !ok {
-		return errors.New("下载的文件不是可执行文件")
-	}
-	return nil
-}
-
 // selfPath 当前可执行文件的真实路径（解开软链接）
 //
-// 结果只在第一次调用时解析并缓存。Linux 的 /proc/self/exe 会跟着文件走：
-// 更新流程会先删掉正在运行的程序再写新文件，之后 /proc/self/exe 指向的是
-// 一个已经删除的旧 inode，再解析拿到的路径就不可靠了。所以 Init 时会先预热缓存，
-// 后续的 Restart、CleanupOld 一律用缓存值。
+// 结果只在第一次调用时解析并缓存。更新过程中进程会 exec 到别处，
+// 之后 os.Executable() 拿到的是新位置（甚至是 /memfd: 开头的内存文件），
+// 所以路径必须在启动时缓存，后续一律用缓存值。
 func selfPath() (string, error) {
 	selfPathMu.Lock()
 	defer selfPathMu.Unlock()
@@ -735,8 +624,6 @@ func selfPath() (string, error) {
 func SelfExe() (string, error) { return selfPath() }
 
 // CleanupOld 清理上次更新留下的临时文件，启动时调用。
-// 压缩备份只在它已经存在超过10分钟时才删，
-// 这样新版本刚替换完就起不来时，还能解压备份退回去。
 func CleanupOld() {
 	exe, err := selfPath()
 	if err != nil {
@@ -744,14 +631,14 @@ func CleanupOld() {
 	}
 	os.Remove(exe + ".new")
 	os.Remove(exe + ".restore")
-	// 老版本升级流程留下的未压缩副本，一并清掉
 	removeStale(exe + ".old")
-	for _, dir := range backupDirs(exe) {
-		removeStale(backupPath(exe, dir))
+	// 接力副本正常情况用完就删了，这里兜住中途掉电留下的
+	for _, dir := range tmpCandidates() {
+		os.Remove(filepath.Join(dir, filepath.Base(exe)+relaySuffix))
 	}
 }
 
-// removeStale 备份放置超过10分钟才删，留着给刚升级完的新版本一个退路
+// removeStale 遗留备份超过10分钟才删
 func removeStale(path string) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -764,4 +651,32 @@ func removeStale(path string) {
 	if err := os.Remove(path); err == nil {
 		log.Println("已清理旧版本备份", path)
 	}
+}
+
+// checkELF 检查文件头是不是当前系统的可执行文件
+func checkELF(r io.ReaderAt) error {
+	head := make([]byte, 4)
+	if _, err := r.ReadAt(head, 0); err != nil {
+		return errors.New("读取文件头失败：" + err.Error())
+	}
+	return checkMagic(head)
+}
+
+// checkMagic 判断文件头是不是当前系统的可执行文件
+func checkMagic(head []byte) error {
+	var ok bool
+	switch runtime.GOOS {
+	case "windows":
+		ok = head[0] == 'M' && head[1] == 'Z'
+	case "darwin":
+		// Mach-O 64（含 arm64）以及 fat 二进制
+		ok = (head[0] == 0xcf && head[1] == 0xfa && head[2] == 0xed && head[3] == 0xfe) ||
+			(head[0] == 0xca && head[1] == 0xfe && head[2] == 0xba && head[3] == 0xbe)
+	default:
+		ok = head[0] == 0x7f && head[1] == 'E' && head[2] == 'L' && head[3] == 'F'
+	}
+	if !ok {
+		return errors.New("下载的文件不是当前系统的可执行文件")
+	}
+	return nil
 }

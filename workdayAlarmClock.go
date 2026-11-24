@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	VERSION  = "52.2"
+	VERSION  = "53.0"
 	lasthhmm = ""
 )
 
@@ -290,13 +290,9 @@ func selfUpdate() {
 		return
 	}
 	fmt.Println("正在更新到 v" + p.Latest + " ...")
+	// Apply 成功时进程已经被新版本接管（exec 过去），不会返回
 	if err := update.Apply(p); err != nil {
 		fmt.Println("更新失败", err)
-		return
-	}
-	fmt.Println("更新完成，正在重启")
-	if err := update.Restart(); err != nil {
-		fmt.Println("重启失败，请手动重启程序", err)
 	}
 }
 
@@ -332,13 +328,9 @@ func checkUpdate() {
 			log.Println("正在播放，跳过本次自动更新，可稍后手动更新")
 			return
 		}
+		// Apply 成功时进程已经被新版本接管（exec 过去），不会返回
 		if err := update.Apply(p); err != nil {
 			log.Println("自动更新失败", err)
-			return
-		}
-		log.Println("自动更新完成，正在重启")
-		if err := update.Restart(); err != nil {
-			log.Println("重启失败，请手动重启程序以使用新版本", err)
 			return
 		}
 	}
@@ -363,6 +355,10 @@ func addPwd2Path() {
 }
 
 func main() {
+	// 从内存接管更新的那一份自己：只负责把新版本写回磁盘再 exec 回去
+	if update.HandleInstall(os.Args) {
+		return
+	}
 	addPwd2Path()
 
 	// libWorkdayAlarmClock.so app
