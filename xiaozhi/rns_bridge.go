@@ -13,6 +13,7 @@ package xiaozhi
 
 #include <dlfcn.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 // 由 rns_export.go 的 //export 生成
 extern void wxGoMicData(short *, int, int, int, void *);
