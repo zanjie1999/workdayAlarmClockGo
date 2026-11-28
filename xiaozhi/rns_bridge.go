@@ -9,6 +9,8 @@ package xiaozhi
 // 回调 wxGoMicData 由 rns_export.go 导出，这里声明一下就能用。
 
 /*
+#cgo linux LDFLAGS: -ldl
+
 #include <dlfcn.h>
 #include <stddef.h>
 
@@ -114,29 +116,31 @@ func rnsAvailable() bool {
 
 // startRNSCapture 打开前端并把音频交给 onFrame。
 func startRNSCapture(onFrame func([]int16), logf func(string)) error {
-	rnsCapture.mu.Lock()
-	defer rnsCapture.mu.Unlock()
-
-	rnsCapture.log = logf
 	if err := ensureFrontEndServer(logf); err != nil {
 		return err
 	}
 
+	rnsCapture.mu.Lock()
+	rnsCapture.log = logf
 	if !rnsCapture.opened {
 		path := C.CString(rnsClientLib)
 		rc := C.wx_rns_open(path)
 		C.free(unsafe.Pointer(path))
 		if rc != 0 {
+			rnsCapture.mu.Unlock()
 			return fmt.Errorf("打开四麦客户端库失败（%d）", int(rc))
 		}
 		rnsCapture.opened = true
 	}
-
 	rnsCapture.consumer = onFrame
 	rnsCapture.pending = rnsCapture.pending[:0]
-	if !rnsCapture.started {
+	startNow := !rnsCapture.started
+	rnsCapture.started = true
+	rnsCapture.mu.Unlock()
+
+	// 必须放开锁再调：库有可能在 init 里就同步回调，持锁进来会自锁
+	if startNow {
 		C.wx_rns_start(nil)
-		rnsCapture.started = true
 		if logf != nil {
 			logf("已接入四麦前端：波束/降噪/AEC 由它处理")
 		}
@@ -163,22 +167,34 @@ func handleRNSPCM(data *C.short, samples, a, b int) {
 	// data 指向库的内部缓冲，回调返回就失效，必须马上拷出来
 	src := unsafe.Slice((*int16)(unsafe.Pointer(data)), samples)
 
+	var (
+		consumer func([]int16)
+		logf     func(string)
+		frames   [][]int16
+	)
+
 	rnsCapture.mu.Lock()
-	defer rnsCapture.mu.Unlock()
+	if atomic.AddInt32(&rnsCapture.logCount, 1) <= 5 {
+		logf = rnsCapture.log
+	}
+	consumer = rnsCapture.consumer
+	if consumer != nil {
+		rnsCapture.pending = append(rnsCapture.pending, src...)
+		for len(rnsCapture.pending) >= core.FrameSamples {
+			frame := make([]int16, core.FrameSamples)
+			copy(frame, rnsCapture.pending[:core.FrameSamples])
+			rnsCapture.pending = rnsCapture.pending[core.FrameSamples:]
+			frames = append(frames, frame)
+		}
+	}
+	rnsCapture.mu.Unlock()
 
-	if atomic.AddInt32(&rnsCapture.logCount, 1) <= 5 && rnsCapture.log != nil {
-		rnsCapture.log(fmt.Sprintf("前端回调 samples=%d a=%d b=%d", samples, a, b))
+	if logf != nil {
+		logf(fmt.Sprintf("前端回调 samples=%d a=%d b=%d", samples, a, b))
 	}
 
-	consumer := rnsCapture.consumer
-	if consumer == nil {
-		return
-	}
-	rnsCapture.pending = append(rnsCapture.pending, src...)
-	for len(rnsCapture.pending) >= core.FrameSamples {
-		frame := make([]int16, core.FrameSamples)
-		copy(frame, rnsCapture.pending[:core.FrameSamples])
-		rnsCapture.pending = rnsCapture.pending[core.FrameSamples:]
+	// 编码和发送放到锁外面做，别让网络慢的时候把前端线程堵住
+	for _, frame := range frames {
 		consumer(frame)
 	}
 }

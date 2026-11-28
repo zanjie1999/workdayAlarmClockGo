@@ -5,8 +5,20 @@ package xiaozhi
 /*
 #cgo linux LDFLAGS: -lopus -lm
 
-#include <opus.h>
+#include <opus/opus.h>
 #include <stdlib.h>
+
+// opus_encoder_ctl 是变参函数，cgo 无法直接调用（会报 unexpected type: ...），
+// 在 C 侧包一层再给 Go 用。
+static void wx_opus_set_bitrate(OpusEncoder *enc, int bitrate) {
+	opus_encoder_ctl(enc, OPUS_SET_BITRATE(bitrate));
+}
+static void wx_opus_set_complexity(OpusEncoder *enc, int complexity) {
+	opus_encoder_ctl(enc, OPUS_SET_COMPLEXITY(complexity));
+}
+static void wx_opus_set_vbr(OpusEncoder *enc, int vbr) {
+	opus_encoder_ctl(enc, OPUS_SET_VBR(vbr));
+}
 */
 import "C"
 
@@ -30,9 +42,9 @@ func newOpusEncoder(sampleRate, channels, bitrate, complexity int) (*opusEncoder
 	if errCode != C.OPUS_OK || enc == nil {
 		return nil, fmt.Errorf("opus 编码器创建失败：%d", int(errCode))
 	}
-	C.opus_encoder_ctl(enc, C.OPUS_SET_BITRATE_REQUEST, C.opus_int32(bitrate))
-	C.opus_encoder_ctl(enc, C.OPUS_SET_COMPLEXITY_REQUEST, C.int(complexity))
-	C.opus_encoder_ctl(enc, C.OPUS_SET_VBR_REQUEST, C.int(1))
+	C.wx_opus_set_bitrate(enc, C.int(bitrate))
+	C.wx_opus_set_complexity(enc, C.int(complexity))
+	C.wx_opus_set_vbr(enc, C.int(1))
 	return &opusEncoder{enc: enc}, nil
 }
 

@@ -3,7 +3,6 @@
 package command
 
 import (
-	"os"
 	"syscall"
 )
 
