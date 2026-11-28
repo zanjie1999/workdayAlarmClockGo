@@ -96,6 +96,31 @@ jobs:
             make DESTDIR="$ALSA_STAGE" install
           )
 
+          # Opus 编解码：小智按 16k / 60ms 的 opus 包收发音频，必须静态链进来
+          OPUS_VERSION=1.4
+          OPUS_SOURCE="$WORK/opus-$OPUS_VERSION"
+          OPUS_PREFIX="$WORK/opus"
+          curl --fail --location --retry 3 \
+            "https://downloads.xiph.org/releases/opus/opus-$OPUS_VERSION.tar.gz" \
+            --output "$WORK/opus.tar.gz"
+          tar -xzf "$WORK/opus.tar.gz" -C "$WORK"
+          (
+            cd "$OPUS_SOURCE"
+            CC="$ARMHF_CC" \
+            CFLAGS="-O2 -fPIC" \
+            ./configure \
+              --host=arm-linux-gnueabihf \
+              --prefix=/usr \
+              --disable-shared \
+              --enable-static \
+              --disable-doc \
+              --disable-extra-programs
+            make -j"$(nproc)"
+            make DESTDIR="$OPUS_PREFIX" install
+          )
+          test -r "$OPUS_PREFIX/usr/include/opus/opus.h"
+          test -r "$OPUS_PREFIX/usr/lib/libopus.a"
+
           # Build libjpeg-turbo as a target static library and use the same
           # JPEG backend replacement as the multi-architecture CGO workflow.
           curl --fail --location --retry 3 \
@@ -128,8 +153,8 @@ jobs:
             GOARM=7 \
             CGO_ENABLED=1 \
             CC="$ARMHF_CC" \
-            CGO_CFLAGS="-I$ALSA_STAGE/usr/include -I$JPEG_PREFIX/include" \
-            CGO_LDFLAGS="-L$ALSA_STAGE/usr/lib -L$JPEG_PREFIX/lib" \
+            CGO_CFLAGS="-I$ALSA_STAGE/usr/include -I$JPEG_PREFIX/include -I$OPUS_PREFIX/usr/include" \
+            CGO_LDFLAGS="-L$ALSA_STAGE/usr/lib -L$JPEG_PREFIX/lib -L$OPUS_PREFIX/usr/lib" \
             go build -trimpath -tags alsa -ldflags="-w -s" \
               -o build/workdayAlarmClock-linux-armv7 ./
 

@@ -18,12 +18,14 @@ import (
 	"time"
 	"workdayAlarmClock/alarm"
 	"workdayAlarmClock/app"
+	"workdayAlarmClock/command"
 	"workdayAlarmClock/conf"
 	"workdayAlarmClock/nemusic"
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/router"
 	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
+	"workdayAlarmClock/xiaozhi"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zanjie1999/httpme"
@@ -112,6 +114,9 @@ func timeJob() {
 }
 
 // 处理shell输入 go shellInput()
+//
+// 这里只留 shell 专属的命令（进程控制、文件操作、连按防抖）。
+// 播放器和闹钟的命令全部转给 command.Run，和语音那边走同一份实现。
 func shellInput() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -126,16 +131,6 @@ func shellInput() {
 				player.IsPaused = false
 			case "pause1":
 				player.IsPaused = true
-			case "stop":
-				player.Stop()
-			case "pause":
-				player.Pause()
-			case "resume":
-				player.Resume()
-			case "volp":
-				player.VolUp()
-			case "volm":
-				player.VolDown()
 			case "next":
 				// 防抖收集连按的next：按一下来一条，停手超过窗口期才一次跳到位
 				n := 1
@@ -154,10 +149,6 @@ func shellInput() {
 					time.Sleep(10 * time.Millisecond) // 等用户继续按
 				}
 				app.Send(player.NextN(n))
-			case "prev":
-				app.Send(player.Prev())
-			case "1key":
-				app.Send(player.Me1Key())
 			case "exit":
 				if conf.IsApp {
 					fmt.Println("程序已退出，可以使用shell命令或使用 echo EXIT 退出App")
@@ -173,48 +164,21 @@ func shellInput() {
 				ip, _ := app.GetLocalIP()
 				app.Send("ECHO " + ip)
 				fmt.Println(ip)
-			case "play":
-				// 没有参数时一键播放
-				if player.IsStop {
-					player.Me1Key()
-				} else if player.IsPaused {
-					player.Resume()
-				} else {
-					player.Pause()
-				}
 			case "weather":
 				weather.GetWeather("")
-			case "alarmlist":
-				alarm.List()
-			case "nowplay":
-				if player.IsStop {
-					app.SendLocal("当前没有播放")
-					return
-				}
-				app.SendLocal("正在播放: " + player.NowPlaying)
 			case "update":
 				go checkUpdate()
 			default:
-				if strings.HasPrefix(cmd, "play ") {
-					player.PlayUrl(cmd[5:])
-				} else if strings.HasPrefix(cmd, "vol ") {
-					player.SetVol(cmd[4:])
-				} else if strings.HasPrefix(cmd, "echo ") {
+				switch {
+				case strings.HasPrefix(cmd, "echo "):
 					app.Send(cmd[5:])
-				} else if strings.HasPrefix(cmd, "playlist ") {
-					log.Println("播放歌单", player.PlayNePlaylist(cmd[9:], false))
-				} else if strings.HasPrefix(cmd, "playmusic ") {
-					log.Println("播放歌曲")
-					player.PlayNeMusic(cmd[10:], false)
-				} else if strings.HasPrefix(cmd, "playlistdl ") {
-					nemusic.PlaylistDownload(cmd[11:])
-				} else if strings.HasPrefix(cmd, "touch ") {
+				case strings.HasPrefix(cmd, "touch "):
 					f, e := os.Create(cmd[6:])
 					f.Close()
 					log.Println(e)
-				} else if strings.HasPrefix(cmd, "rm ") {
+				case strings.HasPrefix(cmd, "rm "):
 					log.Println(os.Remove(cmd[3:]))
-				} else if strings.HasPrefix(cmd, "savepath ") {
+				case strings.HasPrefix(cmd, "savepath "):
 					if cmd[9:] == "null" {
 						conf.Cfg.SavePath = ""
 					} else {
@@ -222,23 +186,13 @@ func shellInput() {
 					}
 					conf.Save()
 					fmt.Println("SavePath已修改为", conf.Cfg.SavePath)
-				} else if strings.HasPrefix(cmd, "stop ") {
-					minF, _ := strconv.ParseFloat(cmd[5:], 64)
-					if minF > 0 {
-						player.StopUnix = time.Now().Unix() + int64(minF*60)
-						fmt.Println("将在", minF, "分钟后停止播放")
-					} else {
-						player.StopUnix = 0
-						fmt.Println("已取消定时停止")
+				case strings.HasPrefix(cmd, "playlistdl "):
+					nemusic.PlaylistDownload(cmd[11:])
+				default:
+					// 播放器/闹钟命令统一走 command.Run
+					if command.Run(cmd) == "" {
+						fmt.Println("未知命令", cmd)
 					}
-				} else if strings.HasPrefix(cmd, "alarmadd ") {
-					hhmm, typeS := alarm.Args(cmd[9:])
-					alarm.Add(hhmm, typeS)
-				} else if strings.HasPrefix(cmd, "alarmdel ") {
-					hhmm, typeS := alarm.Args(cmd[9:])
-					alarm.DelTypes(hhmm, typeS)
-				} else {
-					fmt.Println("未知命令", cmd)
 				}
 			}
 			// 丢掉在处理过程中输入的其他命令(比如疯狂的pause会堆积起来)
@@ -401,6 +355,8 @@ func main() {
 	}
 	conf.Init()
 	// 自动更新初始化
+	// 版本号给 command 里的状态查询用
+	conf.Version = VERSION
 	update.Init(VERSION, updateRepo())
 	if !conf.IsApp {
 		// 清理上次更新留下的临时文件和旧版本备份
@@ -410,6 +366,15 @@ func main() {
 	player.SyncEQFromConf()
 	if player.EQActive() {
 		log.Println("均衡器已启用")
+	}
+	// 小智语音助手：配置里开着就后台连上，不阻塞启动
+	if !conf.IsApp && conf.Cfg.Xiaozhi.Enabled {
+		if err := xiaozhi.Start(xiaozhi.Options{
+			Cfg:     conf.Cfg.Xiaozhi,
+			Version: VERSION,
+		}); err != nil {
+			log.Println("小智启动失败", err)
+		}
 	}
 	if conf.AppProto() && conf.Cfg.Wakelock {
 		app.SendLocal("WAKELOCK")

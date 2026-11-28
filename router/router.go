@@ -7,6 +7,7 @@
 package router
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"workdayAlarmClock/player"
 	"workdayAlarmClock/update"
 	"workdayAlarmClock/weather"
+	"workdayAlarmClock/xiaozhi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -102,6 +104,7 @@ func Init(urlPrefix string) *gin.Engine {
 	r.StaticFileFS("/alarm.html", "./alarm.html", http.FS(staticFs))
 	r.StaticFileFS("/playlist.html", "./playlist.html", http.FS(staticFs))
 	r.StaticFileFS("/eq.html", "./eq.html", http.FS(staticFs))
+	r.StaticFileFS("/xiaozhi.html", "./xiaozhi.html", http.FS(staticFs))
 	r.StaticFileFS("/kugouLogin.html", "./kugouLogin.html", http.FS(staticFs))
 	// 回显配置时拷贝一份，把cookie清掉，避免局域网里直接看到登录态
 	root.GET("/cfg.json", func(c *gin.Context) {
@@ -643,6 +646,132 @@ func Init(urlPrefix string) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "enabled": false})
 	})
 
+	// ---- 小智语音助手 ----
+
+	// 小智：读设置。token 不回显，页面留空表示"不修改"。
+	root.GET("/xiaozhi", func(c *gin.Context) {
+		cfg := conf.Cfg.Xiaozhi
+		hasToken := cfg.Token != ""
+		cfg.Token = ""
+		c.JSON(http.StatusOK, gin.H{
+			"cfg":       cfg,
+			"hasToken":  hasToken,
+			"available": xiaozhi.Available(),
+			"status":    xiaozhi.Current(),
+		})
+	})
+
+	// 小智：运行状态，页面轮询这个（配对码也在这里）
+	root.GET("/xiaozhistatus", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"available": xiaozhi.Available(),
+			"enabled":   conf.Cfg.Xiaozhi.Enabled,
+			"status":    xiaozhi.Current(),
+		})
+	})
+
+	// 小智：保存设置。只传需要改的字段，其余保持不变；改完立即按新配置重连。
+	// GET /xiaozhiset?enabled=1&mode=auto&autoContinue=1&silenceTimeoutMs=8000
+	root.GET("/xiaozhiset", func(c *gin.Context) {
+		x := conf.NormalizeXiaozhi(conf.Cfg.Xiaozhi)
+
+		if v := c.Query("enabled"); v != "" {
+			x.Enabled = queryBool(v)
+		}
+		if v := c.Query("otaUrl"); v != "" {
+			x.OtaUrl = v
+		}
+		// token 只在传了非空值时覆盖，避免页面读不到就把已保存的冲掉
+		if v := strings.TrimSpace(c.Query("token")); v != "" {
+			x.Token = v
+		}
+		if v := c.Query("wakeEnabled"); v != "" {
+			x.WakeEnabled = queryBool(v)
+		}
+		if v := c.Query("autoContinue"); v != "" {
+			x.AutoContinue = queryBool(v)
+		}
+		if v := c.Query("pauseMedia"); v != "" {
+			x.PauseMedia = queryBool(v)
+		}
+		if v := c.Query("silenceTimeoutMs"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "silenceTimeoutMs 需要整数（毫秒）"})
+				return
+			}
+			x.SilenceTimeoutMs = n
+		}
+		// 允许手填 MAC；格式在 NormalizeXiaozhi 里统一成小写冒号分隔
+		if v := strings.TrimSpace(c.Query("deviceMac")); v != "" {
+			x.DeviceMac = v
+		}
+		// 重新生成设备身份：换了身份服务端会当成新设备，需要重新配对
+		if c.Query("regenerate") == "1" {
+			x.DeviceMac = conf.NewXiaozhiMac()
+			x.ClientId = conf.NewXiaozhiClientID()
+		}
+
+		x = conf.NormalizeXiaozhi(x)
+		conf.Cfg.Xiaozhi = x
+		conf.Save()
+
+		// 开关一动就重连，避免"保存了但还在按老配置跑"
+		warning := ""
+		if x.Enabled {
+			if err := xiaozhi.Start(xiaozhiOptions()); err != nil {
+				warning = err.Error()
+			}
+		} else {
+			xiaozhi.Stop()
+		}
+
+		out := x
+		out.Token = ""
+		c.JSON(http.StatusOK, gin.H{
+			"ok":       true,
+			"cfg":      out,
+			"hasToken": x.Token != "",
+			"warning":  warning,
+		})
+	})
+
+	// 小智：手动开始/结束一次会话。已经在待机就直接触发，没起来才需要 Start。
+	root.GET("/xiaozhistart", func(c *gin.Context) {
+		if xiaozhi.Trigger() {
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+			return
+		}
+		if err := xiaozhi.Start(xiaozhiOptions()); err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		xiaozhi.Trigger()
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	root.GET("/xiaozhistop", func(c *gin.Context) {
+		xiaozhi.Stop()
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	// 小智：主动查一次激活状态。已绑定回 activated，没绑定回配对码。
+	root.GET("/xiaozhiactivate", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+		defer cancel()
+		res, err := xiaozhi.CheckActivation(ctx, xiaozhiOptions())
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"ok":        true,
+			"activated": res.Activated,
+			"code":      res.Code,
+			"message":   res.Message,
+		})
+	})
+
 	// 加闹钟
 	root.GET("/addAlarm", func(c *gin.Context) {
 		if !alarm.Add(c.Query("hhmm"), c.Query("type")) {
@@ -966,4 +1095,22 @@ func Init(urlPrefix string) *gin.Engine {
 	})
 
 	return r
+}
+
+// queryBool 把 query 里的布尔值解析出来。
+// 只写了参数名（?enabled）也算 true，"0"/"false"/"off" 算 false。
+func queryBool(v string) bool {
+	s := strings.ToLower(strings.TrimSpace(v))
+	if s == "" {
+		return true
+	}
+	return s != "0" && s != "false" && s != "off" && s != "no"
+}
+
+// xiaozhiOptions 用当前配置拼一份启动参数。
+func xiaozhiOptions() xiaozhi.Options {
+	return xiaozhi.Options{
+		Cfg:     conf.Cfg.Xiaozhi,
+		Version: update.Current(),
+	}
 }

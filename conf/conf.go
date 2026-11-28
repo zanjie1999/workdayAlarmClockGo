@@ -201,9 +201,13 @@ type Config struct {
 	Port          int    `json:"port"`
 	// 均衡器配置，默认关闭
 	Eq EQSettings `json:"eq"`
+	// 小智语音助手配置，默认关闭
+	Xiaozhi XiaozhiSettings `json:"xiaozhi"`
 }
 
 var (
+	// Version 当前程序版本号，由 main 在启动时填入，供各处上报/显示
+	Version = ""
 	// 今天是工作日吗
 	IsWorkDay = false
 	// 配合Android App使用
@@ -259,6 +263,8 @@ var (
 		Port: 8080,
 		// 均衡器，默认关闭
 		Eq: DefaultEQ(),
+		// 小智语音助手，默认关闭
+		Xiaozhi: DefaultXiaozhi(),
 	}
 )
 
@@ -287,6 +293,8 @@ func Init() {
 	}
 	// 老配置文件没有 eq 字段或只有一段，统一整理成三段
 	Cfg.Eq = NormalizeEQ(Cfg.Eq)
+	// 老配置文件没有 xiaozhi 字段，统一回落默认值
+	Cfg.Xiaozhi = NormalizeXiaozhi(Cfg.Xiaozhi)
 	// 老配置文件没有音乐来源字段，统一回落网易云
 	Cfg.MusicApi = NormalizeMusicApi(Cfg.MusicApi)
 }

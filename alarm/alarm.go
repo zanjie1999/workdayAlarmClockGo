@@ -108,6 +108,11 @@ func Del(hhmm string) bool {
 
 // List 打印一行 JSON：{"alarms":[{"time":"0730","types":["1","6"]}]}
 func List() {
+	app.SendLocal(ListJSON())
+}
+
+// ListJSON 只返回序列化结果，不输出；给需要拿到文本的调用方用（语音工具）。
+func ListJSON() string {
 	keys := make([]string, 0, len(conf.Cfg.Alarm))
 	for hhmm := range conf.Cfg.Alarm {
 		keys = append(keys, hhmm)
@@ -128,10 +133,9 @@ func List() {
 	}
 	b, err := json.Marshal(map[string]interface{}{"alarms": alarms})
 	if err != nil {
-		app.SendLocal("闹钟序列化失败")
-		return
+		return ""
 	}
-	app.SendLocal(string(b))
+	return string(b)
 }
 
 // Args 把 shell 的整串参数拆成 时间 + 类型。

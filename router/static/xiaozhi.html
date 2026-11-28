@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>小智</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* 激活结果显示：配对码要在大半米外也看得清 */
+        #actResult {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 16px;
+            line-height: 1.7;
+            word-break: break-all;
+        }
+        #actResult .code {
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: 5px;
+            color: #b45309;
+        }
+        #actResult .ok {
+            color: #2f9e44;
+        }
+        #actResult .bad {
+            color: #d64545;
+        }
+        .state-line {
+            font-size: 16px;
+            color: #111418;
+        }
+        .state-line .tag {
+            display: inline-block;
+            min-width: 72px;
+            margin-right: 8px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            background-color: #eef2f7;
+            color: #384250;
+            font-size: 14px;
+            text-align: center;
+        }
+        .last-text {
+            margin-top: 8px;
+            font-size: 15px;
+            line-height: 1.7;
+            color: #6b7280;
+            word-break: break-all;
+        }
+        .err-text {
+            margin-top: 8px;
+            font-size: 15px;
+            line-height: 1.7;
+            color: #d64545;
+            word-break: break-all;
+        }
+        @media (prefers-color-scheme: dark) {
+            #actResult .code {
+                color: #f6c26b;
+            }
+            #actResult .ok {
+                color: #69db7c;
+            }
+            #actResult .bad {
+                color: #f08c8c;
+            }
+            .state-line {
+                color: #e9eaee;
+            }
+            .state-line .tag {
+                background-color: #2b2f37;
+                color: #cfd4dc;
+            }
+            .last-text {
+                color: #9aa1ad;
+            }
+            .err-text {
+                color: #f08c8c;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <header class="page-head">
+            <a href="/"><img class="brand" src="/favicon.ico" width="44" height="44" alt="返回首页"></a>
+            <div class="page-head-text">
+                <h1 class="page-title">小智</h1>
+            </div>
+        </header>
+
+        <div class="card">
+            <div class="ui-row">
+                <span class="ui-label">启用</span>
+                <div class="ui-ctl">
+                    <input type="checkbox" id="enabled">
+                    <span class="hint">开启后自动连接并等待唤醒</span>
+                </div>
+            </div>
+            <div class="ui-row">
+                <span class="ui-label">语音唤醒</span>
+                <div class="ui-ctl">
+                    <input type="checkbox" id="wakeEnabled">
+                    <span class="hint">待机时喊「小度小度」唤醒</span>
+                </div>
+            </div>
+            <div class="ui-row-stack">
+                <span class="ui-label">服务器地址</span>
+                <div class="ui-ctl">
+                    <input type="text" id="otaUrl" placeholder="https://api.tenclass.net/xiaozhi/ota/">
+                </div>
+            </div>
+            <div class="ui-row-stack">
+                <span class="ui-label">Token</span>
+                <div class="ui-ctl">
+                    <input type="password" id="token" placeholder="未设置">
+                </div>
+            </div>
+            <div class="ui-row-stack">
+                <span class="ui-label">设备 MAC</span>
+                <div class="ui-ctl">
+                    <input type="text" id="deviceMac" placeholder="02:00:00:00:00:01">
+                </div>
+            </div>
+            <p class="ui-hint">
+                服务端按这个 MAC 认设备，第一次会自动随机生成并存进配置。<br>
+                唤醒词固定为「小度小度」，用的是音箱自带的唤醒模型。
+            </p>
+            <div class="ui-row ui-row-end">
+                <div class="ui-ctl">
+                    <button type="button" class="ghost" onclick="regenerate()">随机生成</button>
+                    <button type="button" class="ghost" onclick="checkActivation()">检查激活状态</button>
+                    <button type="button" onclick="save()">保存</button>
+                </div>
+            </div>
+            <div><span id="actResult"></span></div>
+            <div id="msg" class="ui-hint"></div>
+        </div>
+
+        <div class="card">
+            <div class="ui-row">
+                <span class="ui-label">运行状态</span>
+                <div class="ui-ctl">
+                    <div class="state-line"><span class="tag" id="stateTag">空闲</span></div>
+                    <div class="last-text" id="lastText"></div>
+                    <div class="err-text" id="errText"></div>
+                </div>
+            </div>
+            <div class="ui-row ui-row-end">
+                <div class="ui-ctl">
+                    <button type="button" class="ghost" onclick="startSession()">开始对话</button>
+                    <button type="button" class="ghost" onclick="stopSession()">结束</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+var STATE_TEXT = {
+    idle: '空闲',
+    connecting: '连接中',
+    pairing: '等待配对',
+    handshaking: '握手中',
+    listening: '聆听中',
+    thinking: '思考中',
+    speaking: '说话中',
+    error: '出错'
+};
+
+var available = false;
+
+function $(id) { return document.getElementById(id); }
+function msg(s) { $('msg').textContent = s || ''; }
+
+// 用 XHR 而不是 fetch：老浏览器没有 Promise
+function api(url, done) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState !== 4) return;
+        var data = null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try { data = JSON.parse(xhr.responseText); } catch (e) {}
+        }
+        done(data);
+    };
+    try { xhr.send(); } catch (e) { done(null); }
+}
+
+function showStatus(st) {
+    if (!st) return;
+    $('stateTag').textContent = STATE_TEXT[st.state] || st.state || '空闲';
+    if (st.lastText) {
+        var who = st.lastKind === 'stt' ? '你：' : st.lastKind === 'tts' ? '说：' : '答：';
+        $('lastText').textContent = who + st.lastText;
+    }
+    $('errText').textContent = st.error ? '错误：' + st.error : '';
+}
+
+function poll() {
+    api('/xiaozhistatus?t=' + Date.now(), function (d) {
+        if (!d) return;
+        available = !!d.available;
+        showStatus(d.status);
+    });
+}
+
+function load() {
+    api('/xiaozhi?t=' + Date.now(), function (d) {
+        if (!d) { msg('加载失败'); return; }
+        available = !!d.available;
+        var c = d.cfg || {};
+        $('enabled').checked = !!c.enabled;
+        $('wakeEnabled').checked = !!c.wakeEnabled;
+        $('otaUrl').value = c.otaUrl || '';
+        $('deviceMac').value = c.deviceMac || '';
+        $('token').value = '';
+        $('token').placeholder = d.hasToken ? '已设置，留空表示不修改' : '未设置';
+        showStatus(d.status);
+        if (!available) {
+            msg('当前版本不支持小智（需要 Linux + cgo，且不是 App 形态）');
+        }
+    });
+}
+
+function save() {
+    if (!available) { msg('当前版本不支持小智'); return; }
+    var q = 'enabled=' + ($('enabled').checked ? 1 : 0)
+        + '&wakeEnabled=' + ($('wakeEnabled').checked ? 1 : 0)
+        + '&otaUrl=' + encodeURIComponent($('otaUrl').value)
+        + '&deviceMac=' + encodeURIComponent($('deviceMac').value);
+    // token 空着就不传，避免把已保存的冲掉
+    if ($('token').value) {
+        q += '&token=' + encodeURIComponent($('token').value);
+    }
+    msg('正在保存…');
+    api('/xiaozhiset?' + q, function (d) {
+        if (!d || !d.ok) {
+            msg(d && d.error ? '保存失败：' + d.error : '保存失败');
+            return;
+        }
+        msg(d.warning ? '已保存，但启动失败：' + d.warning : '已保存');
+        load();
+    });
+}
+
+function regenerate() {
+    if (!confirm('换一个 MAC 会被服务端当成新设备，需要重新配对。继续？')) return;
+    api('/xiaozhiset?regenerate=1', function (d) {
+        if (!d || !d.ok) { msg('生成失败'); return; }
+        msg('已生成新的设备 MAC');
+        load();
+    });
+}
+
+// 点一下问服务端：已激活就直接说，没激活就把配对码显示出来
+function checkActivation() {
+    if (!available) { msg('当前版本不支持小智'); return; }
+    var el = $('actResult');
+    el.className = '';
+    el.textContent = '正在检查…';
+    api('/xiaozhiactivate?t=' + Date.now(), function (d) {
+        if (!d || !d.ok) {
+            el.className = 'bad';
+            el.textContent = '检查失败：' + ((d && d.error) || '网络异常');
+            return;
+        }
+        if (d.activated) {
+            el.className = 'ok';
+            el.textContent = '已激活';
+            return;
+        }
+        if (d.code) {
+            el.className = '';
+            el.innerHTML = '未激活，配对码 <span class="code"></span>';
+            el.getElementsByClassName('code')[0].textContent = d.code;
+            msg(d.message || '去 xiaozhi.me 添加设备并输入上面的配对码');
+            return;
+        }
+        el.className = 'bad';
+        el.textContent = '服务端没返回激活信息';
+    });
+}
+
+function startSession() {
+    if (!available) { msg('当前版本不支持小智'); return; }
+    api('/xiaozhistart', function (d) {
+        msg(d && d.ok ? '已启动' : '启动失败');
+        poll();
+    });
+}
+
+function stopSession() {
+    api('/xiaozhistop', function () {
+        msg('已结束');
+        poll();
+    });
+}
+
+load();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
